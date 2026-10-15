@@ -3,6 +3,9 @@ name: Importar instaladores
 # Releases de izaqueotaviano/uploader-convertize para Releases deste repositório.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/importar-instaladores.yml']
 permissions:
   contents: write
 jobs:
