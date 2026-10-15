@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- O macOS não pode encerrar o app sozinho quando ele fica ocioso. -->
+  <key>NSSupportsAutomaticTermination</key>
+  <false/>
+  <key>NSSupportsSuddenTermination</key>
+  <false/>
+  <!-- Sem App Nap: a sincronização em segundo plano continua rodando. -->
+  <key>NSAppSleepDisabled</key>
+  <true/>
+</dict>
+</plist>
