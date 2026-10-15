@@ -7,7 +7,9 @@
     "icons": "node scripts/build-icons.mjs",
     "test": "cd src-tauri && PATH=/opt/homebrew/opt/rustup/bin:$PATH cargo test --release",
     "dev": "PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH tauri dev",
-    "build": "npm run icons && PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH tauri build"
+    "build": "npm run icons && PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH tauri build",
+    "build:mac": "npm run icons && PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH tauri build --target universal-apple-darwin --bundles app,dmg",
+    "build:windows": "npm run icons && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 XWIN_ACCEPT_LICENSE=1 PATH=/opt/homebrew/opt/llvm/bin:/opt/homebrew/opt/lld/bin:/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.3.0",
