@@ -1,0 +1,62 @@
+# Hardware and platform parity
+
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (smoother canvas panning and zooming: overscan render reused while panning, half-resolution drafts while zooming, no panel cache rebuilds on view changes; Windows QA pass; Display P3: gamut warning and soft-proof (true P3 blocked upstream); several windows, the prototype in a window of its own; pen pressure for the Pencil and brushes on Windows and from browser styluses) · **Target:** Figma Design (desktop app 126.10.7)
+
+How FigCraft uses hardware and which platforms it runs on, against Figma. Figma's desktop app is
+Electron with a GPU helper process; its canvas renders on the GPU (WebGL, with WebGPU rolling out
+since 2025). FigCraft renders the canvas on the CPU and presents it through wgpu.
+
+**Summary (estimated):** hardware ~60%, performance ~60%, platforms ~75%.
+
+## Hardware
+
+| Feature | Figma | FigCraft (macOS / Windows / Linux / web) | Hours |
+|---|---|---|---|
+| Canvas rendering | GPU | CPU (tiny-skia), banded across cores, retained (re-renders only what an edit or pan touches), levels of detail below 50% zoom; shown through wgpu (WebGPU or WebGL2 in the browser). The canvas renders a margin of a quarter of the view around it and reuses that image while panning (nothing is rendered or uploaded until a pan has used half the margin; the next render keeps more margin ahead of the pan), renders half-resolution drafts while a wheel or pinch zoom is under way and the full image once it settles, and keeps every render within the GPU's texture limit | 30–60 for a GPU path |
+| Effects (blurs, glass, noise) | GPU | CPU | in the above |
+| HiDPI / Retina | yes | yes (all) | — |
+| Wide-gamut display (Display P3) | yes, on capable displays | colours stored and exported in P3; the screen shows sRGB: eframe/egui-wgpu 0.36 configure an 8-bit sRGB surface with no colour space option, although wgpu 30 can present Display P3 or extended sRGB on Metal, DX12, Vulkan and WebGPU (see gaps #18). The colour picker warns about colours outside sRGB and View ▸ Soft-proof sRGB stripes them on the canvas | 2–5 |
+| Trackpad pinch zoom and two-finger pan | yes | yes (egui zoom delta, smooth scroll) | — |
+| Pen tablet pressure (pencil, Figma Draw brushes) | yes (forum reports of regressions in 2025) | Windows pens (winit pointer input) and browser styluses that send touch events with a force (an Apple Pencil in Safari); the Pencil records it as the stroke's width profile. A mouse, macOS and Linux tablets and pens sending only pointer events in a browser report none: constant width | 1–3 |
+| Several windows / multi-monitor | yes (a window per file; the prototype in a window of its own) | desktop: File ▸ New window, a tab's Open in new window or a tab dragged off the strip; each window has its own tabs, panels and canvas, draws only when it needs to and asks about unsaved changes when it closes. Only the main window has a screen-reader tree (eframe 0.36), so files stay tabs while a screen reader runs; positions aren't restored at the next start; the prototype plays in an operating-system window of its own (Options ▸ Open in new window in the presenter, or the preview pane's button) while the editor keeps working, and stays in the window it began in with a screen reader, in the browser or from a window that isn't the main one (checked headless and on a virtual X11 display, not yet on a real desktop); one window in the browser | 1–2 |
+| Screen readers | partial | AccessKit tree on desktop (names, roles, states), never tested with a real screen reader; none in the browser | 4–8 + human QA |
+| Keyboard layouts (non-US) | yes | keymap uses logical keys; not checked on AZERTY/QWERTZ/JIS | 1–2 |
+
+## Performance (measured by `cargo xtask bench`, synthetic files, owner's Mac)
+
+| Case | FigCraft | Figma |
+|---|---|---|
+| 50k-layer page, zoomed out, full render | ~8 ms (levels of detail) | not timed side by side |
+| 10k layers: full 1440×900 render | 7–15 ms | not timed |
+| 10k layers: move one layer, re-render | ~0.2 ms | not timed |
+| Design system of ~300 components × 2,000 instances: recolour a main used ~900 times | 4–18 ms | not timed |
+| `.figcraft` at 50k layers: save / load | ~0.09 s / ~0.16 s | n/a |
+| Idle window | 0 frames, ~0% CPU | — |
+| Scrolling 300 frames, 24 px a frame, 1920×1080 px, 20k layers: render jobs, render-thread time, texture uploads (container, test profile) | 26 jobs, ~0.9 s, 486 MB, no frame showing bare page background (was 300 jobs, ~1.5 s, 2,492 MB, a strip of background every frame) | not timed |
+| Wheel zoom, 30 steps then settled, same file (container, test profile) | ~0.35 s render thread, 81 MB uploads (was ~0.58 s, 257 MB) | not timed |
+| UI frame while panning with the Assets panel open (2k components × 2k instances; container, test profile) | ~8 ms (was ~13–20 ms: every pan frame rebuilt the assets listing and rescanned names) | not timed |
+
+Nothing has been timed against Figma on the same document (needs `.fig` import). 
+
+## Platforms
+
+| Platform | Figma | FigCraft | Notes |
+|---|---|---|---|
+| macOS | desktop app (Intel and Apple silicon) | universal `.dmg`, signed and notarized (v0.2.0) | where nearly all QA happens |
+| Windows x64 / arm64 | desktop app | `.msi` and portable zip for x64, x86 and arm64 | built in CI; Windows: QA pass done 2026-10-11, findings in PR |
+| Linux | none (browser only) | AppImage, `.deb`, `.rpm`, Flatpak, tarball, x86_64 and aarch64; riscv64 tarball | CI tests run here |
+| FreeBSD | none | tarball | |
+| Web | primary (figma.com) | `figcraft-web` (WASM, WebGPU/WebGL2), web zip | no accessibility tree; file access through the browser |
+| iOS / Android | apps: view, comment, mirror prototypes | none (the web build is not touch-first) | 20–40 h for a viewer |
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-15 | minor | Several windows, the presenter's part: the prototype can play in an operating-system window of its own while the editor keeps working (integration of the presenter branches); the row said "presenter in its own window" and "the presenter stays inside its window" at once, and now says what is built and that it hasn't been seen on a real desktop. No number moves. |
+| 2026-10-15 | minor | Smoother canvas panning and zooming (owner's Windows report: stutter while panning and zooming, a grey band while scrolling down). Root causes: each pan frame rendered the exact viewport, so the strip a pan uncovered showed bare page background until the render arrived, and every frame converted and uploaded a whole-screen texture; each zoom frame rendered a full-resolution image; and every pan or zoom frame bumped the document revision, which rebuilt the panels' per-document caches (the assets listing, the CJK name scan…). Now the canvas renders a quarter-view margin and reuses it while panning, zoom frames render half-resolution drafts, and view changes leave the revision alone. Measured in the container (test profile): 300 scroll frames 300 → 26 render jobs and 2,492 → 486 MB of uploads with no bare frames; a zoom 257 → 81 MB; UI frames panning with a large Assets panel ~13–20 → ~8 ms (`canvas_scroll_tests`). Percentages and hours unchanged |
+| 2026-10-11 | minor | Windows QA pass (gap 8): everyday workflows on Windows 11 through the desktop app and MCP; fixed: unsaved changes lost when the app was killed or crashed (recovery copies every few seconds, reopened at the next start), Ctrl+arrows/Backspace/Delete acting on the whole line in text (now by word; Ctrl+Home/End to the text's ends), scrubbed fields snapping back on release, typing on a field Tab reached, Escape not closing dialogs, skewed or vanishing linear gradients, hints cut off at the panel edge, the window-close question in English in the Spanish interface. Percentages and hours unchanged |
+| 2026-10-11 | minor | Display P3 honest minimum (gap 18): the colour picker of a Display P3 file warns when a colour is outside sRGB (Outside sRGB, with what the canvas and exports do), and View ▸ Soft-proof sRGB (`view.proofSrgb`) stripes the canvas pixels sRGB can't show. Why the canvas still shows sRGB: wgpu 30 can present Display P3 or extended-range sRGB surfaces (Metal, DX12, Vulkan, WebGPU canvases), but eframe/egui-wgpu 0.36 configure an 8-bit sRGB surface with no option for the format or colour space, and egui's renderer writes sRGB-encoded UI colours; showing P3 needs those two upstream (or a patched egui-wgpu). Hardware 13–27 h → 12–26 h; gap 18 6–12 h → 5–11 h; percentages, feature breadth (~79%) and ready for real work (~47%) unchanged at this rounding; full parity ~363–697 h → ~362–696 h |
+| 2026-10-11 | minor | Several windows (gap 18): File ▸ New window, a tab's Open in new window or a tab dragged off the tab strip opens files in another window with its own tabs, panels and canvas, sharing the files, preferences, libraries and clipboard; each window draws only when it needs to (idle: ~0% CPU), closing one closes its files after asking about unsaved changes (the main window too, which takes over another window instead of quitting; the last window quits), and the control channel and MCP open, list, focus and capture windows (`window.new`, `window.list`, `window.focus`, `window` on any request); the screen-reader tree covers the main window only (eframe 0.36), so with a screen reader running files stay tabs; one window in the browser. Hardware 55% → 60%, 13–27 h → 10–21 h; gap 18 6–12 h → 4–8 h (P3 on screen left); feature breadth (~79%) and ready for real work (~47%) unchanged at this rounding; full parity ~363–697 h → ~360–691 h |
+| 2026-10-11 | minor | Stretch and scatter brushes and pen pressure landed (gap 9): eight brushes drawn in code (four stretched along the path, four scattered with spacing, size, rotation and scatter jitter from a seed) in the stroke settings, drawn everywhere strokes are and flattened by outline stroke; the Pencil records pen pressure as the stroke's width profile (Windows pens, browser styluses; macOS and Linux tablets report none) and can draw with a brush; Figma Draw extras breadth 45% → 65%, ready 30% → 45%, 10–18 h → 5–9 h; Strokes 2–4 h → 1–3 h; Hardware 50% → 55%, 15–30 h → 13–27 h; feature breadth (~79%) and ready for real work (~47%) unchanged at this rounding; full parity ~380–725 h → ~375–715 h |
+| 2026-10-10 | major | Created from the 2026-10-10 re-measure |
