@@ -1,0 +1,38 @@
+# Gera o instalador do Windows (.exe) numa máquina Windows do GitHub.
+# Roda ao clicar em "Run workflow" na aba Actions, ou a cada tag v*.
+name: Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # Monta os arquivos de ícones das coleções a partir dos pacotes do npm.
+      - run: npm run icons
+
+      - run: npx tauri build --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IconHub-windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IconHub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="Pastas">
+    <div class="side-drag" data-tauri-drag-region></div>
+    <div class="brand" data-tauri-drag-region>
+      <svg class="logo" viewBox="0 0 1000 1000" aria-hidden="true"><rect width="1000" height="1000" rx="220" class="logo-bg"/><path class="logo-fg" fill-rule="evenodd" d="M239.348 648.876 C239.348 504.923 356.046 388.225 500 388.225 C643.954 388.225 760.652 504.923 760.652 648.876 C760.652 792.83 643.954 909.528 500 909.528 C356.046 909.528 239.348 792.83 239.348 648.876 Z M396.951 579.422 C358.593 579.422 327.497 610.518 327.497 648.876 C327.497 687.235 358.593 718.331 396.951 718.331 C435.31 718.331 466.406 687.235 466.406 648.876 C466.406 610.518 435.31 579.422 396.951 579.422 Z M603.049 579.422 C564.69 579.422 533.594 610.518 533.594 648.876 C533.594 687.235 564.69 718.331 603.049 718.331 C641.407 718.331 672.503 687.235 672.503 648.876 C672.503 610.518 641.407 579.422 603.049 579.422 Z"/></svg>
+      <span class="brand-name">IconHub</span>
+    </div>
+    <nav>
+      <button class="side-item" data-source="">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>
+        <span class="label">Todos os ícones</span>
+      </button>
+      <button class="side-item" data-source="folder:favoritos">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/></svg>
+        <span class="label">Favoritos</span><span class="n" id="n-fav"></span>
+      </button>
+      <button class="side-item" data-source="custom">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+        <span class="label">Meus ícones</span><span class="n" id="n-custom"></span>
+      </button>
+    </nav>
+    <div class="side-head">
+      <span>Pastas</span>
+      <button class="icon-btn sm" id="side-new" aria-label="Nova pasta" title="Nova pasta">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+    <nav id="side-folders"></nav>
+    <div class="account" id="account">
+      <button class="account-btn" id="account-btn">
+        <span class="avatar" id="avatar" aria-hidden="true"></span>
+        <span class="account-text">
+          <span class="account-name" id="account-name">Entrar</span>
+          <span class="sync-status" id="sync-status">Para sincronizar suas pastas</span>
+        </span>
+      </button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <div class="content">
+  <header class="top" data-tauri-drag-region>
+    <div class="search" data-tauri-drag-region>
+      <button class="icon-btn" id="side-toggle" aria-label="Mostrar/ocultar barra lateral" title="Barra lateral (⌥⌘S)" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg>
+      </button>
+      <button class="icon-btn back" id="back" aria-label="Voltar" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <label class="search-field">
+        <svg class="search-glyph" id="search-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        <input id="q" type="search" placeholder="Buscar ícones" autocomplete="off" spellcheck="false" aria-label="Buscar ícones">
+        <kbd class="kbd">⌘F</kbd>
+      </label>
+      <button class="icon-btn" id="import" aria-label="Importar SVG" title="Importar SVG">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      </button>
+    </div>
+
+    <div class="filters" id="filters" data-tauri-drag-region>
+      <div class="field">
+        <button class="sets-btn" id="sets-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="sets-menu">
+          <svg class="sets-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>
+          <span id="sets-label">Todas as coleções</span>
+          <svg class="sets-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+        </button>
+        <button class="sets-x" id="sets-x" aria-label="Limpar filtros de coleção" title="Limpar filtros" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>
+        </button>
+      </div>
+
+      <div class="segmented" role="radiogroup" aria-label="Estilo">
+        <button role="radio" data-style="" aria-checked="true">Todos</button>
+        <button role="radio" data-style="line" aria-checked="false">Linha</button>
+        <button role="radio" data-style="fill" aria-checked="false">Preenchido</button>
+        <button role="radio" data-style="color" aria-checked="false">Cor</button>
+      </div>
+
+      <label class="stroke" id="stroke-wrap" title="Vale para ícones de linha com traço ajustável">
+        <span>Espessura</span>
+        <input id="stroke" type="range" min="0.5" max="3" step="0.25" value="2" aria-label="Espessura do traço">
+        <output id="stroke-value">Padrão</output>
+        <button class="link-btn" id="stroke-reset" hidden>Redefinir</button>
+      </label>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="list-view">
+      <div class="folder-bar" id="folder-bar" hidden>
+        <div class="folder-title">
+          <h2 id="folder-name"></h2>
+          <p class="count" id="folder-count"></p>
+        </div>
+        <div class="folder-actions">
+          <button class="icon-btn kebab" id="folder-more" aria-label="Opções da pasta" title="Opções da pasta" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+          </button>
+          <div class="menu folder-opts" id="folder-opts" role="menu" hidden>
+            <button role="menuitem" id="folder-export">
+              <svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
+              <span class="label">Exportar pasta…</span><span class="n">⌘E</span>
+            </button>
+            <button role="menuitem" id="folder-rename">
+              <svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>
+              <span class="label">Renomear…</span>
+            </button>
+            <hr id="folder-opts-sep">
+            <button role="menuitem" id="folder-delete" class="danger">
+              <svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>
+              <span class="label">Apagar pasta…</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="sentinel" id="sentinel"></div>
+      <div class="state" id="state" hidden></div>
+    </section>
+
+    <section id="detail-view" hidden>
+      <div class="preview" id="preview" title="Arraste para o Illustrator, Figma ou Photoshop"></div>
+      <div class="meta">
+        <div>
+          <h1 id="d-name"></h1>
+          <p id="d-source"></p>
+        </div>
+        <button class="btn-secondary danger" id="d-delete" hidden>Apagar</button>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="d-copy">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          <span id="d-copy-label">Copiar SVG</span>
+        </button>
+        <button class="btn-secondary" id="d-save">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
+          <span id="d-save-label">Salvar SVG</span>
+        </button>
+      </div>
+      <div class="actions">
+        <button class="btn-secondary" id="d-fav" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.7l5.9-.9z"/></svg>
+          <span id="d-fav-label">Favoritar</span>
+        </button>
+        <div class="menu-wrap">
+          <button class="btn-secondary" id="d-folder" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
+            <span>Salvar em pasta</span>
+          </button>
+        </div>
+      </div>
+      <button class="btn-secondary danger wide" id="d-remove" hidden>Remover desta pasta</button>
+      <p class="saved-note" id="d-saved-note" hidden></p>
+      <p class="hint">Dica: arraste o ícone direto para o Illustrator, Figma ou Photoshop.</p>
+    </section>
+  </main>
+  <div class="selbar" id="selbar" role="toolbar" aria-label="Ações da seleção" hidden>
+    <button class="sel-x" id="sel-clear" aria-label="Limpar seleção" title="Limpar seleção (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    <span class="sel-count" id="sel-count"></span>
+    <button class="link-btn sel-all" id="sel-all">Selecionar tudo</button>
+    <span class="spacer"></span>
+    <button class="sel-btn" id="sel-edit" title="Editar cor, tamanho e espessura"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M12 3.5a8.5 8.5 0 0 1 0 17" fill="currentColor"/></svg><span>Editar</span></button>
+    <button class="sel-btn" id="sel-move" title="Mover para outra pasta"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M10 13.5h5M13 11l2.5 2.5L13 16"/></svg><span>Mover</span></button>
+    <button class="sel-btn" id="sel-dup" title="Copiar para outra pasta"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg><span>Copiar para</span></button>
+    <button class="sel-btn" id="sel-copy" title="Copiar como SVG para colar no Figma"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg><span>Copiar SVG</span></button>
+    <button class="sel-btn" id="sel-export" title="Exportar só os selecionados"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg><span>Exportar</span></button>
+    <button class="sel-btn danger" id="sel-remove" title="Remover desta pasta"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg><span>Remover</span></button>
+  </div>
+  <div class="viewbar" id="viewbar">
+    <span class="count" id="count" aria-live="polite"></span>
+    <div class="viewbar-tools">
+      <label class="tile-size" title="Tamanho dos ícones">
+        <svg class="sm-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+        <input id="tile-size" type="range" min="56" max="168" step="4" aria-label="Tamanho dos ícones">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/></svg>
+      </label>
+      <div class="segmented icon-seg" role="radiogroup" aria-label="Exibição">
+        <button role="radio" data-view="grid" aria-checked="true" title="Grade" aria-label="Grade">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>
+        </button>
+        <button role="radio" data-view="list" aria-checked="false" title="Lista" aria-label="Lista">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="4" height="4" rx="1"/><rect x="4" y="15" width="4" height="4" rx="1"/><path d="M11 7h9M11 17h9"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+  </div>
+  </div>
+
+  <footer class="bar">
+    <button class="bar-item color" id="color-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="color-pop">
+      <span class="swatch" id="swatch"></span>
+      <span class="bar-value" id="color-value">#000000</span>
+      <span class="bar-label">Cor</span>
+    </button>
+    <button class="bar-item" id="format">
+      <span class="bar-value" id="format-value">SVG</span>
+      <span class="bar-label">Formato</span>
+    </button>
+    <label class="bar-item" id="size-wrap">
+      <select id="size" aria-label="Tamanho">
+        <option>16</option><option>24</option><option>32</option><option>48</option><option selected>64</option>
+        <option>96</option><option>128</option><option>256</option><option>512</option><option>1024</option><option>2048</option>
+      </select>
+      <span class="bar-value" id="size-value">64px</span>
+      <span class="bar-label">Tamanho</span>
+    </label>
+    <span class="spacer"></span>
+    <button class="bar-item theme" id="theme" title="Tema">
+      <span id="theme-icon" aria-hidden="true"></span>
+      <span class="bar-value" id="theme-value">Automático</span>
+      <span class="bar-label">Tema</span>
+    </button>
+  </footer>
+
+  <div class="drop" id="drop" hidden>
+    <div>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      <p id="drop-text">Solte para importar seus SVGs</p>
+    </div>
+  </div>
+
+  <div class="menu" id="folder-menu" role="menu" hidden></div>
+
+  <div class="color-pop" id="color-pop" role="dialog" aria-label="Cor dos ícones" hidden>
+    <div class="cp-head">
+      <span class="cp-preview" id="cp-preview"></span>
+      <div class="cp-hex">
+        <label for="cp-hex">HEX</label>
+        <div class="cp-hex-field"><span>#</span><input id="cp-hex" maxlength="7" spellcheck="false" autocomplete="off"></div>
+      </div>
+    </div>
+    <fieldset class="cp-cmyk">
+      <legend>CMYK <span>%</span></legend>
+      <div class="cp-cmyk-row">
+      <label><span>C</span><input inputmode="numeric" data-k="c" aria-label="Ciano"></label>
+      <label><span>M</span><input inputmode="numeric" data-k="m" aria-label="Magenta"></label>
+      <label><span>Y</span><input inputmode="numeric" data-k="y" aria-label="Amarelo"></label>
+      <label><span>K</span><input inputmode="numeric" data-k="k" aria-label="Preto"></label>
+      </div>
+    </fieldset>
+    <p class="cp-title">Cores</p>
+    <div class="cp-swatches" id="cp-presets"></div>
+    <p class="cp-title" id="cp-recent-title">Recentes</p>
+    <div class="cp-swatches" id="cp-recent"></div>
+    <label class="cp-more">
+      <input id="color" type="color" value="#000000" tabindex="-1">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.3-4-7.6-9-7.6z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15.5" cy="7.5" r="1"/></svg>
+      <span>Mais cores…</span>
+    </label>
+  </div>
+
+  <div class="sets-menu" id="sets-menu" role="dialog" aria-label="Coleções" hidden>
+    <div class="sets-top">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input id="sets-search" type="search" placeholder="Filtrar coleções" autocomplete="off" aria-label="Filtrar coleções">
+    </div>
+    <div class="sets-list" id="sets-list"></div>
+    <div class="sets-foot">
+      <span id="sets-count"></span>
+      <button class="btn-secondary sm" id="sets-clear">Limpar filtros</button>
+    </div>
+  </div>
+
+  <dialog class="modal" id="modal">
+    <form method="dialog" id="modal-form">
+      <h2 id="modal-title"></h2>
+      <p id="modal-text"></p>
+      <div id="modal-body"></div>
+      <p class="modal-error" id="modal-error" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="modal-cancel">Cancelar</button>
+        <button class="btn-primary" id="modal-ok" value="ok"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
