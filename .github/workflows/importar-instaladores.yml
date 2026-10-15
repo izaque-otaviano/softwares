@@ -1,0 +1,31 @@
+name: Importar instaladores
+# Copia os instaladores (.dmg e .exe) de VectorCraft, PhotoCraft, FilmCraft e FigCraft das
+# Releases de izaqueotaviano/uploader-convertize para Releases deste repositório.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copiar as Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIGEM: izaqueotaviano/uploader-convertize
+        run: |
+          set -e
+          for app in vectorcraft photocraft filmcraft figcraft; do
+            tag="$(gh release list -R "$ORIGEM" --limit 50 --json tagName -q '.[].tagName' | grep "^$app-v" | head -1)"
+            [ -n "$tag" ] || { echo "sem release de $app"; exit 1; }
+            rm -rf "saida/$app" && mkdir -p "saida/$app"
+            gh release download "$tag" -R "$ORIGEM" -D "saida/$app"
+            nome="$(gh release view "$tag" -R "$ORIGEM" --json name -q .name)"
+            gh release view "$tag" -R "$ORIGEM" --json body -q .body > "saida/$app.md"
+            if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$tag" -R "$GITHUB_REPOSITORY" saida/$app/* --clobber
+            else
+              gh release create "$tag" -R "$GITHUB_REPOSITORY" saida/$app/* --title "$nome" --notes-file "saida/$app.md"
+            fi
+            echo "- $nome: https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"
+          done
