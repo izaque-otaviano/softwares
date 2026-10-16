@@ -76,6 +76,9 @@ pub fn node_icon(doc: &Document, id: NodeId) -> Icon {
     }
 }
 
+/// The icons of the left rail (File, Assets, Variables), in points.
+const RAIL_ICON: f32 = 20.0;
+
 /// The slim icon rail at the far left: main menu, File, Assets, Variables.
 pub fn rail(app: &mut FigApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -98,9 +101,9 @@ pub fn rail(app: &mut FigApp, ui: &mut Ui) {
     ui.painter().line_segment([pos2(r.min.x + 18.0, y), pos2(r.max.x - 18.0, y)], Stroke::new(1.0, t.border));
     y += 12.0;
     let items =
-        [(Icon::Page, tr("File"), Some(LeftTab::File)), (Icon::Assets, tr("Assets"), Some(LeftTab::Assets)), (Icon::Styles, tr("Variables"), None)];
+        [(Icon::Page, tr("File"), Some(LeftTab::File)), (Icon::Assets, tr("Assets"), Some(LeftTab::Assets)), (Icon::Variable, tr("Variables"), None)];
     for (icon, label, tab) in items {
-        let ir = Rect::from_center_size(pos2(r.center().x, y + 14.0), vec2(36.0, 28.0));
+        let ir = Rect::from_center_size(pos2(r.center().x, y + 16.0), vec2(36.0, 32.0));
         let hit = Rect::from_min_max(pos2(r.min.x, y), pos2(r.max.x, y + 48.0));
         let resp = ui.interact(hit, ui.id().with(("rail", label)), Sense::click()).tip(label);
         // While the Variables page covers the window, its button is the active one.
@@ -117,8 +120,13 @@ pub fn rail(app: &mut FigApp, ui: &mut Ui) {
         } else if resp.hovered() {
             ui.painter().rect_filled(ir, CornerRadius::same(6), t.hover);
         }
-        icons::paint(ui.painter(), Rect::from_center_size(ir.center(), vec2(16.0, 16.0)), icon, if active { t.accent_text } else { t.icon });
-        ui.painter().text(pos2(r.center().x, y + 38.0), Align2::CENTER_CENTER, label, regular(10.0), t.text);
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(ir.center(), vec2(RAIL_ICON, RAIL_ICON)),
+            icon,
+            if active { t.accent_text } else { t.icon },
+        );
+        ui.painter().text(pos2(r.center().x, y + 42.0), Align2::CENTER_CENTER, label, regular(10.0), t.text);
         if resp.clicked() {
             match tab {
                 Some(tb) => {
@@ -171,7 +179,7 @@ pub fn left_panel(app: &mut FigApp, ui: &mut Ui) {
     if hresp.hovered() {
         ui.painter().rect_filled(hr, CornerRadius::same(5), t.hover);
     }
-    icons::paint(ui.painter(), hr.shrink(5.0), Icon::Panels, t.icon);
+    icons::paint(ui.painter(), hr.shrink(3.0), Icon::Panels, t.icon);
     if hresp.clicked() {
         app.ui.left_collapsed = true;
     }

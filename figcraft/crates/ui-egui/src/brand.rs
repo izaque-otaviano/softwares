@@ -1,7 +1,7 @@
-//! The two pieces of UI art that come from SVG files instead of `icons.rs` primitives: the FigCraft
-//! logo (the app icon, `assets/app-icon/`) and the document mark before a file's name (tabs, open
-//! and recent files; `assets/ui/document-tab.svg`). Both were supplied by the repository owner, see
-//! `ATTRIBUTION.md`.
+//! The two pieces of UI art that are the repository owner's own and not Lucide icons (`icons.rs`):
+//! the FigCraft logo (the app icon, `assets/app-icon/`) and the document mark before a file's name
+//! (tabs, open and recent files; `assets/ui/document-tab.svg`). Both were supplied by the owner,
+//! see `ATTRIBUTION.md`.
 //!
 //! Each is rasterised with resvg at the exact physical pixel size it is shown at, so it stays crisp
 //! at any display scale, and cached as a texture per size.
@@ -81,12 +81,15 @@ fn texture(ctx: &egui::Context, art: Art, px: u32) -> Option<TextureHandle> {
     made
 }
 
-/// The textures made so far (tests tell them apart from pictures).
+/// The textures made so far, the icons' included (tests tell them apart from pictures).
 #[cfg(test)]
 pub(crate) fn textures(ctx: &egui::Context) -> Vec<egui::TextureId> {
-    ctx.data(|d| d.get_temp::<Cache>(Id::new("figcraft_brand_textures")))
+    let mut all: Vec<egui::TextureId> = ctx
+        .data(|d| d.get_temp::<Cache>(Id::new("figcraft_brand_textures")))
         .map(|c| c.0.values().flatten().map(TextureHandle::id).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    all.extend(crate::icons::lucide::textures(ctx));
+    all
 }
 
 /// Paint `art` as the largest square that fits `rect`, centred and on whole physical pixels.

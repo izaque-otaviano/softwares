@@ -339,9 +339,9 @@ The Crafting Apps share the same conventions: clean-room and pure Rust, native o
 FigCraft is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 Copyright (c) 2026 ArtCraft Team and the FigCraft contributors. Required notices are in [NOTICE](NOTICE).
 
-Every icon in FigCraft is drawn in code or made for this project, and bundled fonts, images and other
-assets keep their own open licenses; each one is listed with its author, source and license in
-[ATTRIBUTION.md](ATTRIBUTION.md).
+FigCraft's icons are [Lucide](https://lucide.dev) icons (ISC licence) plus a few originals drawn in
+Lucide's style, and bundled fonts, images and other assets keep their own open licenses; each one is
+listed with its author, source and license in [ATTRIBUTION.md](ATTRIBUTION.md).
 
 The ArtCraft name, wordmark and logos in [`docs/brand/`](docs/brand/) are trademarks of the
 ArtCraft Team and are not covered by this license. They may be used only unmodified, and only as
