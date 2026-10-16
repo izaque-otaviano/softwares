@@ -1,5 +1,6 @@
-//! The app icon: rasterises the master `assets/app-icon/figcraft.svg` (the chameleon, see
-//! `assets/app-icon/README.md`) with the `resvg` CLI (`cargo install resvg`). Writes
+//! The app icon: rasterises the master `assets/app-icon/figcraft.svg` (the owner's chameleon logo,
+//! see `assets/app-icon/README.md`) with the `resvg` CLI (`cargo install resvg`), and the sizes up
+//! to 32 px from `figcraft-small.svg` (the same art with a pixel-snapped border). Writes
 //! figcraft-<size>.png (macOS grid), the hicolor theme and figcraft.ico. The outputs are
 //! committed, so building and packaging never need `resvg`.
 
@@ -9,6 +10,8 @@ use std::process::Command;
 const VIEW_BOX: &str = r#"viewBox="0 0 512 512""#;
 /// macOS: the 512-unit tile padded onto Apple's 824/1024 icon grid (transparent margin).
 const MAC_VIEW_BOX: &str = r#"viewBox="-62 -62 636 636""#;
+/// At and below this size the renders come from `figcraft-small.svg`.
+const SMALL_MAX: u32 = 32;
 
 fn render(svg: &Path, size: u32, out: &Path) -> bool {
     let s = size.to_string();
@@ -21,28 +24,39 @@ fn render(svg: &Path, size: u32, out: &Path) -> bool {
 
 pub fn generate(root: &Path) -> bool {
     let dir = root.join("assets/app-icon");
-    let Ok(master) = std::fs::read_to_string(dir.join("figcraft.svg")) else {
-        eprintln!("icon: cannot read {}", dir.join("figcraft.svg").display());
-        return false;
-    };
-    if !master.contains(VIEW_BOX) {
-        eprintln!("icon: expected {VIEW_BOX} in figcraft.svg");
-        return false;
-    }
     let tmp = root.join("target/icon");
-    // Windows and Linux show the tile edge to edge, rounded corners and all: the master as it is.
-    let (mac, tile) = (tmp.join("mac.svg"), dir.join("figcraft.svg"));
-    let mut ok = std::fs::create_dir_all(&tmp).is_ok() && std::fs::write(&mac, master.replacen(VIEW_BOX, MAC_VIEW_BOX, 1)).is_ok();
-    if !ok {
+    if std::fs::create_dir_all(&tmp).is_err() {
         eprintln!("icon: cannot write {}", tmp.display());
         return false;
     }
+    // Windows and Linux show the tile edge to edge: each master as it is. macOS gets a padded copy.
+    let mut tiles = Vec::new();
+    for name in ["figcraft.svg", "figcraft-small.svg"] {
+        let Ok(svg) = std::fs::read_to_string(dir.join(name)) else {
+            eprintln!("icon: cannot read {}", dir.join(name).display());
+            return false;
+        };
+        if !svg.contains(VIEW_BOX) {
+            eprintln!("icon: expected {VIEW_BOX} in {name}");
+            return false;
+        }
+        let mac = tmp.join(format!("mac-{name}"));
+        if std::fs::write(&mac, svg.replacen(VIEW_BOX, MAC_VIEW_BOX, 1)).is_err() {
+            eprintln!("icon: cannot write {}", mac.display());
+            return false;
+        }
+        tiles.push((dir.join(name), mac));
+    }
+    let [(big_tile, big_mac), (small_tile, small_mac)] = &tiles[..] else { return false };
+    let tile = |size: u32| if size <= SMALL_MAX { small_tile } else { big_tile };
+    let mac = |size: u32| if size <= SMALL_MAX { small_mac } else { big_mac };
+    let mut ok = true;
     for size in [16u32, 32, 48, 64, 128, 256, 512, 1024] {
-        ok &= render(&mac, size, &dir.join(format!("figcraft-{size}.png")));
+        ok &= render(mac(size), size, &dir.join(format!("figcraft-{size}.png")));
         if size <= 512 {
             let hd = dir.join(format!("hicolor/{size}x{size}/apps"));
             let _ = std::fs::create_dir_all(&hd);
-            ok &= render(&tile, size, &hd.join("ai.storyteller.figcraft.png"));
+            ok &= render(tile(size), size, &hd.join("ai.storyteller.figcraft.png"));
         }
     }
     // Windows .ico (PNG-compressed entries).
@@ -51,7 +65,7 @@ pub fn generate(root: &Path) -> bool {
         .iter()
         .filter_map(|s| {
             let png = tmp.join(format!("ico-{s}.png"));
-            render(&tile, *s, &png).then(|| std::fs::read(png).ok()).flatten()
+            render(tile(*s), *s, &png).then(|| std::fs::read(png).ok()).flatten()
         })
         .collect();
     ok &= pngs.len() == sizes.len();
@@ -68,7 +82,7 @@ pub fn generate(root: &Path) -> bool {
         ico.extend_from_slice(png);
     }
     ok &= std::fs::write(dir.join("figcraft.ico"), ico).is_ok();
-    // The lighter trace keeps the scalable theme icon cheap to render.
+    // Desktops draw the scalable theme icon mostly at panel and menu sizes: the small variant.
     let sd = dir.join("hicolor/scalable/apps");
     let _ = std::fs::create_dir_all(&sd);
     ok &= std::fs::copy(dir.join("figcraft-small.svg"), sd.join("ai.storyteller.figcraft.svg")).is_ok();

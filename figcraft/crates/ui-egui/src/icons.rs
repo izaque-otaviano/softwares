@@ -4,6 +4,9 @@
 //! The grid is pixel-exact at 16 px: 1-unit strokes sit on half coordinates (pixel centres) and
 //! fills on whole ones. Larger boxes scale by whole steps and smaller ones are hinted: straight
 //! strokes snap to the pixel grid so they stay one sharp pixel wide at any size.
+//!
+//! Two exceptions are rendered from SVG files supplied by the repository owner (`crate::brand`,
+//! listed in `ATTRIBUTION.md`): `Logo` (the app icon) and `Document` (the file mark).
 
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
@@ -151,7 +154,10 @@ icons! {
     /// The prototype preview pane: a small window playing a frame.
     Preview,
     Section2,
+    /// The FigCraft logo, in its own colours (the app icon; `crate::brand`).
     Logo,
+    /// A FigCraft document: a pen nib (tabs, open and recent files; `crate::brand`).
+    Document,
     /// Ignore auto layout: a layer pinned at an offset inside its frame.
     AbsolutePosition,
     /// A component slot: a dashed frame with a plus, a place that takes any content.
@@ -378,6 +384,12 @@ impl P<'_> {
 
 /// Paint `icon` centred in `rect` (a 16-unit glyph scaled to fit) in `color`.
 pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
+    match icon {
+        // The logo keeps its own colours; the document mark takes `color`.
+        Icon::Logo => return crate::brand::paint(painter, rect, crate::brand::Art::Logo, Color32::WHITE),
+        Icon::Document => return crate::brand::paint(painter, rect, crate::brand::Art::Document, color),
+        _ => {}
+    }
     let ppp = painter.ctx().pixels_per_point();
     let px = 1.0 / ppp;
     // Physical pixels per grid unit: whole steps from 16 px up (quarter steps on fractional
@@ -1039,18 +1051,8 @@ fn draw(p: &P, icon: Icon) {
             p.line(8.0, 6.0, 8.0, 9.5);
             p.dot(8.0, 11.5, 0.9);
         }
-        Logo => {
-            // FigCraft's own mark: the curled tail of the chameleon on the app icon. One bold
-            // stroke: a shaft along the bottom, then three half turns, each tighter than the last.
-            let mut tail = vec![(13.75, 13.0)];
-            tail.extend(arc_pts(7.25, 8.0, 5.0, FRAC_PI_2, 3.0 * FRAC_PI_2));
-            tail.extend(arc_pts(7.25, 6.5, 3.5, 3.0 * FRAC_PI_2, 5.0 * FRAC_PI_2));
-            tail.extend(arc_pts(7.25, 8.25, 1.75, FRAC_PI_2, 3.0 * FRAC_PI_2));
-            let v: Vec<Pos2> = tail.iter().map(|&(x, y)| p.raw(x, y)).collect();
-            p.painter.add(Shape::line(v, Stroke::new(1.7 * p.s, p.color)));
-            p.dot(13.75, 13.0, 0.85);
-            p.dot(7.25, 6.5, 0.85);
-        }
+        // Painted from their SVG files by `paint`.
+        Logo | Document => {}
     }
 }
 

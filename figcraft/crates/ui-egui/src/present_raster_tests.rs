@@ -481,3 +481,26 @@ fn video_snapshots() {
 pub(crate) fn demo_for_tests() -> Rec {
     demo().0
 }
+
+/// The logo and the document mark where the app shows them, at 2× (HiDPI): the left rail and the
+/// tab bar, the Home sidebar and the About window.
+/// `FIGCRAFT_SNAPSHOTS=/some/dir cargo test -p figcraft-ui-egui --lib brand_snapshots`.
+#[test]
+fn brand_snapshots() {
+    let Some(dir) = gallery_dir() else { return };
+    let mut s = Session::new();
+    s.execute("file.new", &serde_json::json!({"name": "ECONOMIA FARMACÊUTICA"})).unwrap();
+    let mut r = Rec::new(s);
+    r.u.ctx.set_pixels_per_point(2.0);
+    r.frames(4);
+    r.save_region(&dir.join("editor-tabs-rail.png"), Rect::from_min_size(Pos2::ZERO, vec2(720.0, 160.0)), 2);
+    r.u.app.ui.home = true;
+    r.frames(4);
+    r.save_region(&dir.join("home.png"), Rect::from_min_size(Pos2::ZERO, vec2(1440.0, 900.0)), 1);
+    r.save_region(&dir.join("home-sidebar.png"), Rect::from_min_size(Pos2::ZERO, vec2(720.0, 360.0)), 2);
+    r.u.app.ui.home = false;
+    r.u.app.ui.about = true;
+    // (The window fades in.)
+    r.frames(40);
+    r.save_region(&dir.join("about.png"), Rect::from_min_size(Pos2::ZERO, vec2(1440.0, 900.0)), 2);
+}

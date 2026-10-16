@@ -93,7 +93,7 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
             icons::paint(
                 ui.painter(),
                 Rect::from_center_size(pos2(r.min.x + 18.0, r.center().y), vec2(14.0, 14.0)),
-                Icon::Logo,
+                Icon::Document,
                 crate::theme::ACCENT,
             );
             // The unsaved-changes dot follows the name on screen, whichever way the name reads.
