@@ -108,7 +108,7 @@ fn header_with_plus(ui: &mut Ui, title: &str, tip: &str) -> egui::Response {
     row(ui, 36.0, |ui| {
         ui.label(egui::RichText::new(title).font(semibold(11.0)).color(t.text));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            plus = Some(icons::button(ui, Icon::Plus, 24.0, false, tip));
+            plus = Some(icons::button(ui, Icon::Plus, widgets::button_size(), false, tip));
         });
     });
     match plus {
@@ -459,7 +459,7 @@ fn overrides_ui(app: &mut FigApp, ui: &mut Ui, n: &Node) {
     row(ui, 36.0, |ui| {
         ui.label(egui::RichText::new(tr("Overrides")).font(semibold(11.0)).color(t.text));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if icons::button(ui, Icon::Reset, 24.0, false, tr("Reset all overrides on this layer")).clicked() {
+            if icons::button(ui, Icon::Reset, widgets::button_size(), false, tr("Reset all overrides on this layer")).clicked() {
                 app.run("component.resetOverride", json!({"id": n.id}));
             }
         });
@@ -517,7 +517,7 @@ fn instance_ui(app: &mut FigApp, ui: &mut Ui, doc: &Document, n: &Node) {
     row(ui, 36.0, |ui| {
         ui.label(egui::RichText::new(if nested { tr("Nested instance") } else { tr("Instance") }).font(semibold(11.0)).color(t.text));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let more = icons::button(ui, Icon::Dots, 24.0, false, tr("More instance actions"));
+            let more = icons::button(ui, Icon::Dots, widgets::button_size(), false, tr("More instance actions"));
             menu_popup(&more).width(220.0).show(|ui| {
                 if !missing && menu_item(ui, tr("Go to main component"), "") {
                     app.run("component.goToMain", json!({"id": id}));
@@ -540,10 +540,13 @@ fn instance_ui(app: &mut FigApp, ui: &mut Ui, doc: &Document, n: &Node) {
                     ui.close();
                 }
             });
-            if !nested && icons::button(ui, Icon::Detach, 24.0, false, crate::shortcuts::tip(tr("Detach instance"), "component.detach")).clicked() {
+            if !nested
+                && icons::button(ui, Icon::Detach, widgets::button_size(), false, crate::shortcuts::tip(tr("Detach instance"), "component.detach"))
+                    .clicked()
+            {
                 app.run("component.detach", json!({"ids": [id]}));
             }
-            if icons::button(ui, Icon::Reset, 24.0, false, tr("Reset all changes")).clicked() {
+            if icons::button(ui, Icon::Reset, widgets::button_size(), false, tr("Reset all changes")).clicked() {
                 app.run("component.resetInstance", json!({"ids": [id]}));
             }
         });
@@ -571,10 +574,10 @@ fn instance_ui(app: &mut FigApp, ui: &mut Ui, doc: &Document, n: &Node) {
             });
         });
         if missing {
-            if icons::button(ui, Icon::Component, 24.0, false, tr("Restore main component")).clicked() {
+            if icons::button(ui, Icon::Component, widgets::button_size(), false, tr("Restore main component")).clicked() {
                 app.run("component.restoreMain", json!({"id": id}));
             }
-        } else if icons::button(ui, Icon::Component, 24.0, false, tr("Go to main component")).clicked() {
+        } else if icons::button(ui, Icon::Component, widgets::button_size(), false, tr("Go to main component")).clicked() {
             app.run("component.goToMain", json!({"id": id}));
         }
     });

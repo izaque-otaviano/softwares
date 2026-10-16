@@ -86,7 +86,25 @@ fn effects_and_grids_drag_too_and_mixed_lists_dont() {
     for _ in 0..2 {
         u.frame(vec![]);
     }
+    // The effects are below the fold of the roomy panel: scroll to them.
+    let scroll = |u: &mut Ui, dy: f32| {
+        let wheel = Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, dy),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+        };
+        for _ in 0..3 {
+            u.frame(vec![Event::PointerMoved(Pos2::new(1300.0, 500.0)), wheel.clone()]);
+        }
+        // (The scroll glides to where it is going.)
+        for _ in 0..40 {
+            u.frame(vec![]);
+        }
+    };
+    scroll(&mut u, -120.0);
     let (a, b) = (grip(&u, "effects", 0).unwrap(), grip(&u, "effects", 1).unwrap());
+    assert!(a.y < 880.0 && b.y > 60.0, "the effect rows are on screen: {a:?} {b:?}");
     drag(&mut u, a, b - egui::vec2(0.0, 12.0));
     u.button(b - egui::vec2(0.0, 12.0), false);
     let kinds: Vec<&str> = u.app.session.doc().unwrap().node(f).unwrap().effects.iter().map(|e| e.label()).collect();

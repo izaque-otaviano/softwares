@@ -3265,7 +3265,7 @@ mod ux_tests;
 
 #[cfg(test)]
 #[path = "present_raster_tests.rs"]
-mod raster_tests;
+pub(crate) mod raster_tests;
 
 #[cfg(test)]
 #[path = "present_window_tests.rs"]

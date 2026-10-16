@@ -1067,7 +1067,6 @@ status = "draft — needs native review"
 "Reset to the inherited value" = "Redefinir para o valor herdado"
 "Resize by the nudge amount" = "Redimensionar pelo valor do deslocamento"
 "Resize frames to the device's screen (or the window without a device): their constraints and auto layout respond" = "Redimensiona os quadros para a tela do dispositivo (ou para a janela, sem dispositivo): as restrições e o layout automático deles se adaptam"
-"Resize to fit" = "Redimensionar para caber"
 "Resolve" = "Resolver"
 "Resolve change" = "Resolver alteração"
 "Resolved" = "Resolvido"
@@ -1604,6 +1603,10 @@ status = "draft — needs native review"
 "Distance (negative: inwards)" = "Distância (negativa: para dentro)"
 "Type a web address" = "Digite um endereço da web"
 "Type a distance other than 0" = "Digite uma distância diferente de 0"
+"Flow" = "Fluxo"
+"Freeform" = "Livre"
+"Selection colors" = "Cores da seleção"
+
 
 [commands]
 "align.bottom" = "Alinhar embaixo"

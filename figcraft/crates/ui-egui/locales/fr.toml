@@ -1050,7 +1050,6 @@ status = "draft — needs native review"
 "Reset to the inherited value" = "Revenir à la valeur héritée"
 "Resize by the nudge amount" = "Redimensionner du pas de décalage"
 "Resize frames to the device's screen (or the window without a device): their constraints and auto layout respond" = "Redimensionne les cadres à l’écran de l’appareil (ou à la fenêtre sans appareil) : leurs contraintes et leur mise en page auto s’adaptent"
-"Resize to fit" = "Redimensionner au contenu"
 "Resolve" = "Résoudre"
 "Resolve change" = "Résoudre la modification"
 "Resolved" = "Résolu"
@@ -1552,6 +1551,10 @@ status = "draft — needs native review"
 "⌘ click" = "⌘ clic"
 "⌘ scroll" = "⌘ défilement"
 "⌥ drag" = "⌥ glisser"
+"Flow" = "Flux"
+"Freeform" = "Libre"
+"Selection colors" = "Couleurs de la sélection"
+
 
 [commands]
 "align.bottom" = "Aligner en bas"

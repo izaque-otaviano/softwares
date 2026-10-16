@@ -211,7 +211,7 @@ pub fn chip(app: &mut FigApp, ui: &mut Ui, doc: &Document, ids: &[NodeId], slot:
     let mut open_it = false;
     crate::right::row(ui, 32.0, |ui| {
         let w = (ui.available_width() - 32.0).max(40.0);
-        let (r, resp) = ui.allocate_exact_size(vec2(w, widgets::FIELD_H), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(w, widgets::field_h()), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
         }
@@ -222,7 +222,7 @@ pub fn chip(app: &mut FigApp, ui: &mut Ui, doc: &Document, ids: &[NodeId], slot:
         let tip = if mixed { tr("The selection uses several text styles: click to apply one") } else { tr("Change style") };
         open_it = resp.on_hover_text(tip).clicked();
         let detach = if mixed { tr("Detach styles") } else { tr("Detach style") };
-        if icons::button(ui, Icon::Detach, 24.0, false, detach).clicked() {
+        if icons::button(ui, Icon::Detach, widgets::button_size(), false, detach).clicked() {
             app.run("style.detach", json!({"ids": ids, "which": slot.key()}));
         }
     });
@@ -302,7 +302,7 @@ fn menu_icon(ui: &mut Ui, rect: Rect, icon: Icon, tip: &str, on: bool) -> Respon
 fn menu_button(ui: &mut Ui, label: &str) -> Response {
     let t = Tokens::get(ui.ctx());
     let galley = ui.painter().layout_no_wrap(label.to_string(), regular(11.0), t.menu_text);
-    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 20.0, widgets::FIELD_H), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 20.0, widgets::field_h()), Sense::click());
     ui.painter().rect_filled(rect, CornerRadius::same(5), if resp.hovered() { t.menu_hover } else { Color32::TRANSPARENT });
     ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.menu_dim), egui::StrokeKind::Inside);
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, regular(11.0), t.menu_text);

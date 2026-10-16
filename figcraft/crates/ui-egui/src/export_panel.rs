@@ -15,7 +15,7 @@ use crate::i18n::{tr, trf, trn};
 use crate::icons::{self, Icon};
 use crate::right::{common, menu_item, menu_popup, row};
 use crate::theme::{Tokens, regular};
-use crate::widgets::{self, FIELD_H};
+use crate::widgets;
 
 /// Re-render the preview at most this often (seconds) while the document changes.
 const PREVIEW_REFRESH: f64 = 0.3;
@@ -47,9 +47,6 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
     if jobs.is_empty() {
         return;
     }
-    if let Some(first) = jobs.first().map(|j| j.id) {
-        preview(app, ui, doc, first);
-    }
     let layers: BTreeSet<NodeId> = jobs.iter().map(|j| j.id).collect();
     let label = match (layers.len(), layers.first().and_then(|i| doc.node(*i))) {
         (1, Some(n)) => trf("Export {name}", &[("name", &n.name)]),
@@ -58,27 +55,26 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
     if wide_button(ui, &label) {
         export_layers(app, sel, false);
     }
+    if let Some(first) = jobs.first().map(|j| j.id) {
+        preview(app, ui, doc, first);
+    }
 }
 
 /// One export setting: size (typed or picked), suffix, format, advanced options and remove; a
 /// PDF's print settings under it.
 fn setting_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, e: &ExportSetting) {
     row(ui, 32.0, |ui| {
-        // Tighter spacing so the advanced options and remove buttons fit beside the fields.
+        // Scale, format, settings, remove: tighter spacing so they all fit.
         ui.spacing_mut().item_spacing.x = 4.0;
-        let (size_w, format_w, button, gap) = (52.0, 54.0, 22.0, ui.spacing().item_spacing.x);
-        let suffix_w = (ui.available_width() - size_w - format_w - button * 2.0 - gap * 4.0).max(32.0);
+        let (button, gap) = (widgets::button_size(), ui.spacing().item_spacing.x);
+        let size_w = ((ui.available_width() - button * 2.0 - gap * 3.0) * 0.52).floor().max(48.0);
+        let format_w = (ui.available_width() - size_w - button * 2.0 - gap * 3.0).max(48.0);
         let presets: Vec<String> =
             ExportSize::SCALES.iter().map(|value| ExportSize::Scale { value: *value }.label()).chain(["512w".into(), "512h".into()]).collect();
         if let Some(s) = widgets::combo_field(ui, Id::new(("export_size", i)), &e.size.label(), size_w, &presets)
             && ExportSize::parse(&s) != Some(e.size)
         {
             app.run("export.update", json!({"ids": ids, "index": i, "size": s}));
-        }
-        if let Some(sfx) = widgets::text_field(ui, Id::new(("export_suffix", i)), &e.suffix, suffix_w, tr("Suffix"))
-            && sfx != e.suffix
-        {
-            app.run("export.update", json!({"ids": ids, "index": i, "suffix": sfx}));
         }
         let resp = widgets::dropdown(ui, e.format.label(), format_w, None);
         menu_popup(&resp).show(|ui| {
@@ -95,6 +91,13 @@ fn setting_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, e: &Expo
             .width(216.0)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
+                // The file name's suffix lives with the other settings.
+                widgets::sublabels(ui, tr("Suffix"), None);
+                if let Some(sfx) = widgets::text_field(ui, Id::new(("export_suffix", i)), &e.suffix, ui.available_width().min(200.0), tr("Suffix"))
+                    && sfx != e.suffix
+                {
+                    app.run("export.update", json!({"ids": ids, "index": i, "suffix": sfx}));
+                }
                 if let Some(mut params) = advanced_options(ui, e) {
                     params["ids"] = json!(ids);
                     params["index"] = json!(i);
@@ -135,7 +138,7 @@ fn print_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, p: &PrintS
     row(ui, 26.0, |ui| {
         let open_id = Id::new(("export_print", i));
         let open = egui::Popup::is_id_open(ui.ctx(), open_id);
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), FIELD_H), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), widgets::field_h()), Sense::click());
         if resp.hovered() || open {
             ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
         }
@@ -238,7 +241,7 @@ fn preview(app: &mut FigApp, ui: &mut Ui, doc: &Document, id: NodeId) {
     let t = Tokens::get(ui.ctx());
     let mut open = app.ui.export_thumb;
     row(ui, 28.0, |ui| {
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), FIELD_H), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), widgets::field_h()), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
         }
@@ -293,7 +296,7 @@ pub(crate) fn wide_button(ui: &mut Ui, label: &str) -> bool {
     let mut clicked = false;
     row(ui, 40.0, |ui| {
         let w = ui.available_width();
-        let (r, resp) = ui.allocate_exact_size(vec2(w, FIELD_H), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(w, widgets::field_h()), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
         }

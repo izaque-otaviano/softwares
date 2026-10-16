@@ -1,6 +1,6 @@
 //! The right panel: Design, Prototype and Inspect tabs.
 
-use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 use figcraft_color::{BlendMode, Paint, PaintKind};
 use figcraft_doc::*;
 use figcraft_engine::cmd::lists::moved_index;
@@ -12,7 +12,7 @@ use crate::icons::{self, Icon};
 use crate::list_drag::{ListDrag, move_flags};
 use crate::style_picker::{self, StyleSlot};
 use crate::theme::{ACCENT, Tokens, regular, semibold};
-use crate::widgets::{self, Edit, FIELD_H, FieldEdit, Lead, PAD};
+use crate::widgets::{self, Edit, FieldEdit, Lead, PAD};
 use crate::{FigApp, RightTab};
 
 /// Common value of `f` across `ids` (None when mixed or empty).
@@ -81,6 +81,7 @@ impl FigApp {
 pub fn right_panel(app: &mut FigApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
+    let panel = ui.max_rect();
     // Top bar: people (you and the others in a live session), present, share.
     let (top, _) = ui.allocate_exact_size(vec2(w, 48.0), Sense::hover());
     // As wide as its label needs (longer in some languages).
@@ -207,6 +208,34 @@ pub fn right_panel(app: &mut FigApp, ui: &mut Ui) {
         ui.add_space(80.0);
         a11y::scroll_focus(&mut app.ui.nav, ui);
     });
+    help_button(app, ui, panel);
+}
+
+/// The round help button floating at the foot of the panel: getting started, the keyboard
+/// shortcuts, the help page and About.
+pub(crate) fn help_button(app: &mut FigApp, ui: &mut Ui, panel: Rect) {
+    let t = Tokens::get(ui.ctx());
+    let r = Rect::from_center_size(pos2(panel.max.x - 14.0 - 16.0, panel.max.y - 14.0 - 16.0), vec2(32.0, 32.0));
+    let resp = ui.interact(r, ui.id().with("help"), Sense::click()).tip(tr("Help and resources"));
+    a11y::menu_button(&resp, tr("Help"), a11y::menu_open(&resp));
+    let c = r.center();
+    ui.painter().circle_filled(c + vec2(0.0, 1.5), 17.0, t.shadow.gamma_multiply(0.5));
+    ui.painter().circle_filled(c, 16.0, if resp.hovered() { t.hover } else { t.panel });
+    ui.painter().circle_stroke(c, 16.0, Stroke::new(1.0, t.border_strong));
+    ui.painter().text(c, Align2::CENTER_CENTER, "?", semibold(14.0), t.text);
+    menu_popup(&resp).show(|ui| {
+        for (l, c) in [
+            (tr("Getting started"), "help.gettingStarted"),
+            (tr("Keyboard shortcuts"), "help.shortcuts"),
+            (tr("Help page"), "help.page"),
+            (tr("About FigCraft"), "help.about"),
+        ] {
+            if menu_item(ui, l, crate::shortcuts::shortcut(c).unwrap_or("")) {
+                app.run(c, json!({}));
+                ui.close();
+            }
+        }
+    });
 }
 
 /// The smallest width a popup menu is measured in (see [`menu_popup`]).
@@ -315,7 +344,9 @@ pub(crate) fn row(ui: &mut Ui, h: f32, add: impl FnOnce(&mut Ui)) {
 
 /// [`row`], returning the area the row takes.
 pub(crate) fn row_rect(ui: &mut Ui, h: f32, add: impl FnOnce(&mut Ui)) -> Rect {
-    block(ui, h, (h - FIELD_H) / 2.0, add)
+    // The usual 32 px row is a field and 4 px above and below it, whatever the field's height.
+    let h = if (h - widgets::ROW_H).abs() < 0.1 { widgets::field_h() + 8.0 } else { h };
+    block(ui, h, (h - widgets::field_h()) / 2.0, add)
 }
 
 /// A panel row `h` tall whose content is inset `inset_y` from its top and bottom (for content
@@ -331,6 +362,10 @@ pub(crate) fn block(ui: &mut Ui, h: f32, inset_y: f32, add: impl FnOnce(&mut Ui)
 }
 
 fn design(app: &mut FigApp, ui: &mut Ui) {
+    widgets::roomy(|| design_roomy(app, ui));
+}
+
+fn design_roomy(app: &mut FigApp, ui: &mut Ui) {
     let Ok(ds) = app.session.ds() else { return };
     // The panel shows the document itself, not a live text preview over it.
     let doc = ds.text_preview.clone().unwrap_or_else(|| ds.doc.clone());
@@ -380,11 +415,15 @@ fn design(app: &mut FigApp, ui: &mut Ui) {
     widgets::separator(ui);
     effects(app, ui, &doc, &sel);
     widgets::separator(ui);
+    if crate::selection_colors::section(app, ui, &doc, &sel) {
+        widgets::separator(ui);
+    }
     if sel.iter().all(|i| doc.node(*i).is_some_and(|n| n.kind.is_frame_like())) {
         grids(app, ui, &doc, &sel);
         widgets::separator(ui);
     }
     crate::export_panel::section(app, ui, &doc, &sel);
+    crate::section_panel::status(app, ui, &doc, &sel);
 }
 
 fn page_section(app: &mut FigApp, ui: &mut Ui, doc: &Document) {
@@ -490,15 +529,6 @@ fn header(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
         menu_popup(&resp).width(180.0).show(|ui| kind_items(app, ui, false));
     }
     if is_frame {
-        let sr = Rect::from_min_size(pos2(lr.max.x + 4.0, r.center().y - 12.0), vec2(24.0, 24.0));
-        let sresp = ui.interact(sr, ui.id().with("swap_orient"), Sense::click()).tip(tr("Swap orientation"));
-        if sresp.hovered() {
-            ui.painter().rect_filled(sr, CornerRadius::same(5), t.hover);
-        }
-        icons::paint(ui.painter(), sr.shrink(5.0), Icon::Rotate, t.icon);
-        if sresp.clicked() {
-            app.run("frame.swapOrientation", json!({"ids": sel}));
-        }
         let ids: Vec<NodeId> = sel.to_vec();
         menu_popup(&resp).width(260.0).show(|ui| {
             egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
@@ -518,58 +548,63 @@ fn header(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
             });
         });
     }
-    // Quick actions on the right.
+    // Quick actions on the right: Dev Mode, create a component, and the rest in a menu.
+    let side = widgets::button_size();
     let mut x = r.max.x - 8.0;
-    let actions = [
-        (Icon::Component, tr("Create component"), "component.create"),
-        (Icon::Mask, tr("Use as mask"), "object.mask"),
-        (Icon::Union, tr("Boolean groups"), "bool.union"),
-    ];
+    let mut quick = |ui: &mut Ui, key: &str, icon: Icon, tip: &str, active: bool| -> Response {
+        let br = Rect::from_min_size(pos2(x - side, r.center().y - side / 2.0), vec2(side, side));
+        x -= side + 2.0;
+        let bresp = ui.interact(br, ui.id().with(("qa", key)), Sense::click()).tip(tip);
+        if bresp.hovered() || active {
+            ui.painter().rect_filled(br, CornerRadius::same(5), if active { t.selected_row } else { t.hover });
+        }
+        icons::paint(ui.painter(), br.shrink(6.0), icon, if active { t.accent_text } else { t.icon });
+        bresp
+    };
+    let more = quick(ui, "more", Icon::Dots, tr("More"), false);
+    let component = quick(ui, "component.create", Icon::Component, crate::shortcuts::tip(tr("Create component"), "component.create"), false);
+    let dev = quick(ui, "view.devMode", Icon::Code, crate::shortcuts::tip(tr("Dev Mode"), "view.devMode"), false);
+    if component.clicked() {
+        app.run("component.create", json!({}));
+    }
+    if dev.clicked() {
+        app.run("view.devMode", json!({}));
+    }
     // Layers in boolean groups, or one boolean group: the operation they use (checked in the menu).
     let current = figcraft_engine::booleans::shown_op(doc, sel);
-    for (icon, label, cmd) in actions.into_iter().rev() {
-        let br = Rect::from_min_size(pos2(x - 24.0, r.center().y - 12.0), vec2(24.0, 24.0));
-        let tip = if cmd == "bool.union" { label } else { crate::shortcuts::tip(label, cmd) };
-        let bresp = ui.interact(br, ui.id().with(("qa", cmd)), Sense::click()).tip(tip);
-        if bresp.hovered() {
-            ui.painter().rect_filled(br, CornerRadius::same(5), t.hover);
+    menu_popup(&more).width(220.0).show(|ui| {
+        if menu_item(ui, tr("Use as mask"), crate::shortcuts::shortcut("object.mask").unwrap_or("")) {
+            app.run("object.mask", json!({}));
+            ui.close();
         }
-        // The boolean button shows the operation in use.
-        let icon = match (cmd, current) {
-            ("bool.union", Some(op)) => crate::layers::op_icon(op),
-            _ => icon,
-        };
-        icons::paint(ui.painter(), br.shrink(5.0), icon, t.icon);
-        if cmd == "bool.union" {
-            menu_popup(&bresp).width(180.0).show(|ui| {
-                for (op, c) in [
-                    (BoolOp::Union, "bool.union"),
-                    (BoolOp::Subtract, "bool.subtract"),
-                    (BoolOp::Intersect, "bool.intersect"),
-                    (BoolOp::Exclude, "bool.exclude"),
-                ] {
-                    let key = crate::shortcuts::shortcut(c).unwrap_or("");
-                    let picked = match current {
-                        Some(cur) => menu_check(ui, cur == op, tr(op.label()), key),
-                        None => menu_item(ui, tr(op.label()), key),
-                    };
-                    if picked {
-                        app.run(c, json!({}));
-                        ui.close();
-                    }
-                }
-                let key = crate::shortcuts::shortcut("vector.flatten").unwrap_or("");
-                let flatten = if current.is_some() { menu_item_beside_checks(ui, tr("Flatten"), key) } else { menu_item(ui, tr("Flatten"), key) };
-                if flatten {
-                    app.run("vector.flatten", json!({}));
-                    ui.close();
-                }
-            });
-        } else if bresp.clicked() {
-            app.run(cmd, json!({}));
+        if is_frame && menu_item(ui, tr("Swap orientation"), crate::shortcuts::shortcut("frame.swapOrientation").unwrap_or("")) {
+            app.run("frame.swapOrientation", json!({"ids": sel}));
+            ui.close();
         }
-        x -= 26.0;
-    }
+        ui.separator();
+        for (op, c) in [
+            (BoolOp::Union, "bool.union"),
+            (BoolOp::Subtract, "bool.subtract"),
+            (BoolOp::Intersect, "bool.intersect"),
+            (BoolOp::Exclude, "bool.exclude"),
+        ] {
+            let key = crate::shortcuts::shortcut(c).unwrap_or("");
+            let picked = match current {
+                Some(cur) => menu_check(ui, cur == op, tr(op.label()), key),
+                None => menu_item(ui, tr(op.label()), key),
+            };
+            if picked {
+                app.run(c, json!({}));
+                ui.close();
+            }
+        }
+        let key = crate::shortcuts::shortcut("vector.flatten").unwrap_or("");
+        let flatten = if current.is_some() { menu_item_beside_checks(ui, tr("Flatten"), key) } else { menu_item(ui, tr("Flatten"), key) };
+        if flatten {
+            app.run("vector.flatten", json!({}));
+            ui.close();
+        }
+    });
     crate::component_panel::instance_section(app, ui, doc, sel);
 }
 
@@ -605,8 +640,9 @@ fn position_fields(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]
         if let Some(i) = widgets::segmented(ui, &items[3..], None, w) {
             app.run(cmds[i + 3], json!({"ids": ids}));
         }
-        if sel.len() > 2 {
-            let more = icons::button(ui, Icon::DistributeH, 24.0, false, tr("Distribute and tidy"));
+        // The distribute button is always there; it works from three layers up.
+        ui.add_enabled_ui(sel.len() > 2, |ui| {
+            let more = icons::button(ui, Icon::DistributeH, widgets::button_size(), false, tr("Distribute and tidy"));
             menu_popup(&more).show(|ui| {
                 for (l, c) in [
                     (tr("Distribute horizontal spacing"), "distribute.horizontal"),
@@ -619,7 +655,7 @@ fn position_fields(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]
                     }
                 }
             });
-        }
+        });
     });
     // In the frame's space: groups have none of their own.
     // What each field shows of a layer (a relative edit of mixed values starts from it).
@@ -641,7 +677,7 @@ fn position_fields(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]
             if icons::button(
                 ui,
                 Icon::AbsolutePosition,
-                24.0,
+                widgets::button_size(),
                 on,
                 if on { tr("Use auto layout") } else { tr("Ignore auto layout (absolute position)") },
             )
@@ -805,16 +841,16 @@ fn appearance(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
         ui,
         tr("Appearance"),
         &[
-            (if visible { Icon::Eye } else { Icon::EyeOff }, crate::shortcuts::tip(tr("Show/Hide"), "object.toggleVisible")),
             (Icon::Variable, tr("Apply variable to visibility")),
+            (if visible { Icon::Eye } else { Icon::EyeOff }, crate::shortcuts::tip(tr("Show/Hide"), "object.toggleVisible")),
             (Icon::Blend, tr("Blend mode")),
         ],
         false,
     );
-    if hdr == Some(0) {
+    if hdr == Some(1) {
         app.run("object.toggleVisible", json!({"ids": ids}));
     }
-    if hdr == Some(1) {
+    if hdr == Some(0) {
         crate::variable_ui::open_at_pointer(ui, &ids, "visible", VariableType::Boolean);
     }
     if hdr == Some(2) {
@@ -865,7 +901,7 @@ fn appearance(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
             let radius_of = |n: &Node| n.corners.uniform().unwrap_or_else(|| n.corners.radii.iter().copied().fold(0.0, f64::max));
             app.field_of(&ids, "cornerRadius", e, radius_of, |v| json!(v.max(0.0)));
             let open = ui.data(|d| d.get_temp::<bool>(Id::new("indep_corners"))).unwrap_or(false);
-            if indep_ok && icons::button(ui, Icon::IndependentCorners, 24.0, open, tr("Individual corners")).clicked() {
+            if indep_ok && icons::button(ui, Icon::IndependentCorners, widgets::button_size(), open, tr("Individual corners")).clicked() {
                 ui.data_mut(|d| d.insert_temp(Id::new("indep_corners"), !open));
             }
         }
@@ -984,7 +1020,7 @@ fn variable_modes(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId])
             None => c.name.clone(),
         };
         row(ui, 32.0, |ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(name_w, FIELD_H), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(vec2(name_w, widgets::field_h()), Sense::hover());
             let name = widgets::elide(ui, &c.name, name_w);
             ui.painter().text(pos2(rect.min.x, rect.center().y), Align2::LEFT_CENTER, &name, regular(11.0), t.text);
             if name != c.name || r.library.is_some() {
@@ -1040,7 +1076,7 @@ fn range_fill(app: &mut FigApp, ui: &mut Ui, doc: &Document, id: NodeId, start: 
     });
     row(ui, 32.0, |ui| {
         let w = ui.available_width() - 28.0;
-        let (r, _) = ui.allocate_exact_size(vec2(w, FIELD_H), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(w, widgets::field_h()), Sense::hover());
         ui.painter().rect_filled(r, CornerRadius::same(5), t.field);
         let sw = Rect::from_min_size(pos2(r.min.x + 4.0, r.center().y - 8.0), vec2(16.0, 16.0));
         let text_r = Rect::from_min_max(pos2(sw.max.x + 8.0, r.min.y), pos2(r.max.x - 4.0, r.max.y));
@@ -1070,7 +1106,7 @@ fn range_fill(app: &mut FigApp, ui: &mut Ui, doc: &Document, id: NodeId, start: 
             }
         }
         // Back to the layer's fill.
-        if icons::button(ui, Icon::Detach, 24.0, false, tr("Use the layer's fill")).clicked() {
+        if icons::button(ui, Icon::Detach, widgets::button_size(), false, tr("Use the layer's fill")).clicked() {
             app.run("text.style", json!({"id": id, "start": start, "end": end, "textFills": null}));
         }
     });
@@ -1163,7 +1199,7 @@ fn paints(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId], fills: 
             );
             app.field_of(&ids, "strokeWeight", e, |n| n.stroke.weight, |v| json!(v.max(0.0)));
             if sided {
-                let sides_btn = icons::button(ui, Icon::IndependentCorners, 24.0, false, tr("Individual strokes"));
+                let sides_btn = icons::button(ui, Icon::IndependentCorners, widgets::button_size(), false, tr("Individual strokes"));
                 menu_popup(&sides_btn).show(|ui| {
                     let w = weight.unwrap_or(1.0);
                     for (l, v) in [
@@ -1183,7 +1219,7 @@ fn paints(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId], fills: 
             }
             let adv_id = Id::new("stroke_adv");
             let open = ui.data(|d| d.get_temp::<bool>(adv_id)).unwrap_or(false);
-            if icons::button(ui, Icon::Dots, 24.0, open, tr("Advanced stroke")).clicked() {
+            if icons::button(ui, Icon::Dots, widgets::button_size(), open, tr("Advanced stroke")).clicked() {
                 ui.data_mut(|d| d.insert_temp(adv_id, !open));
             }
         });
@@ -1273,7 +1309,7 @@ fn width_profile_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], profile: Opt
         });
         // Flip: the profile runs from the other end of the path.
         let custom = profile.clone().flatten();
-        let flip = icons::button(ui, Icon::FlipH, 24.0, false, tr("Flip width profile"));
+        let flip = icons::button(ui, Icon::FlipH, widgets::button_size(), false, tr("Flip width profile"));
         if flip.clicked()
             && let Some(p) = custom
         {
@@ -1525,16 +1561,19 @@ fn paint_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, p: &Paint,
     let ids = ids.to_vec();
     let cmd = if fills { "fill.set" } else { "stroke.set" };
     row_rect(ui, 32.0, |ui| {
-        let w = ui.available_width() - 56.0;
-        let (r, _) = ui.allocate_exact_size(vec2(w, FIELD_H), Sense::hover());
-        ui.painter().rect_filled(r, CornerRadius::same(5), t.field);
-        let sw = Rect::from_min_size(pos2(r.min.x + 4.0, r.center().y - 8.0), vec2(16.0, 16.0));
+        // Colour field, opacity field, visibility, remove: four to a row.
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let (op_w, side) = (52.0, widgets::button_size());
+        let w = ui.available_width() - op_w - side * 2.0 - 4.0 * 3.0;
+        let (r, _) = ui.allocate_exact_size(vec2(w, widgets::field_h()), Sense::hover());
+        ui.painter().rect_filled(r, widgets::field_radius(), t.field);
+        let sw = Rect::from_min_size(pos2(r.min.x + 8.0, r.center().y - 8.0), vec2(16.0, 16.0));
         widgets::paint_swatch(ui.painter(), sw, p);
         let sresp = ui.interact(sw.expand(2.0), Id::new(("swatch", fills, i)), Sense::click());
         if sresp.clicked() {
             app.ui.picker = Some(crate::colorpicker::PickerTarget::Paint { fills, index: i, ids: ids.clone() });
         }
-        let text_r = Rect::from_min_max(pos2(sw.max.x + 8.0, r.min.y), pos2(r.max.x - 52.0, r.max.y));
+        let text_r = Rect::from_min_max(pos2(sw.max.x + 8.0, r.min.y), pos2(r.max.x - 4.0, r.max.y));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(text_r));
         // The variable bound to this paint's colour (its key on the layers: `fill` or `fills/<i>/color`).
         let bound = app.session.doc().ok().and_then(|d| {
@@ -1575,11 +1614,7 @@ fn paint_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, p: &Paint,
                 child.painter().text(pos2(text_r.min.x, r.center().y), Align2::LEFT_CENTER, paint_label(p), regular(11.0), t.text);
             }
         }
-        let op_r = Rect::from_min_max(pos2(r.max.x - 48.0, r.min.y), r.max);
-        ui.painter().line_segment([pos2(op_r.min.x, r.min.y + 4.0), pos2(op_r.min.x, r.max.y - 4.0)], Stroke::new(1.0, t.panel));
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(op_r));
-        let e =
-            widgets::number_field(&mut child, Id::new(("pop", fills, i)), Lead::None, Some((f64::from(p.opacity) * 100.0).round()), "%", 48.0, 1.0);
+        let e = widgets::number_field(ui, Id::new(("pop", fills, i)), Lead::None, Some((f64::from(p.opacity) * 100.0).round()), "%", op_w, 1.0);
         match e {
             Some(FieldEdit::Set(v)) => {
                 app.run(cmd, json!({"ids": ids, "index": i, "opacity": (v / 100.0).clamp(0.0, 1.0)}));
@@ -1593,10 +1628,10 @@ fn paint_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, p: &Paint,
             }
             None => {}
         }
-        if icons::button(ui, if p.visible { Icon::Eye } else { Icon::EyeOff }, 24.0, false, tr("Toggle visibility")).clicked() {
+        if icons::button(ui, if p.visible { Icon::Eye } else { Icon::EyeOff }, widgets::button_size(), false, tr("Toggle visibility")).clicked() {
             app.run(cmd, json!({"ids": ids, "index": i, "visible": !p.visible}));
         }
-        if icons::button(ui, Icon::Minus, 24.0, false, tr("Remove")).clicked() {
+        if icons::button(ui, Icon::Minus, widgets::button_size(), false, tr("Remove")).clicked() {
             app.run(if fills { "fill.remove" } else { "stroke.remove" }, json!({"ids": ids, "index": i}));
         }
     })
@@ -1631,7 +1666,7 @@ fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
     for (i, e) in list.iter().enumerate().rev() {
         let mut open = effect_open(ui.ctx(), i);
         let header = row_rect(ui, 32.0, |ui| {
-            if icons::button(ui, Icon::Effects, 24.0, open, tr("Effect settings")).clicked() {
+            if icons::button(ui, Icon::Effects, widgets::button_size(), open, tr("Effect settings")).clicked() {
                 open = !open;
                 ui.data_mut(|d| d.insert_temp(Id::new((FX_OPEN, i)), open));
             }
@@ -1647,12 +1682,12 @@ fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
                     }
                 }
             });
-            if icons::button(ui, if e.visible { Icon::Eye } else { Icon::EyeOff }, 24.0, false, tr("Toggle")).clicked() {
+            if icons::button(ui, if e.visible { Icon::Eye } else { Icon::EyeOff }, widgets::button_size(), false, tr("Toggle")).clicked() {
                 let mut e2 = e.clone();
                 e2.visible = !e2.visible;
                 app.run("effect.set", json!({"ids": ids, "index": i, "effect": e2}));
             }
-            if icons::button(ui, Icon::Minus, 24.0, false, tr("Remove")).clicked() {
+            if icons::button(ui, Icon::Minus, widgets::button_size(), false, tr("Remove")).clicked() {
                 app.run("effect.remove", json!({"ids": ids, "index": i}));
             }
         });
@@ -1930,7 +1965,7 @@ fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
         let open_id = Id::new(("grid_open", i));
         let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
         let header = row_rect(ui, 32.0, |ui| {
-            if icons::button(ui, Icon::Grid, 24.0, open, tr("Layout grid settings")).clicked() {
+            if icons::button(ui, Icon::Grid, widgets::button_size(), open, tr("Layout grid settings")).clicked() {
                 open = !open;
                 ui.data_mut(|d| d.insert_temp(open_id, open));
             }
@@ -1949,10 +1984,10 @@ fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
                     }
                 }
             });
-            if icons::button(ui, if g.visible { Icon::Eye } else { Icon::EyeOff }, 24.0, false, tr("Toggle")).clicked() {
+            if icons::button(ui, if g.visible { Icon::Eye } else { Icon::EyeOff }, widgets::button_size(), false, tr("Toggle")).clicked() {
                 app.set_props(&ids, json!({"grids": grids_with(&list, i, |x| x.visible = !x.visible)}));
             }
-            if icons::button(ui, Icon::Minus, 24.0, false, tr("Remove")).clicked() {
+            if icons::button(ui, Icon::Minus, widgets::button_size(), false, tr("Remove")).clicked() {
                 app.run("grid.remove", json!({"ids": ids, "index": i}));
             }
         });
