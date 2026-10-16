@@ -316,7 +316,7 @@ pub fn bindable(
     width: f32,
     control: impl FnOnce(&mut FigApp, &mut Ui),
 ) {
-    let area = Rect::from_min_size(ui.cursor().min, vec2(width, widgets::FIELD_H));
+    let area = Rect::from_min_size(ui.cursor().min, vec2(width, widgets::field_h()));
     if app.session.doc().ok().and_then(|d| bound_name(d, ids, field)).is_some() {
         let (r, _) = ui.allocate_exact_size(area.size(), Sense::hover());
         bound_chip(app, ui, ids, field, kind, r);
@@ -355,7 +355,7 @@ pub fn variable_button(ui: &mut Ui, rect: Rect, id: Id) -> bool {
 pub fn bound_row(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], field: &str, kind: VariableType, lead: Lead, width: f32) {
     let Some(name) = app.session.doc().ok().and_then(|d| bound_name(d, ids, field)) else { return };
     crate::right::row(ui, 32.0, |ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(width.min(ui.available_width()), widgets::FIELD_H), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(vec2(width.min(ui.available_width()), widgets::field_h()), Sense::hover());
         let ev = widgets::bound_field(ui, Id::new(("bound_row", field)), lead, rect, &name);
         handle(app, ui, ids, field, kind, ev);
     });

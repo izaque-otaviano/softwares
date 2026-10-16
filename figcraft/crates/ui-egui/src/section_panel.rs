@@ -55,7 +55,6 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
     }
     let t = crate::theme::Tokens::get(ui.ctx());
     let ids = sel.to_vec();
-    let col = widgets::col_width(ui.available_width());
     if sections {
         widgets::sublabels(ui, tr("Section color"), None);
         row(ui, 32.0, |ui| {
@@ -82,7 +81,21 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
             }
         });
     }
-    widgets::sublabels(ui, tr("Status"), None);
+    if sections {
+        ui.add_space(4.0);
+        widgets::separator(ui);
+    }
+}
+
+/// The handoff status of the selected layers, a quiet section at the foot of the panel.
+pub fn status(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
+    if sel.is_empty() || !sel.iter().all(|i| has_status(doc, *i)) {
+        return;
+    }
+    let ids = sel.to_vec();
+    let col = widgets::col_width(ui.available_width());
+    widgets::separator(ui);
+    widgets::section_header(ui, tr("Status"), &[], true);
     let changed = sel.iter().any(|i| doc.node(*i).is_some_and(|n| n.dev_status == DevStatus::ReadyForDev && n.dev_changed));
     row(ui, 32.0, |ui| status_dropdown(app, ui, doc, &ids, col * 2.0 + 8.0));
     if changed {
@@ -114,14 +127,5 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
             widgets::label(ui, &text, t.text_secondary);
         });
     }
-    row(ui, 32.0, |ui| {
-        let fit = ui
-            .add_sized(vec2(col * 2.0 + 8.0, widgets::FIELD_H), egui::Button::new(tr("Resize to fit")))
-            .on_hover_text(crate::shortcuts::tip(tr("Fit to contents"), "object.resizeToFit"));
-        if fit.clicked() {
-            app.run("object.resizeToFit", json!({"ids": ids}));
-        }
-    });
     ui.add_space(4.0);
-    widgets::separator(ui);
 }

@@ -16,7 +16,7 @@ use crate::i18n::{tr, tr_noop, trf};
 use crate::icons::{self, Icon};
 use crate::right::{common, menu_item, menu_popup, row};
 use crate::theme::{Tokens, regular, semibold};
-use crate::widgets::{self, FIELD_H, FieldEdit, Lead, PAD};
+use crate::widgets::{self, FieldEdit, Lead, PAD};
 
 /// Font sizes offered by the size dropdown.
 const SIZES: [f64; 15] = [10.0, 11.0, 12.0, 13.0, 14.0, 16.0, 20.0, 24.0, 32.0, 36.0, 40.0, 48.0, 64.0, 96.0, 128.0];
@@ -135,10 +135,10 @@ fn path_row(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId], ids: 
             Some(FieldEdit::Scrub(v, done)) => live(app, "Start on path", "text.pathOptions", json!({"ids": ids, "start": v / 100.0}), done),
             None => {}
         }
-        if icons::button(ui, Icon::FlipV, 24.0, flip, tr("Flip text to the other side")).clicked() {
+        if icons::button(ui, Icon::FlipV, widgets::button_size(), flip, tr("Flip text to the other side")).clicked() {
             app.run("text.pathOptions", json!({"ids": ids, "flip": !flip}));
         }
-        if icons::button(ui, Icon::Detach, 24.0, false, tr("Remove text from path")).clicked() {
+        if icons::button(ui, Icon::Detach, widgets::button_size(), false, tr("Remove text from path")).clicked() {
             app.run("text.removeFromPath", json!({ "ids": ids }));
         }
     });
@@ -333,7 +333,7 @@ fn paragraph_rows(
         }
         let open_id = Id::new("ty_settings_open");
         let open = egui::Popup::is_id_open(ui.ctx(), open_id);
-        let more = icons::button(ui, Icon::Dots, 24.0, open, tr("Type settings"));
+        let more = icons::button(ui, Icon::Dots, widgets::button_size(), open, tr("Type settings"));
         egui::Popup::from_toggle_button_response(&more)
             .id(open_id)
             .width(264.0)
@@ -463,7 +463,10 @@ fn type_settings(
             common(doc, ids, |n| n.kind.text().map(|t| t.align_h != TextAlignH::Center && t.align_h != TextAlignH::Justified)).flatten();
         ui.horizontal(|ui| {
             ui.add_enabled_ui(start_aligned != Some(false), |ui| {
-                ui.add_sized(vec2(110.0, FIELD_H), egui::Label::new(egui::RichText::new(tr("Paragraph indent")).font(regular(11.0)).color(t.text)));
+                ui.add_sized(
+                    vec2(110.0, widgets::field_h()),
+                    egui::Label::new(egui::RichText::new(tr("Paragraph indent")).font(regular(11.0)).color(t.text)),
+                );
                 let field = widgets::number_field(ui, Id::new("ty_indent"), Lead::None, indent, "", w - 118.0, 1.0);
                 if let Some(FieldEdit::Set(v) | FieldEdit::Scrub(v, true)) = field {
                     app.set_props(ids, json!({"paragraphIndent": v.clamp(0.0, 10_000.0)}));
@@ -502,7 +505,10 @@ fn type_settings(
             let max = common(doc, ids, |n| n.kind.text().map(|t| t.max_lines)).flatten();
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.add_sized(vec2(110.0, FIELD_H), egui::Label::new(egui::RichText::new(tr("Max lines")).font(regular(11.0)).color(t.text)));
+                ui.add_sized(
+                    vec2(110.0, widgets::field_h()),
+                    egui::Label::new(egui::RichText::new(tr("Max lines")).font(regular(11.0)).color(t.text)),
+                );
                 let shown = max.map(f64::from).filter(|m| *m > 0.0);
                 let empty = if max.is_some() { tr("Auto") } else { tr(MIXED) };
                 if let Some(FieldEdit::Set(v) | FieldEdit::Scrub(v, true)) =
@@ -540,7 +546,7 @@ fn field_row<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui, f32) -> R) -
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     ui.horizontal(|ui| {
-        ui.add_sized(vec2(110.0, FIELD_H), egui::Label::new(egui::RichText::new(label).font(regular(11.0)).color(t.text)));
+        ui.add_sized(vec2(110.0, widgets::field_h()), egui::Label::new(egui::RichText::new(label).font(regular(11.0)).color(t.text)));
         add(ui, w - 118.0)
     })
     .inner
@@ -652,7 +658,7 @@ fn variable_axes(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], styles: &[TextSt
         ui.add_space(2.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            let (lr, _) = ui.allocate_exact_size(vec2(label_w, FIELD_H), Sense::hover());
+            let (lr, _) = ui.allocate_exact_size(vec2(label_w, widgets::field_h()), Sense::hover());
             let name = ui.painter().layout(axis.name.clone(), regular(11.0), t.text, label_w);
             let tip = trf(
                 "{name} ({tag}): {min} – {max}, default {default}. Double-click the slider to go back to the style's value; Escape while dragging cancels.",
@@ -769,7 +775,7 @@ fn round_axis(axis: &figcraft_text::Axis, v: f64) -> f64 {
 /// gesture ended.
 fn axis_slider(ui: &mut Ui, id: Id, axis: &figcraft_text::Axis, value: Option<f64>, width: f32) -> Option<(Option<f64>, bool)> {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, widgets::field_h()), Sense::hover());
     let resp = ui.interact(rect, id, Sense::click_and_drag());
     let track = Rect::from_center_size(rect.center(), vec2(width - 12.0, 4.0));
     let span = (axis.max - axis.min).max(1e-9);
@@ -810,12 +816,12 @@ fn caption(ui: &mut Ui, s: &str) {
 /// (matched below), translated where shown. Returns the clicked index.
 fn text_seg(ui: &mut Ui, salt: &str, items: &[(&str, &str)], active: Option<usize>, width: f32) -> Option<usize> {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, widgets::field_h()), Sense::hover());
     ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
     let cell = width / items.len().max(1) as f32;
     let mut out = None;
     for (i, (label, tip)) in items.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(rect.min.x + i as f32 * cell, rect.min.y), vec2(cell, FIELD_H));
+        let r = Rect::from_min_size(pos2(rect.min.x + i as f32 * cell, rect.min.y), vec2(cell, widgets::field_h()));
         let resp = ui.interact(r, Id::new(("ty_seg", salt, i)), Sense::click()).on_hover_text(tr(tip));
         crate::a11y::toggle(&resp, tr(tip), active == Some(i));
         if active == Some(i) {
@@ -920,7 +926,7 @@ struct SpacingField {
 /// chip when bound, else the editable field with a variable button on hover. While a text range is
 /// selected it only takes values. Returns the typed text.
 fn spacing_field(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], f: &SpacingField, value: &str, width: f32, range: bool) -> Option<String> {
-    let rect = Rect::from_min_size(ui.cursor().min, vec2(width, FIELD_H));
+    let rect = Rect::from_min_size(ui.cursor().min, vec2(width, widgets::field_h()));
     if !range && crate::variable_ui::bound_chip(app, ui, ids, f.field, VariableType::Number, rect) {
         ui.allocate_rect(rect, Sense::hover());
         return None;
@@ -934,8 +940,8 @@ fn spacing_field(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], f: &SpacingField
 
 fn lead_field(ui: &mut Ui, id: Id, glyph: LeadGlyph, value: &str, width: f32, tip: &str) -> Option<String> {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
-    let lead = Rect::from_min_size(rect.min, vec2(24.0, FIELD_H));
+    let (rect, _) = ui.allocate_exact_size(vec2(width, widgets::field_h()), Sense::hover());
+    let lead = Rect::from_min_size(rect.min, vec2(24.0, widgets::field_h()));
     let text_rect = Rect::from_min_max(pos2(lead.max.x, rect.min.y), rect.max);
     let editing_id = id.with("editing");
     let mut editing: Option<String> = ui.data(|d| d.get_temp(editing_id));

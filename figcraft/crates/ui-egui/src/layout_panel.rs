@@ -14,7 +14,7 @@ use crate::i18n::{tr, tr_noop};
 use crate::icons::{self, Icon};
 use crate::right::{block, common, menu_item, menu_popup, row};
 use crate::theme::{ACCENT, Tokens, regular};
-use crate::widgets::{self, FIELD_H, Lead};
+use crate::widgets::{self, Lead};
 
 /// Most tracks listed in the panel (the rest are still laid out; edit them through commands).
 const MAX_TRACK_ROWS: usize = 24;
@@ -33,21 +33,25 @@ pub fn layout_section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
     // the layers inside it keep their main's size.
     let in_instance = sel.iter().any(|i| figcraft_engine::components::owning_instance(doc, *i).is_some());
     let nested = sel.iter().any(|i| figcraft_engine::components::inside_instance(doc, *i));
-    let btns: Vec<(Icon, &str)> = if in_instance {
+    // Resize to fit the contents, and add or remove auto layout.
+    let fit = (Icon::Hug, crate::shortcuts::tip(tr("Fit to contents"), "object.resizeToFit"));
+    let btns: Vec<(Icon, &str)> = if !frames {
         vec![]
-    } else if frames && !has_al {
-        vec![(Icon::Plus, crate::shortcuts::tip(tr("Add auto layout"), "layout.add"))]
+    } else if in_instance {
+        vec![fit]
     } else if has_al {
-        vec![(Icon::Minus, crate::shortcuts::tip(tr("Remove auto layout"), "layout.remove"))]
+        vec![fit, (Icon::Minus, crate::shortcuts::tip(tr("Remove auto layout"), "layout.remove"))]
     } else {
-        vec![]
+        vec![fit, (Icon::Plus, crate::shortcuts::tip(tr("Add auto layout"), "layout.add"))]
     };
-    if widgets::section_header(ui, title, &btns, false).is_some() {
-        app.run(if has_al { "layout.remove" } else { "layout.add" }, json!({"ids": ids}));
-    }
+    match widgets::section_header(ui, title, &btns, false) {
+        Some(0) => app.run("object.resizeToFit", json!({"ids": ids})),
+        Some(_) => app.run(if has_al { "layout.remove" } else { "layout.add" }, json!({"ids": ids})),
+        None => None,
+    };
     let from_main = tr("In an instance, this comes from the main component");
-    if let Some(Some(l)) = &al {
-        ui.add_enabled_ui(!in_instance, |ui| direction(app, ui, &ids, l)).response.on_disabled_hover_text(from_main);
+    if frames && !(in_instance && !has_al) {
+        ui.add_enabled_ui(!in_instance, |ui| flow(app, ui, &ids, al.as_ref().and_then(Option::as_ref))).response.on_disabled_hover_text(from_main);
     }
     ui.add_enabled_ui(!nested, |ui| dimensions(app, ui, doc, sel, has_al)).response.on_disabled_hover_text(from_main);
     if let Some(Some(l)) = &al {
@@ -76,21 +80,48 @@ pub fn layout_section(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
     }
 }
 
-fn direction(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], l: &AutoLayout) {
+/// Flow: how the frame lays out its children, as a segmented control of freeform (no auto
+/// layout), vertical, horizontal and grid. Picking a flow on a frame without auto layout adds it;
+/// picking freeform removes it. Wrap toggles beside it for the stacks.
+fn flow(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], l: Option<&AutoLayout>) {
+    widgets::sublabels(ui, tr("Flow"), None);
     row(ui, 32.0, |ui| {
-        let items = [(Icon::LayoutV, tr("Vertical")), (Icon::LayoutH, tr("Horizontal")), (Icon::LayoutGrid, tr("Grid"))];
-        let active = match l.mode {
-            LayoutMode::Vertical => 0,
-            LayoutMode::Horizontal => 1,
-            LayoutMode::Grid => 2,
+        let items = [
+            (Icon::AbsolutePosition, tr("Freeform")),
+            (Icon::LayoutV, tr("Vertical")),
+            (Icon::LayoutH, tr("Horizontal")),
+            (Icon::LayoutGrid, tr("Grid")),
+        ];
+        let active = match l.map(|l| l.mode) {
+            None => 0,
+            Some(LayoutMode::Vertical) => 1,
+            Some(LayoutMode::Horizontal) => 2,
+            Some(LayoutMode::Grid) => 3,
         };
-        if let Some(i) = widgets::segmented(ui, &items, Some(active), 32.0) {
-            // Wrap carries over between the flows: rows of a horizontal one, columns of a vertical one.
-            let mode = ["vertical", "horizontal", "grid"].get(i).copied().unwrap_or("grid");
-            app.set_props(ids, json!({"layout": mode}));
+        let wrap_room = if l.is_some_and(|l| l.mode != LayoutMode::Grid) { widgets::button_column() } else { 0.0 };
+        let cell = ((ui.available_width() - wrap_room) / 4.0).floor();
+        if let Some(i) = widgets::segmented(ui, &items, Some(active), cell)
+            && i != active
+        {
+            match (i, l) {
+                (0, _) => {
+                    app.run("layout.remove", json!({"ids": ids}));
+                }
+                (_, None) => {
+                    let direction = ["", "vertical", "horizontal", "grid"].get(i).copied().unwrap_or("vertical");
+                    app.run("layout.add", json!({"ids": ids, "direction": direction}));
+                }
+                // Wrap carries over between the flows: rows of a horizontal one, columns of a vertical one.
+                (_, Some(_)) => {
+                    let mode = ["", "vertical", "horizontal", "grid"].get(i).copied().unwrap_or("grid");
+                    app.set_props(ids, json!({"layout": mode}));
+                }
+            }
         }
-        if l.mode != LayoutMode::Grid {
-            let resp = icons::button(ui, Icon::LayoutWrap, 24.0, l.wrap, tr("Wrap"));
+        if let Some(l) = l
+            && l.mode != LayoutMode::Grid
+        {
+            let resp = icons::button(ui, Icon::LayoutWrap, widgets::button_size(), l.wrap, tr("Wrap"));
             crate::a11y::toggle(&resp, tr("Wrap"), l.wrap);
             if resp.clicked() {
                 app.set_props(ids, json!({"wrap": !l.wrap}));
@@ -159,7 +190,8 @@ fn dimensions(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId], has
         let e = crate::variable_ui::number_field_mixed(app, ui, &ids, "height", Id::new("lay_h"), Lead::Text("H"), h, "", col);
         app.field_of(&ids, "height", e, h_of, |v| json!(v.max(0.0)));
         let locked = common(doc, sel, |n| n.constrain_proportions).unwrap_or(false);
-        if icons::button(ui, if locked { Icon::LinkOn } else { Icon::LinkOff }, 24.0, locked, tr("Constrain proportions")).clicked() {
+        if icons::button(ui, if locked { Icon::LinkOn } else { Icon::LinkOff }, widgets::button_size(), locked, tr("Constrain proportions")).clicked()
+        {
             app.set_props(&ids, json!({"constrainProportions": !locked}));
         }
     });
@@ -257,7 +289,7 @@ fn limit_row(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId], hori
                 app.set_props(&ids, json!({key: current}));
             }
         }
-        if icons::button(ui, Icon::Minus, 24.0, false, tr(axis.remove)).clicked() {
+        if icons::button(ui, Icon::Minus, widgets::button_size(), false, tr(axis.remove)).clicked() {
             app.set_props(&ids, json!({axis.min: null, axis.max: null}));
         }
     });
@@ -266,7 +298,7 @@ fn limit_row(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId], hori
 /// A quiet placeholder button the size of a field ("+ Max W") with the tooltip `tip`.
 fn add_slot(ui: &mut Ui, label: &str, tip: &str, width: f32) -> egui::Response {
     let t = Tokens::get(ui.ctx());
-    let (r, resp) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(vec2(width, widgets::field_h()), Sense::click());
     let resp = resp.tip(tip);
     let border = if resp.hovered() { t.field_hover_border } else { t.border };
     ui.painter().rect_stroke(r, CornerRadius::same(5), Stroke::new(1.0, border), StrokeKind::Inside);
@@ -278,7 +310,7 @@ fn add_slot(ui: &mut Ui, label: &str, tip: &str, width: f32) -> egui::Response {
 fn alignment(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], l: &AutoLayout) {
     let t = Tokens::get(ui.ctx());
     let grid_mode = l.mode == LayoutMode::Grid;
-    block(ui, 76.0, 6.0, |ui| {
+    block(ui, if widgets::is_roomy() { 88.0 } else { 76.0 }, 6.0, |ui| {
         let (grid, _) = ui.allocate_exact_size(vec2(72.0, 64.0), Sense::hover());
         ui.painter().rect_filled(grid, CornerRadius::same(5), t.field);
         let horizontal = l.mode != LayoutMode::Vertical;
@@ -579,7 +611,7 @@ fn grid_cell(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
             app.field_run(e, "node.set", |v| at(v, r0));
             let e = widgets::number_field(ui, Id::new("al_cell_row"), Lead::None, Some(r0), "", col, 1.0);
             app.field_run(e, "node.set", |v| at(c0, v));
-            if anchored && icons::button(ui, Icon::Reset, 24.0, false, tr("Place automatically")).clicked() {
+            if anchored && icons::button(ui, Icon::Reset, widgets::button_size(), false, tr("Place automatically")).clicked() {
                 app.set_props(&ids, json!({"gridColumn": null, "gridRow": null}));
             }
         });

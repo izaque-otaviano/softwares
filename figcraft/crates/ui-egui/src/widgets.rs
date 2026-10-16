@@ -1,7 +1,7 @@
 //! Figma-style compact controls: number fields with scrub labels, text fields, dropdowns,
 //! segmented buttons, colour swatches and section headers.
 
-use egui::{Align2, Color32, CornerRadius, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 use crate::a11y::{self, Tip};
 pub use crate::field_math::{Rel, Typed, eval, parse, stepped};
@@ -12,6 +12,61 @@ use crate::theme::{Tokens, regular, semibold};
 pub const ROW_H: f32 = 32.0;
 pub const FIELD_H: f32 = 24.0;
 pub const PAD: f32 = 16.0;
+
+/// The Design tab's roomier controls: fields and segmented groups 32 px tall with 6 px corners,
+/// icon buttons 28 px. Everything else keeps the compact 24 px metrics.
+const ROOMY_FIELD_H: f32 = 32.0;
+const ROOMY_BUTTON: f32 = 28.0;
+
+thread_local! {
+    static ROOMY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Puts the compact metrics back when the roomy scope ends (also when it unwinds).
+struct RoomyScope(bool);
+
+impl Drop for RoomyScope {
+    fn drop(&mut self) {
+        ROOMY.with(|r| r.set(self.0));
+    }
+}
+
+/// Run `f` (a panel's layout) with the roomy metrics: [`field_h`], [`field_radius`] and
+/// [`button_size`] answer for it, and the controls below size themselves with them.
+pub fn roomy<R>(f: impl FnOnce() -> R) -> R {
+    let _back = RoomyScope(ROOMY.with(|r| r.replace(true)));
+    f()
+}
+
+/// Whether the roomy metrics are in force ([`roomy`]).
+pub fn is_roomy() -> bool {
+    ROOMY.with(std::cell::Cell::get)
+}
+
+/// A field's height: 24 px, 32 px in the Design tab.
+pub fn field_h() -> f32 {
+    if is_roomy() { ROOMY_FIELD_H } else { FIELD_H }
+}
+
+/// A field's corner radius.
+pub fn field_radius() -> CornerRadius {
+    CornerRadius::same(if is_roomy() { 6 } else { 5 })
+}
+
+/// The radius of what sits inside a field-sized track (the raised cell of a segmented control).
+fn inner_radius() -> CornerRadius {
+    CornerRadius::same(if is_roomy() { 5 } else { 4 })
+}
+
+/// The side of an icon button that is 24 px in compact panels.
+pub fn button_size() -> f32 {
+    if is_roomy() { ROOMY_BUTTON } else { 24.0 }
+}
+
+/// Room an icon button takes beside a field (it and the gap before it).
+pub fn button_column() -> f32 {
+    button_size() + 8.0
+}
 
 /// What a numeric field's label shows: text ("X") or an icon with the field's name (for screen
 /// readers: an icon doesn't say which property it is).
@@ -163,7 +218,7 @@ fn number_field_impl(
     empty: &str,
 ) -> (Option<Edit>, Option<BindEvent>) {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, field_h()), Sense::hover());
     if let Some(Some(name)) = binding {
         return (None, bound_field(ui, id, lead, rect, name));
     }
@@ -173,7 +228,7 @@ fn number_field_impl(
         Lead::Text(s) => (12.0 + s.chars().count() as f32 * 7.0).max(24.0),
         Lead::Icon(..) => 24.0,
     };
-    let lead_rect = Rect::from_min_size(rect.min, vec2(lead_w, FIELD_H));
+    let lead_rect = Rect::from_min_size(rect.min, vec2(lead_w, field_h()));
     let edit_rect = Rect::from_min_max(pos2(rect.min.x + lead_w, rect.min.y), rect.max);
     let editing_id = id.with("editing");
     let mut editing: Option<String> = ui.data(|d| d.get_temp(editing_id));
@@ -183,11 +238,11 @@ fn number_field_impl(
     // The label scrubs with the pointer; the keyboard stops at the value only.
     let lead_resp = ui.interact(lead_rect, id.with("lead"), Sense::CLICK | Sense::DRAG);
     let hovered = field_resp.hovered() || lead_resp.hovered() || editing.is_some();
-    ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
+    ui.painter().rect_filled(rect, field_radius(), t.field);
     if editing.is_some() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.accent), StrokeKind::Inside);
     } else if hovered {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
     match lead {
         Lead::Text(s) => {
@@ -369,9 +424,9 @@ pub fn bound_field(ui: &mut Ui, id: Id, lead: Lead, rect: Rect, name: &str) -> O
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(rect, id.with("bound"), Sense::click());
     a11y::combo(&resp, lead.name(), name, false);
-    ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
+    ui.painter().rect_filled(rect, field_radius(), t.field);
     if resp.hovered() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
     let lead_w = match lead {
         Lead::None | Lead::Named(_) => 4.0,
@@ -408,13 +463,13 @@ pub fn bound_field(ui: &mut Ui, id: Id, lead: Lead, rect: Rect, name: &str) -> O
 
 /// A text field that commits on Enter / focus loss. Returns the new text when committed.
 pub fn text_field(ui: &mut Ui, id: Id, value: &str, width: f32, placeholder: &str) -> Option<String> {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, field_h()), Sense::hover());
     text_field_in(ui, id, value, rect, placeholder, placeholder)
 }
 
 /// [`text_field`] without a placeholder, named `name` for screen readers (its label is beside it).
 pub fn text_field_named(ui: &mut Ui, id: Id, value: &str, width: f32, name: &str) -> Option<String> {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, field_h()), Sense::hover());
     text_field_in(ui, id, value, rect, "", name)
 }
 
@@ -429,7 +484,7 @@ pub fn multiline_field(ui: &mut Ui, id: Id, value: &str, hint: &str, rows: usize
     ui.horizontal(|ui| {
         ui.add_space(PAD);
         let w = ui.available_width() - PAD;
-        let r = egui::Frame::NONE.fill(t.field).corner_radius(CornerRadius::same(5)).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+        let r = egui::Frame::NONE.fill(t.field).corner_radius(field_radius()).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(&mut text)
                     .id(te)
@@ -456,7 +511,7 @@ pub fn multiline_field(ui: &mut Ui, id: Id, value: &str, hint: &str, rows: usize
 /// Returns the typed text (on Enter / focus loss) or the option picked.
 pub fn combo_field(ui: &mut Ui, id: Id, value: &str, width: f32, options: &[String]) -> Option<String> {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, field_h()), Sense::hover());
     let mut out = text_field_in(ui, id, value, rect, "", "");
     // The chevron sits on top of the field's right end.
     let chev = Rect::from_min_max(pos2(rect.max.x - 18.0, rect.min.y), rect.max);
@@ -484,11 +539,11 @@ fn text_field_in(ui: &mut Ui, id: Id, value: &str, rect: Rect, placeholder: &str
     let mut editing: Option<String> = ui.data(|d| d.get_temp(editing_id));
     let resp = ui.interact(rect, id.with("click"), Sense::click());
     a11y::text(&resp, name, value);
-    ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
+    ui.painter().rect_filled(rect, field_radius(), t.field);
     if editing.is_some() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.accent), StrokeKind::Inside);
     } else if resp.hovered() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
     let started = editing.is_none() && resp.clicked();
     if started {
@@ -542,13 +597,13 @@ fn field_editor(ui: &mut Ui, rect: Rect, id: Id, text: &mut String, hint: &str) 
 /// row. Returns the editor's response (name it for screen readers with `a11y::text`).
 pub fn text_input(ui: &mut Ui, id: Id, text: &mut String, width: f32, hint: &str) -> Response {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, field_h()), Sense::hover());
+    ui.painter().rect_filled(rect, field_radius(), t.field);
     let r = field_editor(ui, rect, id, text, hint);
     if r.has_focus() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.accent), StrokeKind::Inside);
     } else if ui.rect_contains_pointer(rect) {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
     r
 }
@@ -578,12 +633,12 @@ pub fn dropdown(ui: &mut Ui, label: &str, width: f32, lead: Option<Icon>) -> Res
 /// [`dropdown`] with an icon or a colour dot before the label.
 pub fn dropdown_lead(ui: &mut Ui, label: &str, width: f32, lead: Option<DropLead>) -> Response {
     let t = Tokens::get(ui.ctx());
-    let (rect, resp) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, field_h()), Sense::click());
     a11y::combo(&resp, "", label, a11y::menu_open(&resp));
     let bg = t.field;
-    ui.painter().rect_filled(rect, CornerRadius::same(5), bg);
+    ui.painter().rect_filled(rect, field_radius(), bg);
     if resp.hovered() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
     let mut x = rect.min.x + 8.0;
     match lead {
@@ -659,21 +714,21 @@ fn segments(
 ) -> Option<usize> {
     let t = Tokens::get(ui.ctx());
     let w = cell * names.len() as f32;
-    let (rect, _) = ui.allocate_exact_size(vec2(w, FIELD_H), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
+    let (rect, _) = ui.allocate_exact_size(vec2(w, field_h()), Sense::hover());
+    ui.painter().rect_filled(rect, field_radius(), t.field);
     let mut out = None;
     for (i, name) in names.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(rect.min.x + i as f32 * cell, rect.min.y), vec2(cell, FIELD_H));
+        let r = Rect::from_min_size(pos2(rect.min.x + i as f32 * cell, rect.min.y), vec2(cell, field_h()));
         let mut resp = ui.interact(r, ui.id().with(("seg", i, *name)), Sense::click());
         if tips {
             resp = resp.on_hover_text(*name);
         }
         a11y::toggle(&resp, name, active == Some(i));
         if active == Some(i) {
-            ui.painter().rect_filled(r.shrink(2.0), CornerRadius::same(4), t.panel);
-            ui.painter().rect_stroke(r.shrink(2.0), CornerRadius::same(4), Stroke::new(1.0, t.border), StrokeKind::Inside);
+            ui.painter().rect_filled(r.shrink(2.0), inner_radius(), t.panel);
+            ui.painter().rect_stroke(r.shrink(2.0), inner_radius(), Stroke::new(1.0, t.border), StrokeKind::Inside);
         } else if resp.hovered() {
-            ui.painter().rect_filled(r.shrink(2.0), CornerRadius::same(4), t.hover);
+            ui.painter().rect_filled(r.shrink(2.0), inner_radius(), t.hover);
         }
         paint(ui, r, i, active == Some(i), &t);
         if resp.clicked() {
@@ -688,7 +743,7 @@ fn segments(
 pub fn disclosure(ui: &mut Ui, label: &str, open: bool) -> bool {
     let t = Tokens::get(ui.ctx());
     let galley = ui.painter().layout_no_wrap(label.to_string(), regular(11.0), t.text_secondary);
-    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 22.0, FIELD_H), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 22.0, field_h()), Sense::click());
     a11y::disclosure(&resp, label, open);
     if resp.hovered() {
         ui.painter().rect_filled(rect, CornerRadius::same(4), t.hover);
@@ -705,26 +760,28 @@ pub fn section_header(ui: &mut Ui, title: &str, buttons: &[(Icon, &str)], dim: b
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 40.0), Sense::hover());
-    ui.painter().text(
-        pos2(rect.min.x + PAD, rect.center().y),
-        Align2::LEFT_CENTER,
-        title,
-        semibold(11.0),
-        if dim { t.text_secondary } else { t.text },
-    );
+    let font = if is_roomy() { semibold(12.0) } else { semibold(11.0) };
+    ui.painter().text(pos2(rect.min.x + PAD, rect.center().y), Align2::LEFT_CENTER, title, font, if dim { t.text_secondary } else { t.text });
     let mut out = None;
+    let side = button_size();
+    // An empty (grey) section shows only its last button, the "+": the others appear while the
+    // pointer is over the header (or have the keyboard).
+    let over = ui.rect_contains_pointer(rect);
     let mut x = rect.max.x - 8.0;
     for (i, (icon, tip)) in buttons.iter().enumerate().rev() {
-        let r = Rect::from_min_size(pos2(x - 24.0, rect.center().y - 12.0), vec2(24.0, 24.0));
+        let r = Rect::from_min_size(pos2(x - side, rect.center().y - side / 2.0), vec2(side, side));
         let resp = ui.interact(r, ui.id().with(("hdr", title, i)), Sense::click()).tip(*tip);
-        if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
+        let shown = !(dim && is_roomy() && i + 1 < buttons.len()) || over || resp.has_focus();
+        if shown {
+            if resp.hovered() {
+                ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
+            }
+            icons::paint(ui.painter(), r.shrink(if is_roomy() { 6.0 } else { 5.0 }), *icon, t.icon);
         }
-        icons::paint(ui.painter(), r.shrink(5.0), *icon, t.icon);
         if resp.clicked() {
             out = Some(i);
         }
-        x -= 24.0;
+        x -= side;
     }
     out
 }
@@ -734,7 +791,7 @@ pub fn icon_button_at(ui: &mut Ui, id: Id, rect: Rect, icon: Icon, tip: &str) ->
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(rect, id, Sense::click()).tip(tip);
     if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(5), t.hover);
+        ui.painter().rect_filled(rect, field_radius(), t.hover);
     }
     icons::paint(ui.painter(), rect.shrink(5.0), icon, t.icon);
     resp.clicked()
@@ -742,7 +799,7 @@ pub fn icon_button_at(ui: &mut Ui, id: Id, rect: Rect, icon: Icon, tip: &str) ->
 
 /// A 24×24 icon button laid out in place; true when clicked.
 pub fn icon_button(ui: &mut Ui, icon: Icon, tip: &str) -> bool {
-    let (rect, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(button_size()), Sense::hover());
     let id = ui.id().with(("icon_button", tip));
     icon_button_at(ui, id, rect, icon, tip)
 }
@@ -786,8 +843,8 @@ pub fn drag_ghost(ctx: &egui::Context, at: egui::Pos2, galley: std::sync::Arc<eg
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::new("drag_ghost")));
     let r = Rect::from_min_size(at + vec2(14.0, 10.0), galley.size() + vec2(16.0, 8.0));
-    painter.rect_filled(r, CornerRadius::same(5), t.panel);
-    painter.rect_stroke(r, CornerRadius::same(5), Stroke::new(1.0, crate::theme::ACCENT), StrokeKind::Inside);
+    painter.rect_filled(r, field_radius(), t.panel);
+    painter.rect_stroke(r, field_radius(), Stroke::new(1.0, crate::theme::ACCENT), StrokeKind::Inside);
     painter.galley(r.min + vec2(8.0, 4.0), galley, t.text);
 }
 
@@ -921,7 +978,7 @@ pub fn button(ui: &mut Ui, label: &str, primary: bool, enabled: bool) -> Respons
     let t = Tokens::get(ui.ctx());
     let galley = ui.painter().layout_no_wrap(label.to_string(), regular(11.0), t.text);
     let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 24.0, FIELD_H), sense);
+    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 24.0, field_h()), sense);
     a11y::button(&resp, label);
     let hot = enabled && resp.hovered();
     let (fill, text) = match (primary, hot) {
@@ -931,9 +988,9 @@ pub fn button(ui: &mut Ui, label: &str, primary: bool, enabled: bool) -> Respons
         (false, true) => (t.hover, t.text),
     };
     let dim = |c: Color32| if enabled { c } else { c.gamma_multiply(0.4) };
-    ui.painter().rect_filled(rect, CornerRadius::same(5), dim(fill));
+    ui.painter().rect_filled(rect, field_radius(), dim(fill));
     if !primary {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.border_strong), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, field_radius(), Stroke::new(1.0, t.border_strong), StrokeKind::Inside);
     }
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, regular(11.0), dim(text));
     resp
@@ -1042,8 +1099,9 @@ pub fn sublabels(ui: &mut Ui, a: &str, b: Option<&str>) {
     // Each label fits its column on one line (long translations end with an ellipsis, in full on hover).
     let a_w = if b.is_some() { col } else { w - PAD * 2.0 };
     for (i, (text, x, max_w)) in [(a, PAD, a_w)].into_iter().chain(b.map(|b| (b, PAD + col + 8.0, w - col - 8.0 - PAD * 2.0))).enumerate() {
-        let shown = elide_font(ui, text, max_w, regular(10.0));
-        let at = ui.painter().text(pos2(r.min.x + x, r.max.y - 2.0), Align2::LEFT_BOTTOM, &shown, regular(10.0), t.text_secondary);
+        let font = regular(if is_roomy() { 11.0 } else { 10.0 });
+        let shown = elide_font(ui, text, max_w, font.clone());
+        let at = ui.painter().text(pos2(r.min.x + x, r.max.y - 2.0), Align2::LEFT_BOTTOM, &shown, font, t.text_secondary);
         if shown != text {
             ui.interact(at, ui.id().with(("sublabel", i)), Sense::hover()).on_hover_text(text);
         }
@@ -1052,5 +1110,5 @@ pub fn sublabels(ui: &mut Ui, a: &str, b: Option<&str>) {
 
 /// Width of one of the two field columns in a panel `w` wide (leaving the icon column).
 pub fn col_width(w: f32) -> f32 {
-    ((w - PAD * 2.0 - 8.0 - 32.0) / 2.0).max(40.0)
+    ((w - PAD * 2.0 - 8.0 - button_column()) / 2.0).max(40.0)
 }

@@ -51,6 +51,7 @@ pub mod render_worker;
 pub mod right;
 pub mod scale_panel;
 pub mod section_panel;
+pub mod selection_colors;
 pub mod shortcuts;
 pub mod shortcuts_panel;
 pub mod style_picker;
@@ -148,6 +149,8 @@ mod proto_editor_tests;
 mod proto_reorder_tests;
 #[cfg(test)]
 mod proto_responsive_tests;
+#[cfg(test)]
+mod right_panel_tests;
 #[cfg(test)]
 mod shortcut_keys_tests;
 #[cfg(test)]
