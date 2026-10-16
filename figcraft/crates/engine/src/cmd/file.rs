@@ -57,6 +57,13 @@ pub fn specs() -> Vec<CommandSpec> {
             false,
             export_layers
         ),
+        spec!(
+            "file.exportPrototypeSite",
+            "Export prototype as website",
+            "{path (a new or empty folder, or one exported to before), start? (frame id; default: the selected frame, else `flow`'s start, else the page's first flow, else its first frame), flow? (a flow's name on the page), title? (the page title; default the flow's name, else the file's), bundle? (a folder holding the web build, `trunk build --release` in apps/figcraft-web; default the one built into the app)}  writes a static website that shows only the prototype: the web build, `prototype.figcraft` (the file without version history, branches or comments), `prototype.json`, Netlify `_headers` and `LEIA-ME.txt`. Drag the folder onto app.netlify.com/drop to get a link. Returns {path, start, title, flow, files: [{name, bytes}], bytes}",
+            false,
+            crate::share::export_site
+        ),
         spec!("file.exportSvg", "Export selection as SVG", "{ids?, path?}", false, |s, p| {
             let mut q = p.clone();
             if let Some(o) = q.as_object_mut() {

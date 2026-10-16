@@ -60,6 +60,7 @@ pub mod variable_ui;
 pub mod variables_panel;
 pub mod vector_panel;
 pub mod versions;
+pub mod viewer;
 pub mod widgets;
 pub mod windows;
 
@@ -321,6 +322,8 @@ pub struct UiState {
     pub title_bar: TitleBar,
     /// Every icon on one screen, for reviewing the set (control channel `ui.set {iconGallery}`).
     pub icon_gallery: bool,
+    /// Showing one prototype and never the editor (a shared website: [`viewer`]).
+    pub viewer: Option<viewer::Viewer>,
     /// A message at the bottom of the window and when it first showed (UI clock, seconds).
     pub toast: Option<(String, Option<f64>)>,
     pub present: Option<present::Presenter>,
@@ -435,6 +438,7 @@ impl Default for UiState {
             home_view: home::Home::default(),
             title_bar: TitleBar::Native,
             icon_gallery: false,
+            viewer: None,
             toast: None,
             present: None,
             present_view: present::PresentView::default(),
@@ -1016,6 +1020,12 @@ impl FigApp {
         widgets::set_nudge(&ctx, self.session.prefs.nudge_small, self.session.prefs.nudge_big);
         // The Inspect tab measures on hover without Alt.
         self.session.tool.redlines = self.ui.right_tab == RightTab::Inspect;
+        // A shared prototype: the locked presenter and nothing else.
+        if viewer::active(self) {
+            viewer::show(self, ui);
+            self.toast_ui(&ctx);
+            return;
+        }
         if present::window::covers_window(self) {
             present::show(self, ui);
             // What went wrong while presenting (a widget's plugin failing) shows over it.
@@ -1166,6 +1176,12 @@ impl FigApp {
 
     /// UI state as JSON (control channel `ui.inspect`).
     pub fn inspect(&self) -> Value {
+        let mut v = self.inspect_main();
+        v["viewer"] = viewer::inspect(self);
+        v
+    }
+
+    fn inspect_main(&self) -> Value {
         json!({
             "rightTab": self.ui.right_tab,
             "leftTab": self.ui.left_tab,

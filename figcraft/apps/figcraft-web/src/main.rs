@@ -14,6 +14,12 @@
 //!   join from other machines.
 //!
 //! URL query flag: `?webgl` forces the WebGL2 backend instead of WebGPU.
+//!
+//! Viewer mode (a shared prototype, File ▸ Export prototype as website… in the desktop app): with
+//! a `prototype.json` next to `index.html`, or `?prototype=<file>` in the address (a path inside
+//! the site), the page fetches that file and shows only its prototype, locked: no editor and no
+//! way back to it. `?start=<frame name or id>` (and `flow`, `title`) override where it starts.
+//! See `figcraft_engine::share` and `docs/share-prototype.md`.
 
 #[cfg(target_arch = "wasm32")]
 mod web;

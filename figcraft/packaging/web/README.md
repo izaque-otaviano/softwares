@@ -18,6 +18,13 @@ The editor runs entirely on the visitor's device. The web build starts with one 
 there is no desktop TCP control server, and native file dialogs aren't wired up yet. A browser
 with WebGPU or WebGL2 is required.
 
+## A shared prototype (viewer mode)
+
+With a `prototype.json` next to `index.html`, or `?prototype=<file>` in the address, the page shows
+only that prototype, locked (no editor). The desktop app writes such a folder with File ▸ Export
+prototype as website…: see [docs/share-prototype.md](../../docs/share-prototype.md). Without either,
+the page fetches `prototype.json` once, gets a 404 and starts the editor as before.
+
 ## Live sessions
 
 The web build can join a live session hosted by the desktop app (File ▸ Join live session…, then

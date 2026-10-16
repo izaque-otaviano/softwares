@@ -45,6 +45,7 @@ pub mod rename;
 pub mod rotation_origin;
 pub mod shape_handles;
 pub mod shapebuilder;
+pub mod share;
 pub mod snap;
 pub mod style_vars;
 pub mod synthetic;
@@ -1594,6 +1595,8 @@ mod shapebuilder_strokes_tests;
 mod shapebuilder_tests;
 #[cfg(test)]
 mod shapes_behaviour_tests;
+#[cfg(test)]
+mod share_tests;
 #[cfg(test)]
 mod shortcut_parity_tests;
 #[cfg(test)]
