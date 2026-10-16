@@ -25,8 +25,43 @@ env:
   REF: ${{ inputs.ref || github.ref_name }}
   CRAFT_FONTS_REF: 43913056ce82a3fdad0ef69f6b88d1dc922a8104
 jobs:
+  # Versão de navegador (WASM) que vai embutida no app, para Arquivo ▸ Exportar protótipo como site.
+  web:
+    name: Versão web (para exportar protótipos)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: figcraft
+          key: web
+      - name: Instalar o trunk
+        run: curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C "$HOME/.cargo/bin" trunk
+      - name: Compilar a versão web
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+        run: |
+          cd figcraft/apps/figcraft-web && trunk build --release
+          ls -la "$GITHUB_WORKSPACE/figcraft/dist/web"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: figcraft-web
+          path: figcraft/dist/web
+          if-no-files-found: error
+
   macos:
     name: macOS universal (.dmg)
+    needs: web
     runs-on: macos-15
     steps:
       # Este repositório: o app em figcraft/, os arquivos do instalador em instaladores/figcraft/.
@@ -57,7 +92,10 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: figcraft/packaging/macos/import-cert.sh
-      # TODO: compilar aqui o bundle web com trunk e exportar FIGCRAFT_WEB_BUNDLE_DIR (veja o job windows).
+      - uses: actions/download-artifact@v4
+        with:
+          name: figcraft-web
+          path: web-bundle
       - name: Compilar FigCraft.app
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -65,6 +103,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
           CRAFT_FONTS_REQUIRED: "1"
+          FIGCRAFT_WEB_BUNDLE_DIR: ${{ github.workspace }}/web-bundle
+          FIGCRAFT_WEB_BUNDLE_REQUIRED: "1"
         run: figcraft/packaging/macos/package.sh --arch universal
       - name: Criar o DMG
         env:
@@ -85,6 +125,7 @@ jobs:
 
   windows:
     name: Windows ${{ matrix.arch }} (.exe)
+    needs: web
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -109,14 +150,17 @@ jobs:
         with:
           workspaces: figcraft
           key: ${{ matrix.arch }}
-      # TODO: compilar aqui o bundle web com trunk (figcraft/apps/figcraft-web) e exportar
-      # FIGCRAFT_WEB_BUNDLE_DIR para o build abaixo (recurso em desenvolvimento). No macOS, o mesmo
-      # passo entra antes de "Compilar FigCraft.app".
+      - uses: actions/download-artifact@v4
+        with:
+          name: figcraft-web
+          path: web-bundle
       - name: Compilar figcraft.exe
         shell: pwsh
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}\craft-fonts
           CRAFT_FONTS_REQUIRED: "1"
+          FIGCRAFT_WEB_BUNDLE_DIR: ${{ github.workspace }}\web-bundle
+          FIGCRAFT_WEB_BUNDLE_REQUIRED: "1"
         run: |
           # CRT estático: não precisa do Visual C++ Redistributable (como os builds oficiais).
           $flagVar = 'CARGO_TARGET_' + ('${{ matrix.target }}'.ToUpper() -replace '-', '_') + '_RUSTFLAGS'
