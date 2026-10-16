@@ -184,6 +184,8 @@ icons! {
     Screens,
     /// Open in a window of its own: a window with a title strip and an arrow leaving it.
     NewWindow,
+    /// Full screen: four corners pointing outwards.
+    Fullscreen,
 }
 
 /// Points along a circular arc from angle `a0` to `a1` (radians, y down: increasing is clockwise).
@@ -963,6 +965,12 @@ fn draw(p: &P, icon: Icon) {
             p.line(3.0, 8.0, 10.0, 8.0);
             p.line(8.5, 7.5, 13.0, 3.0);
             p.poly(&[(9.0, 2.5), (13.5, 2.5), (13.5, 7.0)], false);
+        }
+        Fullscreen => {
+            p.poly(&[(2.5, 6.0), (2.5, 2.5), (6.0, 2.5)], false);
+            p.poly(&[(10.0, 2.5), (13.5, 2.5), (13.5, 6.0)], false);
+            p.poly(&[(13.5, 10.0), (13.5, 13.5), (10.0, 13.5)], false);
+            p.poly(&[(6.0, 13.5), (2.5, 13.5), (2.5, 10.0)], false);
         }
         Screens => {
             // The window, a column of three small screens at its left and the page beside them.

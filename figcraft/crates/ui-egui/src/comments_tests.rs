@@ -206,7 +206,7 @@ fn the_presenter_shows_the_frames_comments() {
     let c = add(&mut s, 100.0, 100.0, "On the frame", "Sam");
     add(&mut s, 700.0, 100.0, "Elsewhere", "Sam");
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": f}));
+    u.run("proto.present", json!({"start": f, "mode": "fullWindow"}));
     assert!(u.app.ui.present.is_some());
     // Off by default; Shift+C shows them.
     assert_eq!(u.app.inspect()["presenter"]["comments"], false);

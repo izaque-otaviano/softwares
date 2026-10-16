@@ -285,12 +285,16 @@ pub fn escape(p: &mut Presenter) -> bool {
         p.ux.reveal = 0.0;
         return false;
     }
-    // A shared prototype never ends: there is no editor to go back to.
-    !p.ux.viewer
+    // A shared prototype never ends: there is no editor to go back to. Neither does a tab's
+    // presentation: its × (or Ctrl/Cmd+W) closes the tab.
+    !(p.ux.viewer || p.ux.tab)
 }
 
 /// How long the hidden bar takes to slide all the way in or out (seconds).
 const SLIDE_SECS: f64 = 0.14;
+/// How long the pointer stays away from the top edge before an auto-hiding bar slides away
+/// (seconds).
+pub const AUTO_HIDE_SECS: f64 = 3.0;
 /// How close to the window's top edge the pointer must be to ask for the hidden bar (points).
 const EDGE: f32 = 4.0;
 
@@ -303,7 +307,18 @@ pub fn peek(p: &mut Presenter, ctx: &Context, rect: Rect, bar_h: f32, now: f64) 
     let shown = p.ux.reveal > 0.0;
     let zone = if shown { bar_h + 6.0 } else { EDGE };
     let near = pos.is_some_and(|q| q.x >= rect.min.x && q.x <= rect.max.x && q.y >= rect.min.y - 1.0 && q.y <= rect.min.y + zone);
-    let want = (shown && egui::Popup::is_any_open(ctx)) || (near && (shown || !down));
+    let menu = shown && egui::Popup::is_any_open(ctx);
+    // An auto-hiding bar rests visible for a few seconds from the start, and from the last time
+    // the pointer was at it.
+    let auto = p.view.auto_hide && !p.view.hide_ui;
+    if auto && (near || menu || p.ux.near_at.is_none()) {
+        p.ux.near_at = Some(now);
+    }
+    let waiting = if auto { p.ux.near_at.map(|t| AUTO_HIDE_SECS - (now - t)).filter(|left| *left > 0.0) } else { None };
+    if let Some(left) = waiting {
+        crate::repaint_in(ctx, left);
+    }
+    let want = menu || (near && (shown || !down)) || waiting.is_some();
     // Steps of at most a frame at 30 Hz, so a window that was asleep slides in rather than jumps.
     let dt = (now - p.ux.reveal_at).clamp(0.0, 1.0 / 30.0);
     p.ux.reveal_at = now;
@@ -445,6 +460,7 @@ pub fn options_json(v: &PresentView) -> Value {
         "hideUi": v.hide_ui,
         "background": v.background.id(),
         "sidePanel": v.side_panel,
+        "autoHide": v.auto_hide,
     })
 }
 
@@ -457,7 +473,7 @@ fn both(app: &mut FigApp, f: impl Fn(&mut PresentView, &mut Ux)) {
 }
 
 /// `ui.set` keys for the presenter's controls (`proto.presentOptions` has the sizing ones):
-/// `presentHideUi` (true|false), `presentSidePanel` (true|false: the screens panel),
+/// `presentHideUi` (true|false), `presentSidePanel` (true|false: the screens panel), `presentAutoHide` (true|false: the bar rests away after a few seconds),
 /// `presentBackground` (`page`, `dark`, `grey`, `light`, `white`, `black` or a hex colour). They change the presentation playing and what the next one starts
 /// with.
 pub fn set_options(app: &mut FigApp, p: &Value) -> Result<(), String> {
@@ -475,6 +491,13 @@ pub fn set_options(app: &mut FigApp, p: &Value) -> Result<(), String> {
     }
     if let Some(on) = flag("presentSidePanel")? {
         both(app, |v, _| v.side_panel = on);
+    }
+    if let Some(on) = flag("presentAutoHide")? {
+        both(app, |v, ux| {
+            v.auto_hide = on;
+            ux.reveal = 0.0;
+            ux.near_at = None;
+        });
     }
     if let Some(v) = p.get("presentBackground").filter(|v| !v.is_null()) {
         let bg = v.as_str().and_then(Background::parse).ok_or("presentBackground: page, dark, grey, light, white, black or a hex colour")?;
@@ -634,6 +657,26 @@ pub struct Ux {
     /// Locked for a shared prototype ([`crate::viewer`]): nothing leads back to the editor (no
     /// Close, Escape doesn't end it) and there are no comments, Inspect or window of its own.
     pub viewer: bool,
+    /// The presentation is a tab of the window ([`super::tab`]): the tab's × ends it, Escape never
+    /// does. `tab_doc` is the open file it plays (uid) and `tab_active` says the tab is showing.
+    pub tab: bool,
+    pub tab_doc: u64,
+    pub tab_active: bool,
+    /// Where the strip drew the tab and its × last (window points), for `ui.inspect`.
+    pub tab_rect: Option<Rect>,
+    pub tab_close_rect: Option<Rect>,
+    /// Who the bar's avatar shows: you (name, colour) and the others in the file's live session;
+    /// set each frame ([`super::bar::note_people`]).
+    pub me: Option<(String, Color32)>,
+    pub peers: Vec<(String, Color32)>,
+    /// Share prototype can't run here (the browser has no folder to write a website into).
+    pub web: bool,
+    /// Asked for from the Options menu: end the presentation (the full-window one has no tab to
+    /// close).
+    pub close_request: bool,
+    /// When (UI clock) the pointer was last near the bar or one of its menus open: with
+    /// [`PresentView::auto_hide`] the bar slides away [`AUTO_HIDE_SECS`] after.
+    pub near_at: Option<f64>,
 }
 
 impl Ux {
@@ -672,7 +715,8 @@ pub fn help_window(ctx: &Context, p: &mut Presenter) {
     crate::dialogs::window(tr("Keyboard shortcuts"), ctx).id(Id::new("present_help")).open(&mut open).show(ctx, |ui| {
         ui.set_width(400.0);
         let mut group = "";
-        for s in SHORTCUTS.iter().filter(|s| !(p.ux.viewer && hidden_in_viewer(s.act))) {
+        // (A tab's presentation ends with its ×, not with Escape.)
+        for s in SHORTCUTS.iter().filter(|s| !(p.ux.viewer && hidden_in_viewer(s.act)) && !(p.ux.tab && s.act == Act::Close)) {
             if s.group != group {
                 if !group.is_empty() {
                     ui.add_space(10.0);

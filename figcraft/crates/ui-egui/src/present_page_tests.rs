@@ -43,7 +43,7 @@ fn page(w: f64, h: f64, build: impl FnOnce(&mut Session, NodeId, NodeId)) -> (Ui
     let next = frame(&mut s, "Next", w + 100.0, w, h);
     build(&mut s, page, next);
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": page}));
+    u.run("proto.present", json!({"start": page, "mode": "fullWindow"}));
     (u, page, next)
 }
 
@@ -297,7 +297,7 @@ fn leaving_a_while_hovering_state_keeps_the_scroll() {
     let (mut u, a, ..) = setup();
     let cover = id(&u.run("shape.rectangle", json!({"x": 0, "y": 0, "width": 393, "height": 2000, "parent": a, "props": {"name": "Cover"}})));
     u.run("proto.interaction.add", hover_link(cover));
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     let at = hotspot(&u, cover).unwrap();
     u.frames(2, || vec![Event::PointerMoved(at)]);
     assert!(player(&u).temp.is_some(), "hovering");
@@ -372,7 +372,7 @@ fn scroll_to_and_preserved_scroll_pan_a_page_without_a_device() {
     // Navigating keeps the scroll position when asked to, else starts at the top.
     click_on(&mut u, keep);
     assert_eq!((presenter(&u)["current"].clone(), pan(&u)), (json!(next), (0.0, 500.0)));
-    u.run("proto.present", json!({"start": page_id}));
+    u.run("proto.present", json!({"start": page_id, "mode": "fullWindow"}));
     present_scroll(&mut u, 0.0, 500.0);
     click_on(&mut u, top);
     assert_eq!((presenter(&u)["current"].clone(), pan(&u)), (json!(next), (0.0, 0.0)));
@@ -445,7 +445,7 @@ fn a_tall_frame_on_a_device_scrolls_even_when_set_not_to() {
     let inner = id(&ex(&mut s, "frame.create", json!({"x": 0, "y": 100, "width": 393, "height": 300, "parent": a, "name": "Inner"})));
     rect(&mut s, "Tall", inner, [0.0, 0.0, 393.0, 900.0]);
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     assert_eq!(presenter(&u)["scrollRange"], json!([0.0, 1148.0]));
     let s = screen(&u);
     let at = pos2(((s[0] + s[2]) / 2.0) as f32, (s[1] + 200.0) as f32);
@@ -464,11 +464,11 @@ fn responsive_takes_the_windows_width_keeps_the_height_and_scrolls() {
     let tall = frame(&mut s, "Tall", 700.0, 600.0, 3000.0);
     ex(&mut s, "proto.settings", json!({"responsive": true}));
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": wide}));
+    u.run("proto.present", json!({"start": wide, "mode": "fullWindow"}));
     let p = presenter(&u);
     assert_eq!((p["frameSize"].clone(), p["zoom"].clone(), p["panRange"].clone()), (json!([1440.0, 400.0]), json!(1.0), json!([0.0, 0.0])));
     // A tall page keeps its height and scrolls through the window.
-    u.run("proto.present", json!({"start": tall}));
+    u.run("proto.present", json!({"start": tall, "mode": "fullWindow"}));
     let p = presenter(&u);
     assert_eq!((p["frameSize"].clone(), p["panRange"].clone()), (json!([1440.0, 3000.0]), json!([0.0, 2140.0])));
     u.frames(4, || wheel(MIDDLE, vec2(0.0, -80.0)));
@@ -483,7 +483,7 @@ fn responsive_takes_the_windows_width_keeps_the_height_and_scrolls() {
     assert!(crate::present::page_settings(doc, tall).responsive, "the file's setting is untouched");
     assert_eq!(u.app.session.ds().unwrap().history.undo.len(), undo, "nothing to undo");
     // The next presentation starts from the file's setting again.
-    u.run("proto.present", json!({"start": tall}));
+    u.run("proto.present", json!({"start": tall, "mode": "fullWindow"}));
     assert_eq!(presenter(&u)["frameSize"], json!([1440.0, 3000.0]));
 }
 

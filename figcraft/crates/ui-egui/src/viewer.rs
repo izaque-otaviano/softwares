@@ -136,6 +136,12 @@ fn site_folder(name: &str) -> String {
 /// File ▸ Export prototype as website…: pick a folder (and, in a build without the web viewer
 /// built in, the web build to use); the site goes into a folder of its own there.
 pub fn export_dialog(app: &mut FigApp) {
+    export_dialog_from(app, None);
+}
+
+/// [`export_dialog`] for the prototype that starts at frame `start` (the one being presented), else
+/// as the command picks it (the selected frame, the first flow).
+pub fn export_dialog_from(app: &mut FigApp, start: Option<NodeId>) {
     let name = app.session.doc().map(|d| d.name.clone()).unwrap_or_default();
     let bundle = if share::has_embedded_bundle() {
         None
@@ -149,6 +155,9 @@ pub fn export_dialog(app: &mut FigApp) {
     let Some(parent) = app.services.pick_folder(tr("Choose where to save the website")) else { return };
     let folder = parent.join(site_folder(&name));
     let mut params = json!({"path": folder.to_string_lossy()});
+    if let Some(start) = start {
+        params["start"] = json!(start);
+    }
     if let Some(b) = bundle {
         params["bundle"] = json!(b.to_string_lossy());
     }

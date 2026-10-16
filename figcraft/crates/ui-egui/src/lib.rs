@@ -732,9 +732,14 @@ impl FigApp {
                 "dialog.colorProfile" => self.ui.color_profile = self.session.doc().ok().map(|d| d.color_profile),
                 "present" => {
                     if let Some(start) = r.data.get("start").and_then(figcraft_engine::params::id_of) {
-                        let mut p = present::Presenter::new(start);
-                        p.view = self.ui.present_view;
-                        self.ui.present = Some(p);
+                        // A tab beside the file's by default; `mode: "fullWindow"` covers the editor's window.
+                        if r.data.get("mode").and_then(Value::as_str) != Some("fullWindow") && self.session.ds().is_ok() {
+                            present::tab::open(self, start);
+                        } else {
+                            let mut p = present::Presenter::new(start);
+                            p.view = self.ui.present_view;
+                            self.ui.present = Some(p);
+                        }
                     }
                 }
                 "present.options" => {
@@ -1056,8 +1061,17 @@ impl FigApp {
             self.toast_ui(&ctx);
             return;
         }
+        // A presentation's tab ends with its file; another file's tab takes the window from it.
+        present::tab::tick(self);
+        if present::tab::active(self) && present::tab::show(self, ui) {
+            return;
+        }
         if present::window::covers_window(self) {
             present::show(self, ui);
+            // The main menu from the bar's mark, and the questions the window asks (quitting with
+            // unsaved changes).
+            menus::popups(self, &ctx);
+            dialogs::show(self, &ctx);
             // What went wrong while presenting (a widget's plugin failing) shows over it.
             self.toast_ui(&ctx);
             return;
@@ -1208,6 +1222,7 @@ impl FigApp {
     pub fn inspect(&self) -> Value {
         let mut v = self.inspect_main();
         v["viewer"] = viewer::inspect(self);
+        v["presentTab"] = present::tab::inspect(self);
         v
     }
 

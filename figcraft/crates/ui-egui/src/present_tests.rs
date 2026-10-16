@@ -203,7 +203,7 @@ fn the_frame_scrolls_on_the_device_screen_by_wheel_and_drag() {
 #[test]
 fn full_window_presenter_shares_the_player() {
     let (mut u, a, ..) = setup();
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     assert_eq!(u.app.inspect()["presenter"]["current"], json!(a));
     crate::control::handle(&mut u.app, &u.ctx, "ui.set", &json!({"presentScroll": [0, 5000]})).unwrap();
     assert_eq!(u.app.inspect()["presenter"]["scroll"], json!([0.0, 1148.0]));

@@ -510,7 +510,7 @@ screen: what doesn't fit is clipped, or scrolls when the frame's `overflow` allo
 layers stay on screen (pinned to the edges their constraints name). With `responsive: true` (saved
 in the file) the presented frame is instead resized to the device's screen, or without a device to
 the presenter's window at 100%, and its constraints and auto layout respond as when it is resized
-in the editor (an axis it hugs keeps hugging its content); the file's frames don't change. `proto.present {start?}` plays the prototype full-window and `proto.preview
+in the editor (an axis it hugs keeps hugging its content); the file's frames don't change. `proto.present {start?, mode?}` plays the prototype in a tab beside the file's (`mode: "fullWindow"` covers the editor's window) and `proto.preview
 {start?}` in a resizable pane over the canvas that follows edits live; `proto.closePreview` closes
 it. `proto.presentOptions {scale?, deviceFrame?, hotspotHints?, inspect?}` sets how the
 full-window presenter sizes the prototype (`fit` scales it down to fit, `fitWidth` fills the width,

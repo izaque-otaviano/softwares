@@ -23,7 +23,7 @@ pub(crate) fn abc() -> (Ui, [NodeId; 3]) {
     let mut s = Session::new();
     let ids = [("A", 0.0), ("B", 400.0), ("C", 800.0)].map(|(n, x)| frame(&mut s, n, x));
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": ids[0]}));
+    u.run("proto.present", json!({"start": ids[0], "mode": "fullWindow"}));
     (u, ids)
 }
 
@@ -202,7 +202,7 @@ fn every_listed_key_does_what_the_list_says() {
                     assert_eq!(screen(&u), "B", "{what}");
                 }
                 Act::Prev => {
-                    u.run("proto.present", json!({"start": b}));
+                    u.run("proto.present", json!({"start": b, "mode": "fullWindow"}));
                     key(&mut u);
                     assert_eq!(presenter(&u)["current"], json!(a), "{what}");
                 }
@@ -259,10 +259,10 @@ fn every_listed_key_does_what_the_list_says() {
                     assert_eq!(presenter(&u)["hideUi"], json!(false));
                     key(&mut u);
                     assert_eq!(presenter(&u)["hideUi"], json!(true), "{what}");
-                    assert!(presenter(&u)["controls"]["close"].is_null(), "{what}: the bar is gone");
+                    assert!(presenter(&u)["controls"]["options"].is_null(), "{what}: the bar is gone");
                     key(&mut u);
                     assert_eq!(presenter(&u)["hideUi"], json!(false), "{what}: again brings it back");
-                    assert!(!presenter(&u)["controls"]["close"].is_null(), "{what}: with its buttons");
+                    assert!(!presenter(&u)["controls"]["options"].is_null(), "{what}: with its buttons");
                 }
                 Act::Close => {
                     key(&mut u);
@@ -279,9 +279,11 @@ fn the_question_mark_opens_a_list_of_every_shortcut() {
     let (mut u, _) = abc();
     let closed = frame_out(&mut u, vec![]);
     assert!(!has_text(&closed, &t("Next screen")), "the list is closed");
-    // The bar's "?" opens it.
-    click(&mut u, text_at(&closed, "?"));
-    assert_eq!(presenter(&u)["shortcuts"], json!(true), "the ? button");
+    // The Options menu's entry opens it.
+    click_control(&mut u, "options");
+    let menu = frame_out(&mut u, vec![]);
+    click(&mut u, text_at(&menu, &t("Keyboard shortcuts")));
+    assert_eq!(presenter(&u)["shortcuts"], json!(true), "the Options entry");
     let out = frame_out(&mut u, vec![]);
     for row in SHORTCUTS {
         assert!(has_text(&out, &t(row.label)), "the list has {:?}", row.label);
@@ -302,16 +304,14 @@ fn the_question_mark_opens_a_list_of_every_shortcut() {
 #[test]
 fn the_options_menu_offers_the_list_and_prints_the_tables_keys() {
     let (mut u, _) = abc();
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     let menu = frame_out(&mut u, vec![]);
     // The hints come from the table.
     assert!(has_text(&menu, &crate::toolbar::pretty_shortcut(ux::spec(Act::Restart))), "{:?}", texts(&menu));
     click(&mut u, text_at(&menu, &t("Keyboard shortcuts")));
     assert_eq!(presenter(&u)["shortcuts"], json!(true));
     // A menu that is open takes Escape: the presentation stays.
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     press(&mut u, Key::Escape, Modifiers::NONE);
     assert!(u.app.ui.present.is_some(), "Escape closed the menu only");
     assert_eq!(presenter(&u)["shortcuts"], json!(true), "and left the list");
@@ -336,17 +336,17 @@ fn the_prototypes_own_keys_win_over_the_presenters_except_shift_c() {
     }
     let _ = b;
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     press(&mut u, Key::Z, Modifiers::NONE);
     assert_eq!(
         (screen(&u), presenter(&u)["scale"].clone()),
         ("C".to_string(), json!("actual")),
         "Z is the prototype's: it navigated, the size stayed"
     );
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     press(&mut u, Key::N, Modifiers::NONE);
     assert_eq!(screen(&u), "C", "N is the prototype's");
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     press(&mut u, Key::C, Modifiers::SHIFT);
     assert_eq!(presenter(&u)["comments"], json!(true), "Shift+C always shows the comments");
     assert_eq!(screen(&u), "A", "and the prototype doesn't see it");
@@ -391,7 +391,7 @@ fn linked() -> (Ui, [NodeId; 3], NodeId) {
     ex(&mut s, "proto.interaction.add", on_click(next, json!({"type": "navigate", "dest": c})));
     ex(&mut s, "proto.interaction.add", on_click(open, json!({"type": "openOverlay", "dest": menu})));
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     (u, [a, b, c], menu)
 }
 
@@ -452,7 +452,8 @@ fn the_bar_says_which_screen_of_the_page_this_is_and_steps_with_buttons() {
     }
     assert_eq!(position(&u), json!([4, 4]));
     // Restarting and a click on a link update it too.
-    click_control(&mut u, "restart");
+    press(&mut u, Key::R, Modifiers::NONE);
+    u.frames(2, Vec::new);
     assert_eq!(position(&u), json!([1, 4]));
     click_hotspot(&mut u, 0);
     assert_eq!(current(&u), json!(c), "the link led to C");
@@ -485,7 +486,7 @@ fn a_page_with_one_screen_has_no_counter_and_flows_are_not_what_it_counts() {
     let mut s = Session::new();
     let only = frame(&mut s, "Only", 0.0);
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": only}));
+    u.run("proto.present", json!({"start": only, "mode": "fullWindow"}));
     assert_eq!(position(&u), Value::Null);
     let out = frame_out(&mut u, vec![]);
     assert!(!texts(&out).iter().any(|(t, _)| t.contains(" / ")), "{:?}", texts(&out));
@@ -496,7 +497,7 @@ fn a_page_with_one_screen_has_no_counter_and_flows_are_not_what_it_counts() {
     ex(&mut s, "proto.flow.add", json!({"start": ids[0], "name": "One"}));
     ex(&mut s, "proto.flow.add", json!({"start": ids[3], "name": "Two"}));
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": ids[3]}));
+    u.run("proto.present", json!({"start": ids[3], "mode": "fullWindow"}));
     assert_eq!(position(&u), json!([4, 5]), "the second flow starts at the page's fourth screen");
     press(&mut u, Key::N, Modifiers::NONE);
     press(&mut u, Key::N, Modifiers::NONE);
@@ -510,7 +511,7 @@ fn a_page_with_one_screen_has_no_counter_and_flows_are_not_what_it_counts() {
     let c = frame(&mut s, "C", 800.0);
     ex(&mut s, "node.reparent", json!({"ids": [c], "parent": sec}));
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     press(&mut u, Key::N, Modifiers::NONE);
     assert_eq!((position(&u), current(&u)), (json!([2, 3]), json!(b)));
 }
@@ -523,12 +524,12 @@ fn a_long_name_gives_way_to_the_counter_and_the_pane_has_one_too() {
     frame(&mut s, "B", 400.0);
     let mut u = Ui::new(s);
     u.size = vec2(700.0, 500.0);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     let out = frame_out(&mut u, vec![]);
     // The counter is still on the bar, left of the buttons at the right, and its text isn't cut.
     assert!(has_text(&out, "1 / 2"));
-    let (p, help) = (control(&u, false, "position"), control(&u, false, "help"));
-    assert!(p.x < help.x - 20.0, "{p:?} {help:?}");
+    let (p, share) = (control(&u, false, "position"), control(&u, false, "share"));
+    assert!(p.x < share.x - 20.0, "{p:?} {share:?}");
     // The preview pane shows it too: with its buttons when they fit (here the name is cut to make
     // room), as text alone when they don't (a flow picker takes the room), not at all when even
     // that is too much.
@@ -563,7 +564,7 @@ fn settle_bar(u: &mut Ui) {
 }
 
 fn bar_texts_shown(out: &egui::FullOutput) -> bool {
-    ["Restart", "Close", "Options"].iter().any(|l| has_text(out, &t(l)))
+    has_text(out, &t("Share prototype"))
 }
 
 #[test]
@@ -593,7 +594,7 @@ fn hiding_the_ui_leaves_only_the_prototype_centred_in_the_whole_window() {
     // A viewing option, kept for the next presentation (which starts hidden).
     assert!(u.app.ui.present_view.hide_ui);
     assert_eq!(u.app.inspect()["presentOptions"]["hideUi"], json!(true));
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     assert_eq!(presenter(&u)["hideUi"], json!(true));
     // Cmd+\ again brings it back, with the panel.
     cmd_backslash(&mut u);
@@ -604,8 +605,7 @@ fn hiding_the_ui_leaves_only_the_prototype_centred_in_the_whole_window() {
 #[test]
 fn the_options_menu_hides_the_ui_and_the_hint_is_the_tables() {
     let (mut u, _) = abc();
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     let menu = frame_out(&mut u, vec![]);
     assert!(has_text(&menu, &crate::toolbar::pretty_shortcut(ux::spec(Act::HideUi))), "{:?}", texts(&menu));
     click(&mut u, text_at(&menu, &t("Hide UI")));
@@ -627,8 +627,8 @@ fn the_bar_slides_in_at_the_top_edge_and_out_again() {
     assert_eq!(presenter(&u)["barReveal"].as_f64(), Some(1.0));
     let out = frame_out(&mut u, vec![]);
     assert!(bar_texts_shown(&out));
-    let close = &presenter(&u)["controls"]["close"];
-    assert_eq!((close[1].as_f64(), close[3].as_f64()), (Some(8.0), Some(32.0)), "the bar is at the top: {close}");
+    let options = &presenter(&u)["controls"]["options"];
+    assert_eq!((options[1].as_f64(), options[3].as_f64()), (Some(6.0), Some(34.0)), "the bar is at the top: {options}");
     // It stays while the pointer is on it, goes when it leaves.
     move_to(&mut u, pos2(700.0, 30.0));
     settle_bar(&mut u);
@@ -656,13 +656,13 @@ fn the_bar_that_slid_in_works_and_the_prototype_under_it_does_not_see_the_click(
         json!({"id": link, "trigger": {"type": "onClick"}, "action": {"type": "navigate", "dest": c}, "transition": {"type": "instant"}}),
     );
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     cmd_backslash(&mut u);
     settle_bar(&mut u);
     move_to(&mut u, pos2(700.0, 1.0));
     settle_bar(&mut u);
     // Restart is where the link is. The click is the bar's.
-    click_control(&mut u, "restart");
+    press(&mut u, Key::R, Modifiers::NONE);
     assert_eq!(presenter(&u)["current"], json!(a), "the link under the button didn't fire");
     // The Options menu opens from it and keeps the bar while the pointer is in the menu.
     click_control(&mut u, "options");
@@ -722,7 +722,7 @@ fn hide_ui_is_reachable_from_the_control_channel() {
     set(&mut u, json!(true)).unwrap();
     assert_eq!(u.app.inspect()["presentOptions"]["hideUi"], json!(true));
     let a = u.app.session.doc().unwrap().top_frames(u.app.session.page().unwrap())[0];
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     assert_eq!(presenter(&u)["hideUi"], json!(true));
 }
 
@@ -776,7 +776,7 @@ fn the_colour_around_the_prototype_is_the_viewers_to_pick_and_the_files_stays() 
     ex(&mut s, "node.set", json!({"id": a, "props": {"fills": ["#FFFFFF"]}}));
     frame(&mut s, "B", 400.0);
     let mut r = Rec::new(s);
-    r.run("proto.present", json!({"start": a}));
+    r.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     let (page_before, dirty_before) = {
         let ds = r.u.app.session.ds().unwrap();
         (ds.doc.node(ds.page).map(|n| n.kind.clone()), ds.is_dirty())
@@ -806,7 +806,7 @@ fn the_colour_around_the_prototype_is_the_viewers_to_pick_and_the_files_stays() 
     }
     // Kept for the next presentation.
     r.u.app.ui.present = None;
-    r.run("proto.present", json!({"start": a}));
+    r.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     assert_eq!(around(&r), [0x33, 0x66, 0x99]);
     set(&mut r, "page").unwrap();
     assert_eq!(around(&r), page);
@@ -822,8 +822,7 @@ fn the_colour_around_the_prototype_is_the_viewers_to_pick_and_the_files_stays() 
 #[test]
 fn the_options_menu_picks_a_swatch_or_types_a_hex_colour_and_stays_open() {
     let (mut u, _) = abc();
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     let menu = frame_out(&mut u, vec![]);
     for label in ["Page colour", "Dark", "Mid grey", "Light", "White", "Black"] {
         assert!(has_text(&menu, &t(label)), "the menu has {label}: {:?}", texts(&menu));
@@ -924,11 +923,13 @@ fn the_screens_panel_lists_the_screens_jumps_and_refits_the_prototype() {
     ex(&mut s, "proto.flow.add", json!({"start": ids[0], "name": "Onboarding"}));
     ex(&mut s, "proto.flow.add", json!({"start": ids[2], "name": "Checkout"}));
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": ids[0]}));
+    u.run("proto.present", json!({"start": ids[0], "mode": "fullWindow"}));
     assert_eq!(screen_rect(&u), [570.0, 270.0, 870.0, 670.0], "without the panel");
     assert!(presenter(&u)["controls"][format!("screen:{}", ids[0].0)].is_null());
-    // The bar's button and S open it at the left; the prototype is centred in what is left.
-    click_control(&mut u, "screens");
+    // The Options menu's entry and S open it at the left; the prototype is centred in what is left.
+    click_control(&mut u, "options");
+    let menu = frame_out(&mut u, vec![]);
+    click(&mut u, text_at(&menu, &t("Screens")));
     assert_eq!(presenter(&u)["sidePanel"], json!(true));
     u.frames(2, Vec::new);
     assert_eq!(screen_rect(&u), [570.0 + 116.0, 270.0, 870.0 + 116.0, 670.0], "re-fitted beside the 232 wide panel");
@@ -995,7 +996,7 @@ fn a_click_on_a_screen_closes_an_overlay_and_a_long_list_scrolls_to_the_current_
     // Forty screens don't fit the panel: it scrolls to the current screen as the keys step through.
     let (s, ids) = screens(40);
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": ids[0]}));
+    u.run("proto.present", json!({"start": ids[0], "mode": "fullWindow"}));
     press(&mut u, Key::S, Modifiers::NONE);
     u.frames(2, Vec::new);
     assert!(presenter(&u)["controls"][format!("screen:{}", ids[39].0)].is_null(), "the last one is out of view");
@@ -1021,7 +1022,7 @@ fn thumbs(u: &Ui) -> Value {
 fn thumbnails_draw_one_a_frame_for_the_rows_in_view_and_then_the_panel_is_idle() {
     let (s, ids) = screens(40);
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": ids[0]}));
+    u.run("proto.present", json!({"start": ids[0], "mode": "fullWindow"}));
     press(&mut u, Key::S, Modifiers::NONE);
     // Never more than one a frame, and the frames they cost are counted.
     let mut kept = 0;
@@ -1058,7 +1059,7 @@ fn an_edit_in_the_editor_draws_the_thumbnails_in_view_again() {
     let mut r = crate::present::raster_tests::demo_for_tests();
     let welcome = r.u.app.session.doc().unwrap().top_frames(r.u.app.session.page().unwrap())[0];
     crate::control::handle(&mut r.u.app, &r.u.ctx, "ui.set", &json!({"presentSidePanel": true})).unwrap();
-    r.run("proto.present", json!({"start": welcome}));
+    r.run("proto.present", json!({"start": welcome, "mode": "fullWindow"}));
     r.frames(20);
     let before = r.u.app.inspect()["presenter"]["thumbnails"].clone();
     assert_eq!(before["waiting"], json!(0), "{before}");
@@ -1100,7 +1101,7 @@ fn the_screens_panel_frame_cost() {
     }
     let first = s.doc().unwrap().top_frames(s.page().unwrap())[0];
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": first}));
+    u.run("proto.present", json!({"start": first, "mode": "fullWindow"}));
     press(&mut u, Key::S, Modifiers::NONE);
     let mut worst: f64 = 0.0;
     let mut times = Vec::new();

@@ -41,6 +41,24 @@ fn press(u: &mut Ui, key: Key, modifiers: Modifiers) {
     u.frame(vec![Event::PointerMoved(pos2(720.0, 450.0)), k(true), k(false)]);
 }
 
+/// The middle of the bar's control `name`.
+fn control_at(u: &Ui, name: &str) -> Pos2 {
+    let r = &presenter(u)["controls"][name];
+    let f = |i: usize| r[i].as_f64().unwrap_or_else(|| panic!("no control {name:?}")) as f32;
+    pos2((f(0) + f(2)) / 2.0, (f(1) + f(3)) / 2.0)
+}
+
+fn click_at_control(u: &mut Ui, name: &str) {
+    let at = control_at(u, name);
+    u.button(at, true);
+    u.button(at, false);
+    u.frames(2, Vec::new);
+}
+
+fn click_options(u: &mut Ui) {
+    click_at_control(u, "options");
+}
+
 /// The texts one frame draws.
 fn texts(u: &mut Ui) -> Vec<String> {
     u.time += 1.0 / 60.0;
@@ -73,12 +91,27 @@ fn a_shared_prototype_has_no_way_back_to_the_editor() {
     assert_eq!((v["title"].clone(), v["error"].clone()), (json!("Shop"), Value::Null), "{v}");
     assert_eq!(super::title(&u.app).as_deref(), Some("Shop"));
     let controls = p["controls"].as_object().unwrap();
-    for gone in ["close", "comments", "inspect"] {
+    // No comments, no way to share or export the file, no profile; the mark is a mark and no menu.
+    for gone in ["comments", "share", "avatar"] {
         assert!(!controls.contains_key(gone), "{gone} shown: {controls:?}");
     }
-    for kept in ["restart", "options", "help", "screens"] {
+    for kept in ["logo", "file", "options", "fullscreen"] {
         assert!(controls.contains_key(kept), "{kept} missing: {controls:?}");
     }
+    // The Options menu has no Inspect, no way to close the presentation or to leave for a window.
+    click_options(&mut u);
+    let menu = texts(&mut u);
+    let has = |label: &str| menu.iter().any(|t| t.trim().trim_start_matches('\u{2713}').trim() == tr(label));
+    for gone in ["Inspect", "Close the presentation", "Open in new window"] {
+        assert!(!has(gone), "{gone} in the menu: {menu:?}");
+    }
+    for kept in ["Restart", "Screens", "Keyboard shortcuts", "Hide UI"] {
+        assert!(has(kept), "{kept} missing from the menu: {menu:?}");
+    }
+    press(&mut u, Key::Escape, Modifiers::NONE);
+    // The mark does nothing: there is no editor behind it.
+    click_at_control(&mut u, "logo");
+    assert!(!u.app.ui.main_menu);
     // Escape, again and again: still presenting (it first shows the hidden controls, closes the list).
     press(&mut u, Key::Backslash, Modifiers::COMMAND);
     assert_eq!(presenter(&u)["hideUi"], json!(true));

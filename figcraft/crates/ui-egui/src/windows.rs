@@ -328,11 +328,15 @@ pub fn on_close_request(app: &mut FigApp, ctx: &Context) {
     }
 }
 
-/// Close what plays over the editor in the window drawing now: a presentation covering it (one
-/// in a window of its own has that window's close button), else the preview pane showing over its
-/// file. False when there is neither.
+/// Close what plays over the editor in the window drawing now: a presentation covering it full
+/// window (one in a window of its own has that window's close button; one in a tab is closed by
+/// its tab, and the window's close button goes on to the unsaved-changes question), else the
+/// preview pane showing over its file. False when there is neither.
 fn close_player(app: &mut FigApp) -> bool {
     if crate::present::window::covers_window(app) {
+        if crate::present::tab::is_tab(app) {
+            return false;
+        }
         app.ui.present = None;
         true
     } else if crate::present::pane_shown(app) {

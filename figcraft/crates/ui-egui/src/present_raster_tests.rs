@@ -276,7 +276,7 @@ fn the_rasterizer_draws_the_presenter() {
         &s.execute("frame.create", &serde_json::json!({"x": 0, "y": 0, "width": 300, "height": 400, "name": "Home"})).unwrap(),
     );
     let mut r = Rec::new(s);
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     let prims = r.u.ctx.tessellate(r.last.clone(), 1.0);
     let img = r.raster.draw(&prims, 1.0, (1440, 900), Color32::BLACK);
     // The bar is dark grey at the top, the page colour fills the rest, and the bar's text is drawn
@@ -335,7 +335,7 @@ fn demo() -> (Rec, [figcraft_doc::NodeId; 3]) {
 fn snapshots() {
     let Some(dir) = gallery_dir() else { return };
     let (mut r, [a, ..]) = demo();
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     r.frames(2);
     r.save(&dir.join("presenter.png"));
     if let Some(p) = r.u.app.ui.present.as_mut() {
@@ -356,7 +356,7 @@ fn snapshots() {
     r.save_region(&dir.join("bar-counter.png"), Rect::from_min_size(Pos2::ZERO, vec2(480.0, 40.0)), 3);
     // The controls hidden, and the bar slid back in at the top edge.
     r.u.app.ui.present = None;
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     if let Some(p) = r.u.app.ui.present.as_mut() {
         p.view.hide_ui = true;
     }
@@ -371,7 +371,7 @@ fn snapshots() {
     let home = r.u.app.session.doc().unwrap().top_frames(r.u.app.session.page().unwrap())[2];
     r.run("proto.flow.add", serde_json::json!({"start": home, "name": "Main app"}));
     r.frame(vec![Event::PointerMoved(Pos2::new(300.0, 400.0))]);
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     r.frames(2);
     r.click(r.control(&format!("screen:{}", r.u.app.session.doc().unwrap().top_frames(r.u.app.session.page().unwrap())[1].0)));
     r.frames(3);
@@ -382,14 +382,14 @@ fn snapshots() {
     r.u.app.ui.present = None;
     crate::control::handle(&mut r.u.app, &r.u.ctx, "ui.set", &serde_json::json!({"presentHideUi": false})).unwrap();
     r.frame(vec![Event::PointerMoved(Pos2::new(300.0, 400.0))]);
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     r.click(r.control("options"));
     r.frames(40);
     r.save_region(&dir.join("options.png"), Rect::from_min_size(Pos2::new(1000.0, 0.0), vec2(440.0, 680.0)), 1);
     // A pale device on a light background (and on a dark one).
     r.u.app.ui.present = None;
     r.run("proto.settings", serde_json::json!({"device": "iPhone 16", "color": "White"}));
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     r.run("proto.presentOptions", serde_json::json!({"scale": "fit"}));
     r.frames(3);
     r.save_region(&dir.join("device-dark.png"), Rect::from_min_size(Pos2::new(420.0, 40.0), vec2(600.0, 860.0)), 1);
@@ -406,6 +406,67 @@ fn snapshots() {
     r.save(&dir.join("pane.png"));
 }
 
+/// The prototype in a tab (`FIGCRAFT_SNAPSHOTS=/some/dir cargo test -p figcraft-ui-egui --lib tab_snapshots`): the
+/// tab strip with the presentation's tab beside the file's, the bar in its three zones, the bar
+/// that slid in over a prototype with its controls hidden, and the menus behind it.
+#[test]
+fn tab_snapshots() {
+    use serde_json::json;
+    let Some(dir) = gallery_dir() else { return };
+    let (mut r, [a, ..]) = demo();
+    r.run("file.rename", json!({"name": "DESCONTÃO"}));
+    r.run("proto.flow.add", json!({"start": a, "name": "HOME"}));
+    r.run("proto.present", json!({"start": a}));
+    r.frames(3);
+    let strip = Rect::from_min_size(Pos2::ZERO, vec2(720.0, 40.0));
+    r.save(&dir.join("tab-presenting.png"));
+    r.save_region(&dir.join("tab-strip-presenting.png"), strip, 2);
+    r.save_region(&dir.join("tab-bar.png"), Rect::from_min_size(Pos2::new(0.0, 40.0), vec2(1440.0, 40.0)), 2);
+    // The editor's tab: the presentation's waits beside it.
+    if let Some(p) = r.u.app.ui.present.as_mut() {
+        p.ux.tab_active = false;
+    }
+    r.frames(3);
+    r.save_region(&dir.join("tab-strip-editor.png"), strip, 2);
+    r.save(&dir.join("tab-editor.png"));
+    if let Some(p) = r.u.app.ui.present.as_mut() {
+        p.ux.tab_active = true;
+    }
+    r.frames(3);
+    // The bar's menus.
+    r.click(r.control("file"));
+    r.frames(30);
+    r.save_region(&dir.join("bar-file-menu.png"), Rect::from_min_size(Pos2::new(440.0, 40.0), vec2(560.0, 300.0)), 2);
+    if let Some(p) = r.u.app.ui.present.as_mut() {
+        p.ux.help = false;
+    }
+    r.frame(vec![Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+    r.frames(3);
+    r.click(r.control("options"));
+    r.frames(40);
+    r.save_region(&dir.join("bar-options-menu.png"), Rect::from_min_size(Pos2::new(1000.0, 40.0), vec2(440.0, 620.0)), 2);
+    r.frame(vec![Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+    r.frames(3);
+    r.click(r.control("avatar"));
+    r.frames(30);
+    r.save_region(&dir.join("bar-avatar-menu.png"), Rect::from_min_size(Pos2::new(1000.0, 40.0), vec2(440.0, 200.0)), 2);
+    r.frame(vec![Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+    r.frames(3);
+    // Hidden, and slid in at the top edge.
+    crate::control::handle(&mut r.u.app, &r.u.ctx, "ui.set", &json!({"presentHideUi": true})).unwrap();
+    r.frame(vec![Event::PointerMoved(Pos2::new(700.0, 500.0))]);
+    r.frames(25);
+    r.save_region(&dir.join("bar-hidden.png"), Rect::from_min_size(Pos2::ZERO, vec2(1440.0, 200.0)), 1);
+    r.frame(vec![Event::PointerMoved(Pos2::new(700.0, 41.0))]);
+    r.frames(25);
+    r.save_region(&dir.join("bar-revealed.png"), Rect::from_min_size(Pos2::ZERO, vec2(1440.0, 200.0)), 2);
+    crate::control::handle(&mut r.u.app, &r.u.ctx, "ui.set", &json!({"presentHideUi": false})).unwrap();
+    // A narrow window.
+    r.resize(760.0, 600.0);
+    r.frames(3);
+    r.save_region(&dir.join("bar-narrow.png"), Rect::from_min_size(Pos2::ZERO, vec2(760.0, 120.0)), 2);
+}
+
 /// The prototype in a window of its own: the editor's window with the editor in it, and the
 /// presenter's window beside it (`FIGCRAFT_SNAPSHOTS=/some/dir cargo test -p figcraft-ui-egui --lib window_snapshots`).
 #[test]
@@ -414,7 +475,7 @@ fn window_snapshots() {
     let (mut r, [a, ..]) = demo();
     // (A headless context has no window to give: this is a desktop's.)
     r.u.ctx.set_embed_viewports(false);
-    r.run("proto.present", serde_json::json!({"start": a}));
+    r.run("proto.present", serde_json::json!({"start": a, "mode": "fullWindow"}));
     crate::present::window::apply(&mut r.u.app, &r.u.ctx, true);
     r.frames(3);
     assert!(crate::present::window::is_open(&r.u.app), "the presentation is in a window of its own");
@@ -468,7 +529,7 @@ fn video_snapshots() {
     )
     .unwrap();
     let mut r = Rec::new(s);
-    r.run("proto.present", serde_json::json!({"start": f}));
+    r.run("proto.present", serde_json::json!({"start": f, "mode": "fullWindow"}));
     // A second and a half of playback (a frame of the harness is 1/60 s): the bar has moved on.
     r.frames(90);
     let media = r.u.app.inspect()["presenter"]["media"].clone();
