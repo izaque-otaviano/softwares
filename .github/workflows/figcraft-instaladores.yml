@@ -1,0 +1,208 @@
+name: FigCraft installers
+# Compila o FigCraft da pasta figcraft/ deste repositório (baseado em github.com/storytold/figcraft) e gera:
+#   FigCraft-<versão>-macOS-Universal.dmg      (Apple silicon + Intel, arrastar para Aplicativos)
+#   FigCraft-<versão>-Windows-<arch>-Setup.exe (assistente Inno Setup)
+# e publica os dois numa Release deste repositório (tag figcraft-v<versão>), para baixar e executar.
+# Para gerar: Actions > FigCraft installers > Run workflow, ou envie uma tag figcraft-build-N
+# (git tag figcraft-build-1 && git push origin figcraft-build-1).
+# Detalhes em instaladores/figcraft/README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag ou commit deste repositório
+        default: main
+        required: false
+  push:
+    tags: ['figcraft-build-*']
+concurrency:
+  group: figcraft-instaladores
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  # Ref compilado: o input `ref` (Run workflow) ou a tag figcraft-build-N enviada.
+  REF: ${{ inputs.ref || github.ref_name }}
+  CRAFT_FONTS_REF: 43913056ce82a3fdad0ef69f6b88d1dc922a8104
+jobs:
+  macos:
+    name: macOS universal (.dmg)
+    runs-on: macos-15
+    steps:
+      # Este repositório: o app em figcraft/, os arquivos do instalador em instaladores/figcraft/.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      # Fontes japonesas, chinesas, árabes e tailandesas que os builds oficiais embutem.
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: figcraft
+      - name: Versão
+        run: |
+          v="$(awk '/^\[/ { p = ($0 == "[workspace.package]"); next } p && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' figcraft/Cargo.toml)"
+          echo "VERSION=$v" >>"$GITHUB_ENV"
+          echo "### FigCraft $v ($REF, $(git rev-parse --short HEAD))" >>"$GITHUB_STEP_SUMMARY"
+      # Opcional: com os secrets abaixo o app e o DMG saem assinados e notarizados pela Apple.
+      # Sem eles, a assinatura é ad-hoc (veja o README).
+      - name: Certificado Developer ID
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: figcraft/packaging/macos/import-cert.sh
+      # TODO: compilar aqui o bundle web com trunk e exportar FIGCRAFT_WEB_BUNDLE_DIR (veja o job windows).
+      - name: Compilar FigCraft.app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: figcraft/packaging/macos/package.sh --arch universal
+      - name: Criar o DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          instaladores/figcraft/macos/criar-dmg.sh figcraft/target/macos-package/FigCraft.app \
+            "saida/FigCraft-$VERSION-macOS-Universal.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FigCraft-macOS
+          path: saida/*.dmg
+          if-no-files-found: error
+      - name: Remover keychain temporário
+        if: always()
+        run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN" || true; fi
+
+  windows:
+    name: Windows ${{ matrix.arch }} (.exe)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, target: x86_64-pc-windows-msvc }
+          - { arch: arm64, target: aarch64-pc-windows-msvc }
+    steps:
+      # Este repositório: o app em figcraft/, os arquivos do instalador em instaladores/figcraft/.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: figcraft
+          key: ${{ matrix.arch }}
+      # TODO: compilar aqui o bundle web com trunk (figcraft/apps/figcraft-web) e exportar
+      # FIGCRAFT_WEB_BUNDLE_DIR para o build abaixo (recurso em desenvolvimento). No macOS, o mesmo
+      # passo entra antes de "Compilar FigCraft.app".
+      - name: Compilar figcraft.exe
+        shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}\craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: |
+          # CRT estático: não precisa do Visual C++ Redistributable (como os builds oficiais).
+          $flagVar = 'CARGO_TARGET_' + ('${{ matrix.target }}'.ToUpper() -replace '-', '_') + '_RUSTFLAGS'
+          [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
+          $env:FIGCRAFT_BUILD_SHA = (git -C figcraft rev-parse HEAD)
+          cargo build --manifest-path figcraft/Cargo.toml --release --locked -p figcraft -p figcraft-cli --target ${{ matrix.target }} 2>&1 | Tee-Object -Variable log
+          if ($LASTEXITCODE -ne 0) { throw "cargo build falhou" }
+          # O build.rs do FigCraft só avisa quando não consegue embutir o ícone e o VERSIONINFO no
+          # .exe; aqui isso é erro, para nunca sair um instalador com o app sem ícone.
+          if ("$log" -match 'winresource:') { throw "o ícone não foi embutido no figcraft.exe" }
+      - name: Criar o instalador
+        shell: pwsh
+        run: |
+          $inPkg = $false
+          foreach ($line in Get-Content figcraft/Cargo.toml) {
+            if ($line -match '^\s*\[') { $inPkg = ($line.Trim() -eq '[workspace.package]'); continue }
+            if ($inPkg -and $line -match '^\s*version\s*=\s*"([^"]+)"') { $Version = $Matches[1]; break }
+          }
+          $Bin = "figcraft\target\${{ matrix.target }}\release"
+          # Licenças das fontes embutidas vão junto com o app.
+          foreach ($ofl in Get-ChildItem craft-fonts\fonts\*\OFL.txt) {
+            Copy-Item $ofl.FullName (Join-Path $Bin "OFL-$($ofl.Directory.Name).txt")
+          }
+          $Iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $Iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "falha ao instalar o Inno Setup" }
+          }
+          & $Iscc /Q "/DVersion=$Version" "/DArch=${{ matrix.arch }}" `
+            "/DBinDir=$(Resolve-Path $Bin)" `
+            "/DIconFile=$(Resolve-Path figcraft\assets\app-icon\figcraft.ico)" `
+            "/DDocsDir=$(Resolve-Path figcraft)" `
+            "/O$PWD\saida" instaladores\figcraft\windows\figcraft.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
+          Get-Item saida\*.exe | Format-Table Name, Length
+      - name: Testar instalação silenciosa
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $setup = (Get-Item saida\*.exe).FullName
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "instalação falhou: $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\FigCraft'
+          & (Join-Path $app 'figcraft-cli.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "figcraft-cli não rodou" }
+          $p = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "desinstalação falhou: $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FigCraft-Windows-${{ matrix.arch }}
+          path: saida/*.exe
+          if-no-files-found: error
+
+  # Publica os instaladores na Release figcraft-v<versão> deste repositório: download direto, sem zip.
+  publicar:
+    name: Publicar Release
+    needs: [macos, windows]
+    if: ${{ !cancelled() && (needs.macos.result == 'success' || needs.windows.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: saida
+          merge-multiple: true
+      - name: Criar ou atualizar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la saida
+          v="$(find saida -name 'FigCraft-*' -printf '%f\n' | sed -nE 's/^FigCraft-(.+)-(macOS|Windows)-.*/\1/p' | head -1)"
+          [ -n "$v" ] || { echo "nenhum instalador encontrado" >&2; exit 1; }
+          tag="figcraft-v$v"
+          commit="$(git rev-parse HEAD)"
+          (cd saida && sha256sum FigCraft-* >SHA256SUMS.txt)
+          sed -e "s/{VERSAO}/$v/g" -e "s|{REF}|$REF|g" -e "s|{COMMIT}|$commit|g" instaladores/figcraft/notas-release.md >notas.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" saida/* --clobber
+            gh release edit "$tag" --notes-file notas.md
+          else
+            # --latest=false: o repositório tem vários apps (e o IconHub); nenhum vira "Latest" sozinho.
+            gh release create "$tag" saida/* --target "$commit" --title "FigCraft $v" --notes-file notas.md --latest=false
+          fi
+          echo "### Release: https://github.com/$GH_REPO/releases/tag/$tag" >>"$GITHUB_STEP_SUMMARY"

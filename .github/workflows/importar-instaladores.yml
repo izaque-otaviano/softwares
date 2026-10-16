@@ -1,11 +1,11 @@
 name: Importar instaladores
 # Copia os instaladores (.dmg e .exe) de VectorCraft, PhotoCraft, FilmCraft e FigCraft das
 # Releases de izaqueotaviano/uploader-convertize para Releases deste repositório.
+# LEGADO: usado só na migração. Os instaladores agora são gerados aqui mesmo pelos workflows
+# <app>-instaladores.yml (pastas instaladores/<app>/); este fica apenas para rodar à mão, enquanto o
+# repositório de origem existir.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/importar-instaladores.yml']
 permissions:
   contents: write
 jobs:
