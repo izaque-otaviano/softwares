@@ -37,3 +37,10 @@ Design de interfaces e protótipos (Mac e Windows). Baseado em [storytold/figcra
 - Instaladores: [Releases](../../releases)
 
 VectorCraft, PhotoCraft, FilmCraft e FigCraft são licenciados como MIT OR Apache-2.0 (veja `LICENSE-MIT`, `LICENSE-APACHE` e `NOTICE` em cada pasta).
+
+## Uploader Convertize
+
+App Uploader (Python) e as ferramentas que geravam os instaladores dos apps acima.
+
+- Código: [`uploader-convertize/`](uploader-convertize/)
+- Copiado de `izaqueotaviano/uploader-convertize`. Os workflows que estão dentro de `uploader-convertize/.github/` não rodam a partir desta pasta; para gerar o executável do Uploader, eles precisam ficar em `.github/workflows/` na raiz do repositório.

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv*/
+dist/
+build/
+*.spec
+!Uploader.spec
+*.zip
+queue.json
+processed_files*.json

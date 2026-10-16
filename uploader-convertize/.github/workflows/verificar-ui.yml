@@ -1,0 +1,125 @@
+name: Verificar UI (testes e capturas)
+# Roda os testes da interface de um dos apps (a partir do fork em izaqueotaviano/<app>, num branch)
+# e tira capturas de tela da janela principal, da tela inicial e da tela de novo documento.
+# As capturas e os logs são gravados no branch "capturas" deste repositório, em <app>/<run_id>/.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App
+        type: choice
+        options: [vectorcraft, photocraft, figcraft, filmcraft]
+        required: true
+      ref:
+        description: Branch, tag ou commit do fork izaqueotaviano/<app>
+        default: main
+        required: true
+      testes:
+        description: Rodar os testes da interface
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: verificar-ui-${{ inputs.app }}
+  cancel-in-progress: false
+jobs:
+  verificar:
+    name: ${{ inputs.app }} @ ${{ inputs.ref }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_TERM_COLOR: never
+      APP: ${{ inputs.app }}
+    steps:
+      - name: Liberar espaço em disco
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - uses: actions/checkout@v4
+        with:
+          path: ferramentas
+      - uses: actions/checkout@v4
+        with:
+          repository: izaqueotaviano/${{ inputs.app }}
+          ref: ${{ inputs.ref }}
+          path: app
+      - name: Fontes (craft-fonts na versão que o app usa)
+        run: |
+          ref="$(grep -m1 -E '^\s*(CRAFT_FONTS_REF|craft-fonts-ref):' app/.github/workflows/release.yml | awk '{print $2}')"
+          echo "craft-fonts @ ${ref:-main}"
+          git clone -q --filter=blob:none https://github.com/storytold/craft-fonts craft-fonts
+          if [ -n "$ref" ]; then git -C craft-fonts checkout -q "$ref"; fi
+          echo "CRAFT_FONTS_DIR=$PWD/craft-fonts" >>"$GITHUB_ENV"
+      - name: Dependências do sistema (X11, Wayland, Vulkan por software)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1 libegl-mesa0 libgtk-3-dev libasound2-dev mesa-vulkan-drivers xvfb imagemagick
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+          key: verificar-${{ inputs.app }}
+      - name: Pacotes do app
+        run: |
+          case "$APP" in
+            vectorcraft) echo "UI_PKG=vectorcraft-ui-egui" >>"$GITHUB_ENV"; echo "BIN_PKG=vectorcraft" >>"$GITHUB_ENV" ;;
+            photocraft)  echo "UI_PKG=photocraft-ui-egui"  >>"$GITHUB_ENV"; echo "BIN_PKG=photocraft"  >>"$GITHUB_ENV" ;;
+            figcraft)    echo "UI_PKG=figcraft-ui-egui"    >>"$GITHUB_ENV"; echo "BIN_PKG=figcraft"    >>"$GITHUB_ENV"
+                         echo "EXTRA_TEST_PKGS=-p figcraft-engine -p figcraft-doc -p figcraft-format -p figcraft-render -p figcraft-media -p figcraft-svg -p figcraft-pdf -p figcraft-color" >>"$GITHUB_ENV" ;;
+            filmcraft)   echo "UI_PKG=filmcraft-ui-egui"   >>"$GITHUB_ENV"; echo "BIN_PKG=filmcraft"   >>"$GITHUB_ENV" ;;
+          esac
+          mkdir -p saida
+          git -C app log -1 --format='%H %s' | tee saida/commit.txt
+      - name: Testes da interface
+        if: inputs.testes
+        continue-on-error: true
+        id: testes
+        working-directory: app
+        run: |
+          set -o pipefail
+          # Os pacotes extras (só FigCraft) rodam apenas testes de biblioteca e de integração, sem doctests.
+          if [ -n "${EXTRA_TEST_PKGS:-}" ]; then
+            cargo test --locked -p "$UI_PKG" $EXTRA_TEST_PKGS --lib --tests 2>&1 | tee ../saida/testes.log
+          else
+            cargo test --locked -p "$UI_PKG" 2>&1 | tee ../saida/testes.log
+          fi
+      - name: Resumo dos testes
+        if: inputs.testes
+        run: |
+          grep -E '^test result:|FAILED|panicked|^failures:|^    [a-z_:]+$' saida/testes.log | tail -80 | tee saida/testes-resumo.txt || true
+          echo "resultado=${{ steps.testes.outcome }}" | tee -a saida/testes-resumo.txt
+      - name: Compilar o app
+        working-directory: app
+        run: cargo build --locked -p "$BIN_PKG" 2>&1 | tail -5
+      - name: Capturas de tela
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          python3 ferramentas/.github/scripts/capturas.py "$APP" "$PWD/app" "$PWD/saida"
+          ls -la saida
+      - name: Gravar no branch "capturas"
+        if: always()
+        working-directory: ferramentas
+        run: |
+          dest="$APP/${{ github.run_id }}"
+          if git ls-remote --exit-code -q origin capturas; then
+            git fetch -q --depth 1 origin capturas
+            git checkout -q -B capturas FETCH_HEAD
+          else
+            git checkout -q --orphan capturas
+            git rm -rfq .
+          fi
+          mkdir -p "$dest" && cp -r ../saida/. "$dest/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          git commit -qm "Capturas de $APP (${{ inputs.ref }}, run ${{ github.run_id }})" || true
+          git push -q origin capturas
+          echo "### Capturas em capturas/$dest" >>"$GITHUB_STEP_SUMMARY"
+      - name: Falhar se os testes falharam
+        if: inputs.testes && steps.testes.outcome != 'success'
+        run: exit 1

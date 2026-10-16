@@ -1,0 +1,14 @@
+# Experimental compatibility profile; validate on Windows 7 SP1 before distribution.
+PySide2==5.15.2.1
+shiboken2==5.15.2.1
+requests==2.32.4
+urllib3==2.2.3
+charset-normalizer==3.4.3
+idna==3.10
+certifi==2025.8.3
+pyinstaller==4.10
+pyinstaller-hooks-contrib==2022.3
+setuptools==59.8.0
+pefile==2021.9.3
+altgraph==0.17.2
+pywin32-ctypes==0.2.0

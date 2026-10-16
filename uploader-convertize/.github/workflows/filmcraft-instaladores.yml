@@ -1,0 +1,201 @@
+name: FilmCraft installers
+# Compila o FilmCraft a partir do código-fonte (por padrão do fork github.com/izaqueotaviano/filmcraft;
+# o input `repo` aceita outro, como storytold/filmcraft) e gera:
+#   FilmCraft-<versão>-macOS-Universal.dmg      (Apple silicon + Intel, arrastar para Aplicativos)
+#   FilmCraft-<versão>-Windows-<arch>-Setup.exe (assistente Inno Setup)
+# e publica os dois numa Release deste repositório (aba Releases), para baixar e executar.
+# Detalhes em instalador-filmcraft/README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Repositório do FilmCraft (dono/nome)
+        default: izaqueotaviano/filmcraft
+        required: true
+      ref:
+        description: Branch, tag ou commit do FilmCraft
+        default: main
+        required: true
+permissions:
+  contents: read
+env:
+  CRAFT_FONTS_REF: abb83316d96aa59c1cf64784289e378fe9fa5695
+jobs:
+  macos:
+    name: macOS universal (.dmg)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+          path: filmcraft
+      # Fontes japonesas, chinesas, árabes e tailandesas que os builds oficiais embutem.
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: filmcraft
+      - name: Versão
+        run: |
+          v="$(awk '/^\[/ { p = ($0 == "[workspace.package]"); next } p && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' filmcraft/Cargo.toml)"
+          echo "VERSION=$v" >>"$GITHUB_ENV"
+          echo "### FilmCraft $v (${{ inputs.repo }}@${{ inputs.ref }})" >>"$GITHUB_STEP_SUMMARY"
+      # Opcional: com os secrets abaixo o app e o DMG saem assinados e notarizados pela Apple.
+      # Sem eles, a assinatura é ad-hoc (veja o README).
+      - name: Certificado Developer ID
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: filmcraft/packaging/macos/import-cert.sh
+      - name: Compilar FilmCraft.app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: filmcraft/packaging/macos/package.sh --arch universal
+      - name: Criar o DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          instalador-filmcraft/macos/criar-dmg.sh filmcraft/target/macos-package/FilmCraft.app \
+            "saida/FilmCraft-$VERSION-macOS-Universal.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FilmCraft-macOS
+          path: saida/*.dmg
+          if-no-files-found: error
+      - name: Remover keychain temporário
+        if: always()
+        run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN" || true; fi
+
+  windows:
+    name: Windows ${{ matrix.arch }} (.exe)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, target: x86_64-pc-windows-msvc }
+          - { arch: arm64, target: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+          path: filmcraft
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: filmcraft
+          key: ${{ matrix.arch }}
+      - name: Compilar filmcraft.exe
+        shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}\craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+          # Falha se o ícone e o VERSIONINFO não puderem ser embutidos no .exe.
+          FILMCRAFT_REQUIRE_WINRES: "1"
+        run: |
+          # CRT estático: não precisa do Visual C++ Redistributable (como os builds oficiais).
+          $flagVar = 'CARGO_TARGET_' + ('${{ matrix.target }}'.ToUpper() -replace '-', '_') + '_RUSTFLAGS'
+          [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
+          $env:FILMCRAFT_BUILD_SHA = (git -C filmcraft rev-parse HEAD)
+          cargo build --manifest-path filmcraft/Cargo.toml --release --locked -p filmcraft -p filmcraft-cli --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw "cargo build falhou" }
+      - name: Criar o instalador
+        shell: pwsh
+        run: |
+          $inPkg = $false
+          foreach ($line in Get-Content filmcraft/Cargo.toml) {
+            if ($line -match '^\s*\[') { $inPkg = ($line.Trim() -eq '[workspace.package]'); continue }
+            if ($inPkg -and $line -match '^\s*version\s*=\s*"([^"]+)"') { $Version = $Matches[1]; break }
+          }
+          $Bin = "filmcraft\target\${{ matrix.target }}\release"
+          # Licenças das fontes embutidas vão junto com o app.
+          foreach ($ofl in Get-ChildItem craft-fonts\fonts\*\OFL.txt) {
+            Copy-Item $ofl.FullName (Join-Path $Bin "OFL-$($ofl.Directory.Name).txt")
+          }
+          $Iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $Iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "falha ao instalar o Inno Setup" }
+          }
+          & $Iscc /Q "/DVersion=$Version" "/DArch=${{ matrix.arch }}" `
+            "/DBinDir=$(Resolve-Path $Bin)" `
+            "/DIconFile=$(Resolve-Path filmcraft\assets\app-icon\filmcraft.ico)" `
+            "/DDocsDir=$(Resolve-Path filmcraft)" `
+            "/O$PWD\saida" instalador-filmcraft\windows\filmcraft.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
+          Get-Item saida\*.exe | Format-Table Name, Length
+      - name: Testar instalação silenciosa
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $setup = (Get-Item saida\*.exe).FullName
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "instalação falhou: $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\FilmCraft'
+          & (Join-Path $app 'filmcraft-cli.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "filmcraft-cli não rodou" }
+          $p = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "desinstalação falhou: $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FilmCraft-Windows-${{ matrix.arch }}
+          path: saida/*.exe
+          if-no-files-found: error
+
+  # Publica os instaladores numa Release deste repositório: download direto, sem zip.
+  publicar:
+    name: Publicar Release
+    needs: [macos, windows]
+    if: ${{ !cancelled() && (needs.macos.result == 'success' || needs.windows.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: saida
+          merge-multiple: true
+      - name: Criar ou atualizar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REPO: ${{ inputs.repo }}
+          REF: ${{ inputs.ref }}
+        run: |
+          ls -la saida
+          v="$(find saida -name 'FilmCraft-*' -printf '%f\n' | sed -nE 's/^FilmCraft-(.+)-(macOS|Windows)-.*/\1/p' | head -1)"
+          [ -n "$v" ] || { echo "nenhum instalador encontrado" >&2; exit 1; }
+          tag="filmcraft-v$v"
+          (cd saida && sha256sum FilmCraft-* >SHA256SUMS.txt)
+          sed -e "s/{VERSAO}/$v/g" -e "s|{REF}|$REF|g" -e "s|{REPO}|$REPO|g" instalador-filmcraft/notas-release.md >notas.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" saida/* --clobber
+            gh release edit "$tag" --notes-file notas.md
+          else
+            gh release create "$tag" saida/* --title "FilmCraft $v" --notes-file notas.md --latest
+          fi
+          echo "### Release: https://github.com/$GH_REPO/releases/tag/$tag" >>"$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,29 @@
+Uploader Convertize 2.2 — múltiplos clientes, processamento local
+
+Escolha a pasta uma vez no topo. Adicione e nomeie uma aba para cada cliente.
+Em cada aba, informe schema, chave e versão da API.
+Clique em Enviar imagens na aba ou Enviar clientes prontos no topo.
+Até três clientes enviam ao mesmo tempo. Os demais aguardam uma vaga.
+O mesmo schema não pode ter dois envios simultâneos ou aguardando.
+
+Progresso, relatório, cancelamento, pausa e histórico são independentes por aba.
+Pausar aguarda concluir o arquivo atual e salva a fila daquele cliente.
+Ao reabrir, cole novamente as chaves e continue as filas salvas.
+Uma fila retomada mantém a pasta original, mesmo que a pasta no topo tenha mudado.
+Fechar durante envios solicita pausa em todos; aguarde a confirmação e feche novamente.
+Clientes aguardando vaga ainda não começaram: ao fechar ou pausar sua espera, será necessário
+clicar em Enviar novamente. Seus nomes e schemas são mantidos, mas a espera não é retomada automaticamente.
+
+Nomes, schemas, versões, pasta e progresso são salvos localmente.
+As chaves ficam somente na memória do processo e não são guardadas nas preferências, filas ou relatórios.
+As imagens e chaves são enviadas diretamente à API HTTPS da Convertize, sem servidor intermediário.
+O computador precisa permanecer ligado. Enquanto houver algum envio ativo, a suspensão é inibida.
+As linhas verdes indicam envios confirmados. Já existentes e falhas têm resultados distintos.
+
+Mac: abra o DMG e arraste para Aplicativos. Requer macOS 13 ou superior.
+Windows: extraia o ZIP inteiro e abra Uploader Convertize.exe; mantenha as DLLs junto dele.
+Windows 7/8.1: edições legadas continuam experimentais, sem teste nesses sistemas.
+As versões não incluem assinatura comercial/notarização. Nenhum upload real foi feito nos testes.
+
+A primeira aba preserva o histórico e a fila da versão anterior no mesmo computador/usuário.
+As abas adicionais usam diretórios separados. Remover uma aba não apaga seu diretório de histórico.
