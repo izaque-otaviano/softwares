@@ -130,54 +130,6 @@ pub fn import_dialog(app: &mut FigApp) {
     }
 }
 
-/// The installed plugins at the top of the Plugins menu: a plugin with one command is an item, one
-/// with several a submenu. True when one was clicked.
-pub fn menu(app: &mut FigApp, ui: &mut Ui, t: &Tokens) -> bool {
-    if app.session.prefs.plugins.is_empty() {
-        return false;
-    }
-    let mut chosen: Option<(String, String)> = None;
-    for p in &app.session.prefs.plugins {
-        let m = &p.manifest;
-        match m.commands.as_slice() {
-            // A widget may have no commands: it's in Widgets.
-            [] => {}
-            [only] => {
-                // An ellipsis: it asks for parameters first.
-                let label = if only.params.is_empty() { m.name.clone() } else { format!("{}…", m.name) };
-                if crate::menus::item(ui, &label, "", true, false, t) {
-                    chosen = Some((m.id.clone(), only.id.clone()));
-                }
-            }
-            commands => {
-                let picked = crate::menus::submenu(ui, "Plugins", &format!("Plugins/plugin:{}", m.id), &m.name, t, |ui| {
-                    commands.iter().find(|c| crate::menus::item(ui, &c.label, "", true, false, t)).map(|c| c.id.clone())
-                });
-                if let Some(c) = picked {
-                    chosen = Some((m.id.clone(), c));
-                }
-            }
-        }
-    }
-    let widgets: Vec<(&str, &str)> =
-        app.session.prefs.plugins.iter().filter(|p| p.manifest.widget).map(|p| (p.manifest.id.as_str(), p.manifest.name.as_str())).collect();
-    let widget = (!widgets.is_empty())
-        .then(|| {
-            crate::menus::submenu(ui, "Plugins", "Plugins/widgets", tr("Widgets"), t, |ui| {
-                widgets.iter().find(|(_, name)| crate::menus::item(ui, name, "", true, false, t)).map(|(id, _)| id.to_string())
-            })
-        })
-        .flatten();
-    crate::menus::separator(ui);
-    if let Some(plugin) = widget {
-        app.run("widget.insert", json!({"plugin": plugin}));
-        return true;
-    }
-    let Some((id, command)) = chosen else { return false };
-    start(app, &id, &command);
-    true
-}
-
 /// The plugin windows (Manage plugins, a command's parameters, the plugins' panels).
 pub fn show(app: &mut FigApp, ctx: &Context) {
     if app.ui.plugins_window {

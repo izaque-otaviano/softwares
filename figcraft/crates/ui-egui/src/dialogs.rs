@@ -293,6 +293,7 @@ pub fn show(app: &mut FigApp, ctx: &Context) {
     crate::live::publish_dialog(app, ctx);
     crate::online::dialogs(app, ctx);
     crate::windows::confirm_close(app, ctx);
+    crate::windows::confirm_quit(app, ctx);
 }
 
 /// The Rename layers dialog's fields.

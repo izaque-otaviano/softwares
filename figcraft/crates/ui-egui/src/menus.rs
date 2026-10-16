@@ -2,13 +2,14 @@
 //! Actions palette (⌘K / ⌘/).
 
 use egui::{Align2, Color32, CornerRadius, Id, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
-use figcraft_engine::catalog::{MENU, SEP};
+use figcraft_engine::catalog::MENU;
 use serde_json::json;
 
 use crate::FigApp;
 use crate::a11y;
 use crate::i18n::{self, tr, tr_noop, trf};
 use crate::icons::{self, Icon};
+use crate::menu_model;
 use crate::theme::{ACCENT, Tokens, regular};
 use crate::toolbar::pretty_shortcut;
 
@@ -310,121 +311,46 @@ pub fn why_disabled(app: &FigApp, id: &str) -> Option<&'static str> {
     Some(why)
 }
 
-/// Draw one level of the main menu: `prefix` is the menu path ("File", "Edit/Copy as").
+/// Draw one level of the main menu: `prefix` is the menu path ("File", "Edit/Copy as"). The items
+/// come from [`menu_model::level`], the tree the macOS menu bar shows too. Returns whether an item
+/// ran.
 fn menu_level(app: &mut FigApp, ui: &mut Ui, prefix: &str) -> bool {
     let t = Tokens::get(ui.ctx());
-    // The installed plugins head the Plugins menu.
-    if prefix == "Plugins" && crate::plugins_ui::menu(app, ui, &t) {
-        return true;
-    }
-    let mut clicked = None;
-    let mut subs: Vec<String> = Vec::new();
-    let mut last_sep = true;
-    for m in MENU.iter() {
-        if m.menu == prefix {
-            if m.label == SEP {
-                if !last_sep {
-                    separator(ui);
-                    last_sep = true;
-                }
-                continue;
-            }
-            last_sep = false;
-            if m.id == "file.openRecent" {
-                if recent_menu(app, ui, prefix, m.label, &i18n::menu_item(m.id, m.label), &t) {
-                    return true;
-                }
-                continue;
-            }
-            if m.id == "object.moveToPage" && enabled(app, m.id) {
-                if move_to_page_menu(app, ui, prefix, m.label, &i18n::menu_item(m.id, m.label), &t) {
-                    return true;
-                }
-                continue;
-            }
-            // One window in the browser.
-            let why = if m.id == "window.new" && ui.ctx().embed_viewports() { Some(tr_noop("Not available yet")) } else { why_disabled(app, m.id) };
-            let checked = figcraft_engine::cmd::view::checked(&app.session, m.id).unwrap_or(false);
-            let label = i18n::menu_item(m.id, m.label);
-            let resp = item_response(ui, &label, crate::shortcuts::shortcut(m.id).unwrap_or(""), why.is_none(), checked, 0.0, &t);
-            match why {
-                // Greyed: the pointer says why instead of the click flashing the menu shut.
-                Some(why) => {
-                    resp.on_hover_text(tr(why));
-                }
-                None if resp.clicked() => clicked = Some(m.id),
-                None => {}
-            }
-        } else if let Some(rest) = m.menu.strip_prefix(prefix).and_then(|r| r.strip_prefix('/')) {
-            let sub = rest.split('/').next().unwrap_or(rest).to_string();
-            if !subs.contains(&sub) {
-                subs.push(sub.clone());
-                last_sep = false;
-                let full = format!("{prefix}/{sub}");
-                if submenu(ui, prefix, &full, tr(&sub), &t, |ui| menu_level(app, ui, &full).then_some(())).is_some() {
-                    return true;
-                }
-            }
-        }
-    }
-    if let Some(id) = clicked {
-        invoke(app, id);
-        return true;
-    }
-    false
-}
-
-/// Object ▸ Move to page: the file's other pages; picking one moves the selection there.
-fn move_to_page_menu(app: &mut FigApp, ui: &mut Ui, prefix: &str, key: &str, label: &str, t: &Tokens) -> bool {
-    let pages: Vec<(figcraft_doc::NodeId, String)> = app
-        .session
-        .ds()
-        .map(|ds| ds.doc.pages.iter().filter(|p| **p != ds.page).filter_map(|p| ds.doc.node(*p).map(|n| (*p, n.name.clone()))).collect())
-        .unwrap_or_default();
-    let picked = submenu(ui, prefix, &format!("{prefix}/{key}"), label, t, |ui| {
-        let mut picked = None;
-        for (id, name) in &pages {
-            if item(ui, name, "", true, false, t) {
-                picked = Some((*id, name.clone()));
-            }
-        }
-        picked
-    });
-    let Some((page, name)) = picked else { return false };
-    let ids = app.session.selection();
-    if app.run("object.moveToPage", json!({"ids": ids, "page": page})).is_some() {
-        app.toast(trf("Moved to {name}", &[("name", &name)]));
-    }
+    let exists = |p: &str| std::path::Path::new(p).exists();
+    let nodes = menu_model::level(app, prefix, &menu_model::Env { one_window: ui.ctx().embed_viewports(), exists: &exists });
+    let Some(action) = draw_nodes(ui, prefix, &nodes, &t) else { return false };
+    menu_model::run(app, ui.ctx(), &action);
     true
 }
 
-/// File ▸ Open recent: the recent files (greyed when the file is gone) and Clear recent. `key` is
-/// the menu's English label, `label` the one shown. Returns whether an item ran.
-fn recent_menu(app: &mut FigApp, ui: &mut Ui, prefix: &str, key: &str, label: &str, t: &Tokens) -> bool {
-    let picked = submenu(ui, prefix, &format!("{prefix}/{key}"), label, t, |ui| {
-        let recents = &app.session.prefs.recent_files;
-        let mut picked = None;
-        for (i, p) in recents.iter().enumerate() {
-            let path = std::path::Path::new(p);
-            let name = path.file_name().map_or_else(|| p.clone(), |f| f.to_string_lossy().into_owned());
-            let exists = path.exists();
-            if item(ui, &name, "", exists, false, t) && exists {
-                picked = Some(json!({"index": i}));
+/// Draw menu rows; the action of the one clicked.
+fn draw_nodes(ui: &mut Ui, prefix: &str, nodes: &[menu_model::Node], t: &Tokens) -> Option<menu_model::Action> {
+    use menu_model::Node;
+    let mut picked = None;
+    for n in nodes {
+        match n {
+            Node::Separator => separator(ui),
+            Node::Item(it) => {
+                let resp = item_response(ui, &it.label, it.shortcut.unwrap_or(""), it.enabled, it.checked.unwrap_or(false), 0.0, t);
+                if !it.enabled {
+                    // Greyed: the pointer says why instead of the click flashing the menu shut.
+                    if let Some(why) = it.why {
+                        resp.on_hover_text(tr(why));
+                    }
+                } else if resp.clicked() {
+                    picked = Some(it.action.clone());
+                }
             }
+            Node::Submenu { key, label, children } => {
+                if let Some(a) = submenu(ui, prefix, key, label, t, |ui| draw_nodes(ui, key, children, t)) {
+                    picked = Some(a);
+                }
+            }
+            // The platform's own items (the macOS menu bar) have no row here.
+            Node::Native(_) => {}
         }
-        if !recents.is_empty() {
-            separator(ui);
-        }
-        if item(ui, tr("Clear recent"), "", !recents.is_empty(), false, t) && !recents.is_empty() {
-            picked = Some(json!({"clear": true}));
-        }
-        picked
-    });
-    let Some(params) = picked else { return false };
-    if app.run("file.openRecent", params).is_some_and(|r| r.get("index").is_some()) {
-        app.ui.home = false;
     }
-    true
+    picked
 }
 
 /// A submenu row `label` in the menu at `prefix`; while it's open (hovered last), `add` draws its

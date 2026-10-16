@@ -20,3 +20,7 @@ licence texts.
 Rust crate dependencies keep their own licenses (MIT, Apache-2.0, BSD, ISC, Zlib, OFL for egui's
 default fonts, CDLA-Permissive-2.0 for the root certificate list webpki-roots compiles in, and
 similar permissive licenses); see each crate's metadata.
+
+macOS builds link muda (https://github.com/tauri-apps/muda, Copyright the Tauri Programme within
+The Commons Conservancy, MIT OR Apache-2.0) for the system menu bar; it ships no assets (its menu
+items are AppKit's own and FigCraft's text).

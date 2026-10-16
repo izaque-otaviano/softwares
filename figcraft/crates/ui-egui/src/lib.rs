@@ -38,6 +38,7 @@ pub mod list_drag;
 pub mod live;
 pub mod live_text;
 pub mod measure_overlay;
+pub mod menu_model;
 pub mod menus;
 pub mod online;
 pub mod plugins_ui;
@@ -116,6 +117,8 @@ mod live_share_tests;
 mod live_tests;
 #[cfg(test)]
 mod live_text_tests;
+#[cfg(test)]
+mod menu_model_tests;
 #[cfg(test)]
 mod menu_sweep_tests;
 #[cfg(test)]
@@ -217,6 +220,17 @@ pub trait Services {
     /// player asks every frame while its prototype has gamepad triggers.
     fn gamepad_held(&mut self) -> u32 {
         0
+    }
+    /// The platform shows the app's menu bar itself (the macOS menu bar): [`menu_model`] keeps it
+    /// in step with the in-window main menu and runs what is picked in it.
+    fn native_menu(&self) -> bool {
+        false
+    }
+    /// Show this menu bar (handed over only when something in it changed).
+    fn set_native_menu(&mut self, _bar: &[menu_model::Top]) {}
+    /// The native menu's items picked since the last call ([`menu_model::Action::id`]s).
+    fn native_menu_events(&mut self) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -409,6 +423,8 @@ pub struct UiState {
     pub online: online::OnlineUi,
     /// The window was asked to close with unsaved changes: the question shows.
     pub confirm_close: bool,
+    /// Quit was asked for with unsaved changes open: the question is showing.
+    pub confirm_quit: bool,
 }
 
 impl Default for UiState {
@@ -488,6 +504,7 @@ impl Default for UiState {
             live: live::LiveUi::default(),
             online: online::OnlineUi::default(),
             confirm_close: false,
+            confirm_quit: false,
         }
     }
 }
@@ -523,6 +540,8 @@ pub struct FigApp {
     window_requests: Vec<figcraft_engine::UiRequest>,
     /// Commands waiting for a server ([`FigApp::run_background`]) and what to do with their results.
     waiting: Vec<(String, Done)>,
+    /// The platform's menu bar (macOS), when it has one.
+    pub(crate) native: menu_model::NativeMenu,
 }
 
 /// What to do with the result of a command run in the background.
@@ -550,6 +569,7 @@ impl FigApp {
             windows: windows::Windows::default(),
             window_requests: Vec::new(),
             waiting: Vec::new(),
+            native: menu_model::NativeMenu::default(),
         }
     }
 
@@ -997,8 +1017,18 @@ impl FigApp {
         }
     }
 
-    /// One frame of the window drawing now.
+    /// One frame of the window drawing now. The native menu bar (macOS) runs what was picked in it
+    /// first and follows what the frame changed after.
     pub(crate) fn frame(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let typing = self.field_focus || menu_model::typing(self, &ctx);
+        menu_model::native_frame(self, &ctx, true, typing);
+        self.frame_body(ui);
+        let typing = menu_model::typing(self, &ctx);
+        menu_model::native_frame(self, &ctx, false, typing);
+    }
+
+    fn frame_body(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let t = theme::Tokens::get(&ctx);
         // A field that had the keyboard when the frame began keeps its keys from the shortcuts

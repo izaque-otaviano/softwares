@@ -30,3 +30,7 @@ Release builds embed fonts from the optional craft-fonts build input
 | BIZ UDPGothic, BIZ UDMincho, Shippori Mincho, Noto Sans Arabic | SIL Open Font License 1.1 | Google Fonts (see craft-fonts) |
 
 egui's default fonts (compiled into the `egui`/`epaint` crates) keep their own licences (OFL / Apache-2.0 / Ubuntu Font Licence); see those crates.
+
+The macOS menu bar is built with the muda crate (Tauri Programme, MIT OR Apache-2.0, see
+`NOTICE`): code only, no images or icons; its items are FigCraft's own labels and AppKit's
+standard ones (Services, Hide, Minimize, Zoom).
