@@ -1,0 +1,69 @@
+name: FigCraft web (GitHub Pages)
+# Publica a versão de navegador do FigCraft em https://izaque-otaviano.github.io/softwares/figcraft/
+# a cada mudança em figcraft/ no main (ou manualmente, de qualquer branch, em Actions ▸ Run workflow).
+on:
+  push:
+    branches: [main]
+    paths: ['figcraft/**', '.github/workflows/figcraft-web.yml']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag ou commit a publicar
+        default: main
+        required: false
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+env:
+  CRAFT_FONTS_REF: 43913056ce82a3fdad0ef69f6b88d1dc922a8104
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: figcraft
+          key: web
+      - name: Instalar o trunk
+        run: curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C "$HOME/.cargo/bin" trunk
+      - name: Compilar a versão web
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+        run: cd figcraft/apps/figcraft-web && trunk build --release
+      - name: Montar o site
+        run: |
+          mkdir -p site/figcraft
+          cp -r figcraft/dist/web/. site/figcraft/
+          cat > site/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=figcraft/">
+          <title>Softwares</title><a href="figcraft/">FigCraft (versão web)</a>
+          HTML
+          echo "$(git rev-parse --short HEAD) $(date -u +%FT%TZ)" > site/figcraft/versao.txt
+          touch site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}figcraft/
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
