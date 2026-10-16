@@ -9,9 +9,24 @@ docs/brand/LICENSE-brand.txt.
 
 Third-party material
 
-This product bundles no third-party fonts, icons or images in the repository: every icon is
-drawn in code and original to FigCraft. The per-file list (author, source, license) of any bundled
-asset is in ATTRIBUTION.md.
+This product bundles no third-party fonts or images in the repository. Its user-interface icons
+are Lucide icons (https://lucide.dev, lucide-static 1.58.0) under the ISC License, plus a few
+originals in Lucide's style, in assets/ui/lucide/:
+
+  ISC License
+  Copyright (c) 2026 Lucide Icons and Contributors
+  Permission to use, copy, modify, and/or distribute this software for any purpose with or without
+  fee is hereby granted, provided that the above copyright notice and this permission notice appear
+  in all copies. THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+  REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR
+  ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+  CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+  PERFORMANCE OF THIS SOFTWARE.
+
+The Lucide icons derived from the Feather project (listed in assets/ui/lucide/LICENSE, which has
+the full texts) are also under the MIT License, Copyright (c) 2013-present Cole Bemis. The per-file
+list (author, source, license) of every bundled asset is in ATTRIBUTION.md.
 
 Release builds made with the optional craft-fonts build input (CRAFT_FONTS_DIR) embed the fonts
 listed in ATTRIBUTION.md (Inter and others, SIL Open Font License 1.1); each package carries their

@@ -44,8 +44,15 @@ code.
 - **Every asset file must have a row in [`ATTRIBUTION.md`](ATTRIBUTION.md)** (path, author, source,
   licence, notes). `cargo xtask assets` (part of `cargo xtask ci`) fails on any unlisted file under
   `assets/`, `docs/brand/` or `docs/images/`.
-- FigCraft's UI icons are drawn in code (`crates/ui-egui/src/icons.rs`) from simple primitives and
-  are original. Keep it that way: new icons are new code, designed from scratch.
+- FigCraft's UI icons are [Lucide](https://lucide.dev) icons (ISC licence; the repository owner chose
+  Lucide over hand-drawn icons) plus a few originals drawn in Lucide's style (24 grid, 2 px stroke,
+  round caps and joins, 2 px margin). They are SVG files in `assets/ui/lucide/` (the originals in
+  `assets/ui/lucide/original/`), embedded at build time and rasterised by
+  `crates/ui-egui/src/icons.rs` (`icons/lucide.rs`), which maps every `Icon` to its file. A new icon
+  takes the Lucide one that means the same; where Lucide has none, draw an original in its style from
+  Lucide's primitives. Lucide files are copied unchanged (keep the `@license` header) and every file
+  has an `ATTRIBUTION.md` row. Everything else above still holds: no icons from any other product,
+  and never trace, copy or redraw an incumbent design tool's icons.
 - The app icon is the owner's chameleon logo, supplied 2026-10-16 (`assets/app-icon/README.md`); `cargo xtask icon`
   renders the PNGs and `.ico` from `assets/app-icon/figcraft.svg`.
 - **Fonts live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts), never in this
