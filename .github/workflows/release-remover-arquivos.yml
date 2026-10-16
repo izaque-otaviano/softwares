@@ -1,0 +1,29 @@
+name: Remover arquivos de uma Release
+# Manutenção: apaga de uma Release os arquivos cujo nome bate com um padrão (glob do bash).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag da Release (ex. figcraft-v0.6.0)
+        required: true
+      padrao:
+        description: Padrão dos nomes a apagar (ex. index.html ou figcraft-web-*)
+        required: true
+permissions:
+  contents: write
+jobs:
+  remover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apagar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          PADRAO: ${{ inputs.padrao }}
+        run: |
+          gh release view "$TAG" --json assets -q '.assets[].name' | while read -r nome; do
+            case "$nome" in
+              $PADRAO) echo "apagando $nome"; gh release delete-asset "$TAG" "$nome" -y ;;
+            esac
+          done
