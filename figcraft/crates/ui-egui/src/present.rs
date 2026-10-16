@@ -2514,6 +2514,10 @@ fn top_bar(p: &mut Presenter, ui: &mut Ui, bar: Rect, now: f64, chrome: Chrome) 
     };
     let mut x = bar.max.x - if chrome.pane { 6.0 } else { 8.0 };
     for (act, label, icon) in buttons {
+        // A shared prototype has no way back to the editor, no comments and no Inspect.
+        if p.ux.viewer && matches!(act, BarAction::Close | BarAction::Comments | BarAction::Inspect) {
+            continue;
+        }
         // (The shortcut list's button reads "?", as the key.)
         let shown = if *act == BarAction::Help { ux::spec(ux::Act::Help) } else { tr(label) };
         let w = if chrome.pane { 24.0 } else { ui.painter().layout_no_wrap(shown.to_string(), regular(11.5), text).size().x + 16.0 };
@@ -2668,7 +2672,7 @@ fn options_menu(p: &mut Presenter, ui: &mut Ui, device: Option<Device>, now: f64
         ui.close();
     }
     // The prototype in a window of its own, the editor's window free to go on working.
-    if menu_check(ui, p.ux.window, tr("Open in new window"), "") {
+    if !p.ux.viewer && menu_check(ui, p.ux.window, tr("Open in new window"), "") {
         p.ux.window_request = Some(!p.ux.window);
         ui.close();
     }

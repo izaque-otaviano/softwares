@@ -27,6 +27,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 base64 = { workspace = true }
+# The web viewer an app embeds for "Export prototype as website" is deflated (`share`).
+flate2 = { workspace = true }
 regex = { workspace = true }
 web-time = "1.1.0"
 

@@ -1,7 +1,9 @@
 //! FigCraft desktop app.
 //!
-//! Usage: `figcraft [--control <port>] [files…] [figcraft://join?…]` (an invite link joins that
-//! live session; the app registers itself as the opener of such links: `collab.registerLinks`).
+//! Usage: `figcraft [--control <port>] [--viewer <site>] [files…] [figcraft://join?…]` (an invite
+//! link joins that live session; the app registers itself as the opener of such links:
+//! `collab.registerLinks`). `--viewer` shows only a prototype, as a shared website does: an
+//! exported site's folder, its `prototype.json` or a `.figcraft` file.
 //!
 //! `--control <port>` (or `FIGCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server:
 //! `{"id":1,"method":"engine.execute","params":{"command":"shape.rectangle","params":{"x":0,"y":0,"width":100,"height":100}}}`
@@ -34,6 +36,9 @@ use figcraft_ui_egui::windows::with_app;
 use figcraft_ui_egui::{ControlRequest, FigApp};
 use serde_json::json;
 
+// The web viewer for File ▸ Export prototype as website… (`build.rs`, `FIGCRAFT_WEB_BUNDLE_DIR`).
+include!(concat!(env!("OUT_DIR"), "/web_bundle.rs"));
+
 /// The app state lives in [`figcraft_ui_egui::windows`] (other windows draw it too).
 struct App {
     queue: Arc<Mutex<Vec<ControlRequest>>>,
@@ -58,7 +63,7 @@ impl eframe::App for App {
             // Closing the window asks about unsaved changes (and keeps the app running while other
             // windows are open).
             figcraft_ui_egui::windows::on_close_request(fig, ctx);
-            fig.title()
+            figcraft_ui_egui::viewer::title(fig).unwrap_or_else(|| fig.title())
         });
         // Window title follows the document.
         if let Some(title) = title
@@ -106,6 +111,7 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     let args = args::parse(&args);
+    figcraft_engine::share::register_embedded(WEB_BUNDLE);
     let port = args.control.or_else(|| std::env::var("FIGCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok()));
     // System fonts: index them in the background, then wake the UI (an idle window draws no frames)
     // to lay text out again with them.
@@ -125,7 +131,9 @@ fn main() -> eframe::Result {
             c.request_repaint();
         }
     }))));
-    for f in &args.files {
+    // (A viewer shows its one prototype: no other files, no recovered ones.)
+    let viewer = args.viewer.as_deref();
+    for f in args.files.iter().filter(|_| viewer.is_none()) {
         if let Err(e) = session.execute("file.open", &json!({"path": f})) {
             log::error!("{f}: {e}");
         }
@@ -138,8 +146,8 @@ fn main() -> eframe::Result {
     if let Some(prefs) = svc.prefs.clone() {
         session.prefs = prefs;
     }
-    let recovered = recovery_root.as_deref().map(|r| recovery::recover_all(r, &mut session)).unwrap_or_default();
-    let mut copies = recovery_root.as_deref().and_then(recovery::Recovery::start);
+    let recovered = recovery_root.as_deref().filter(|_| viewer.is_none()).map(|r| recovery::recover_all(r, &mut session)).unwrap_or_default();
+    let mut copies = recovery_root.as_deref().filter(|_| viewer.is_none()).and_then(recovery::Recovery::start);
     // Copies of online files stay until their files arrive from their servers.
     if let Some(r) = copies.as_mut() {
         r.adopt(recovered.waiting);
@@ -154,7 +162,7 @@ fn main() -> eframe::Result {
     // A first run (no settings kept yet, nothing to open) starts on the home screen, with its
     // tips and templates; later runs start in a new file.
     let first_run = svc.prefs.is_none() && args.join.is_none();
-    if session.docs.is_empty() && !first_run {
+    if session.docs.is_empty() && !first_run && viewer.is_none() {
         let _ = session.execute("file.new", &json!({}));
     }
     let mut fig = FigApp::new(session, Box::new(svc));
@@ -162,6 +170,14 @@ fn main() -> eframe::Result {
     fig.note_recovered(recovered.copies);
     if let Some(link) = &args.join {
         figcraft_ui_egui::live::open_invite(&mut fig, link);
+    }
+    if let Some(site) = viewer {
+        match figcraft_engine::share::read_site(std::path::Path::new(site)) {
+            Ok((cfg, bytes)) => {
+                figcraft_ui_egui::viewer::open(&mut fig, &bytes, &cfg);
+            }
+            Err(e) => figcraft_ui_egui::viewer::fail(&mut fig, e),
+        }
     }
     let queue: Arc<Mutex<Vec<ControlRequest>>> = Arc::new(Mutex::new(Vec::new()));
     if let Some(p) = port {
@@ -175,7 +191,9 @@ fn main() -> eframe::Result {
         .with_drag_and_drop(true);
     // The tab strip is the title bar: macOS keeps its window buttons inset into it; elsewhere the
     // window is frameless and FigCraft draws the buttons and resize edges.
-    if cfg!(target_os = "macos") {
+    if viewer.is_some() {
+        // The viewer has no tab strip to be the title bar: the system draws it.
+    } else if cfg!(target_os = "macos") {
         viewport = viewport.with_fullsize_content_view(true).with_titlebar_shown(false).with_title_shown(false);
         fig.ui.title_bar = figcraft_ui_egui::TitleBar::Inset;
     } else {
@@ -189,4 +207,19 @@ fn main() -> eframe::Result {
     graphics::configure(&mut options.wgpu_options);
     figcraft_ui_egui::windows::install(fig);
     eframe::run_native("FigCraft", options, Box::new(move |_cc| Ok(Box::new(App { queue, ctx_slot, title: String::new(), recovery }))))
+}
+
+#[cfg(test)]
+mod web_bundle_tests {
+    /// The web viewer built in (when the build had `FIGCRAFT_WEB_BUNDLE_DIR`) inflates to a web build.
+    #[test]
+    fn the_built_in_web_viewer_inflates() {
+        if super::WEB_BUNDLE.is_empty() {
+            assert!(option_env!("FIGCRAFT_WEB_BUNDLE_DIR").is_none_or(str::is_empty), "FIGCRAFT_WEB_BUNDLE_DIR was set but nothing was embedded");
+            return;
+        }
+        let files = figcraft_engine::share::inflate(super::WEB_BUNDLE).unwrap();
+        assert!(files.iter().any(|(p, b)| p == "index.html" && !b.is_empty()));
+        assert!(files.iter().any(|(p, b)| p.ends_with(".wasm") && b.starts_with(b"\0asm")));
+    }
 }

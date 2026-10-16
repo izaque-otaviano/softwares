@@ -245,6 +245,8 @@ pub fn run(p: &mut Presenter, act: Act, ctx: &Context, now: f64, pane: bool) -> 
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
             true
         }
+        // (A shared prototype has no comments: the key goes to the prototype.)
+        Act::Comments if p.ux.viewer => false,
         Act::Comments => {
             p.view.comments = !p.view.comments;
             true
@@ -283,7 +285,8 @@ pub fn escape(p: &mut Presenter) -> bool {
         p.ux.reveal = 0.0;
         return false;
     }
-    true
+    // A shared prototype never ends: there is no editor to go back to.
+    !p.ux.viewer
 }
 
 /// How long the hidden bar takes to slide all the way in or out (seconds).
@@ -628,6 +631,9 @@ pub struct Ux {
     /// How far the hidden bar has slid in, 0 (away) to 1 (all the way), and when it last moved.
     pub reveal: f32,
     pub reveal_at: f64,
+    /// Locked for a shared prototype ([`crate::viewer`]): nothing leads back to the editor (no
+    /// Close, Escape doesn't end it) and there are no comments, Inspect or window of its own.
+    pub viewer: bool,
 }
 
 impl Ux {
@@ -635,6 +641,11 @@ impl Ux {
     pub fn note(&mut self, name: impl Into<String>, r: Rect) {
         self.controls.push((name.into(), r));
     }
+}
+
+/// The shortcuts a shared prototype doesn't have (the list leaves them out).
+pub fn hidden_in_viewer(act: Act) -> bool {
+    matches!(act, Act::Comments | Act::Close)
 }
 
 /// One key of the list, as a keycap; returns its width.
@@ -661,7 +672,7 @@ pub fn help_window(ctx: &Context, p: &mut Presenter) {
     crate::dialogs::window(tr("Keyboard shortcuts"), ctx).id(Id::new("present_help")).open(&mut open).show(ctx, |ui| {
         ui.set_width(400.0);
         let mut group = "";
-        for s in SHORTCUTS {
+        for s in SHORTCUTS.iter().filter(|s| !(p.ux.viewer && hidden_in_viewer(s.act))) {
             if s.group != group {
                 if !group.is_empty() {
                     ui.add_space(10.0);

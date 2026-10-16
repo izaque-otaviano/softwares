@@ -84,6 +84,7 @@ pub fn invoke(app: &mut FigApp, id: &str) {
         "file.saveVersion" => crate::versions::start_save(app),
         "branch.create" => crate::versions::start_branch(app),
         "file.export" | "file.exportSvg" => app.ui.export_preview = true,
+        "file.exportPrototypeSite" => crate::viewer::export_dialog(app),
         // The PDF goes where the user picks (the command alone only returns its bytes).
         "file.exportFramesPdf" => {
             let name = app.session.doc().map(|d| d.name.clone()).unwrap_or_else(|_| "Untitled".into());

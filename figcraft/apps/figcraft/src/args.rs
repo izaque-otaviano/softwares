@@ -1,6 +1,6 @@
-//! The command line: `figcraft [--control <port>] [files…] [figcraft://join?…]`. An invite link
-//! (what the system passes when a `figcraft://` link is opened) joins that session once the window
-//! is up; everything else that isn't a flag is a file to open, as a path or a `file://` URL (the
+//! The command line: `figcraft [--control <port>] [--viewer <site>] [files…] [figcraft://join?…]`.
+//! An invite link (what the system passes when a `figcraft://` link is opened) joins that session
+//! once the window is up; everything else that isn't a flag is a file to open, as a path or a `file://` URL (the
 //! Linux desktop entry passes URLs, `%U`, so that it can also hand over invite links).
 
 /// What the app was started with.
@@ -11,6 +11,9 @@ pub struct Args {
     pub files: Vec<String>,
     /// The last invite link given.
     pub join: Option<String>,
+    /// `--viewer <site folder | prototype.json | file>`: show only that prototype, as a shared
+    /// website does (to try an export).
+    pub viewer: Option<String>,
 }
 
 /// An invite link rather than a file (`figcraft:` links, in any case).
@@ -51,6 +54,8 @@ pub fn parse(args: &[String]) -> Args {
     while let Some(a) = it.next() {
         if a == "--control" {
             out.control = it.next().and_then(|p| p.parse().ok());
+        } else if a == "--viewer" {
+            out.viewer = it.next().cloned();
         } else if is_invite(a) {
             out.join = Some(a.clone());
         } else if let Some(path) = file_url_path(a) {
