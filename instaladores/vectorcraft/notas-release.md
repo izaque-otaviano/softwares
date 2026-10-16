@@ -1,0 +1,20 @@
+## VectorCraft {VERSAO}
+
+Baixe o arquivo do seu computador e abra. Não precisa instalar mais nada.
+
+| Sistema | Arquivo |
+|---|---|
+| **Windows 10/11** (a maioria dos PCs) | `VectorCraft-{VERSAO}-Windows-x64-Setup.exe` |
+| Windows em ARM (Snapdragon) | `VectorCraft-{VERSAO}-Windows-arm64-Setup.exe` |
+| **macOS 11 ou mais novo** (Apple silicon e Intel) | `VectorCraft-{VERSAO}-macOS-Universal.dmg` |
+
+**Windows:** dê dois cliques no `.exe` e siga as 3 telas. Se o Windows mostrar "O Windows protegeu o
+computador", clique em *Mais informações › Executar assim mesmo*.
+
+**Mac:** abra o `.dmg` e arraste o VectorCraft para a pasta Aplicativos. Na primeira vez, clique com o
+botão direito no VectorCraft em Aplicativos e escolha *Abrir*.
+
+Compilado de [izaque-otaviano/softwares](https://github.com/izaque-otaviano/softwares) (pasta
+[`vectorcraft/`](https://github.com/izaque-otaviano/softwares/tree/{COMMIT}/vectorcraft), `{REF}`), baseado em
+[storytold/vectorcraft](https://github.com/storytold/vectorcraft), sob MIT ou Apache-2.0. `SHA256SUMS.txt` traz o
+checksum de cada arquivo.

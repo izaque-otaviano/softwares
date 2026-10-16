@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="400" viewBox="0 0 660 400">
+  <!-- Fundo da janela do DMG (660 x 400 pt). Os ícones são desenhados pelo Finder por cima:
+       PhotoCraft.app em (180, 210) e Aplicativos em (480, 210), ambos com 128 pt. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbfbfd"/>
+      <stop offset="1" stop-color="#eeeef2"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.52" r="0.55">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="660" height="400" fill="url(#bg)"/>
+  <rect width="660" height="400" fill="url(#glow)"/>
+
+  <text x="330" y="60" text-anchor="middle" font-family="Inter" font-weight="600" font-size="22"
+        letter-spacing="-0.4" fill="#1d1d1f">Instalar o PhotoCraft</text>
+  <text x="330" y="86" text-anchor="middle" font-family="Inter" font-size="13"
+        fill="#6e6e73">Arraste o ícone para a pasta Aplicativos.</text>
+
+  <!-- Seta entre os dois ícones -->
+  <g fill="none" stroke="#a1a1a6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M276,210 L380,210" stroke-dasharray="0.1 9"/>
+    <path d="M372,199 L384,210 L372,221"/>
+  </g>
+
+  <line x1="230" y1="348.5" x2="430" y2="348.5" stroke="#d2d2d7" stroke-width="1"/>
+  <text x="330" y="372" text-anchor="middle" font-family="Inter" font-size="10.5"
+        fill="#86868b">Gratuito e open source · MIT ou Apache 2.0</text>
+</svg>

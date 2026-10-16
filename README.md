@@ -36,6 +36,19 @@ Design de interfaces e protótipos (Mac e Windows). Baseado em [storytold/figcra
 - Código: [`figcraft/`](figcraft/)
 - Instaladores: [Releases](../../releases)
 
+## Instaladores
+
+Os instaladores de VectorCraft, PhotoCraft, FilmCraft e FigCraft (DMG universal para Mac, `.exe`
+para Windows x64 e ARM) são compilados aqui mesmo, a partir das pastas de cada app, com os arquivos
+de [`instaladores/<app>/`](instaladores/). Para gerar uma versão nova:
+
+- No GitHub, abra **Actions ▸ <App> installers ▸ Run workflow** (por exemplo *FigCraft installers*),
+  deixe *ref* em `main` (ou informe outra branch, tag ou commit) e clique em **Run workflow**; ou
+- envie uma tag `<app>-build-N`, por exemplo `git tag figcraft-build-1 && git push origin figcraft-build-1`.
+
+O build leva de 30 a 45 minutos e publica os arquivos (com `SHA256SUMS.txt`) na Release
+`<app>-v<versão>` da aba [Releases](../../releases), substituindo os de mesmo nome se ela já existir.
+
 VectorCraft, PhotoCraft, FilmCraft e FigCraft são licenciados como MIT OR Apache-2.0 (veja `LICENSE-MIT`, `LICENSE-APACHE` e `NOTICE` em cada pasta).
 
 ## Uploader Convertize
