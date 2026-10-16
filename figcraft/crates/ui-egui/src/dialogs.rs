@@ -1,4 +1,4 @@
-//! Dialogs: About, Preferences, keyboard shortcuts, find & replace, rename layers, variables,
+//! Dialogs: About, Preferences, keyboard shortcuts, find & replace, rename layers,
 //! export.
 
 use egui::{Align2, Color32, Context, CornerRadius, RichText, Sense, Stroke, vec2};
@@ -279,7 +279,6 @@ pub fn show(app: &mut FigApp, ctx: &Context) {
         app.ui.find = if open { Some((find, replace)) } else { None };
     }
     batch_rename_dialog(app, ctx);
-    crate::variables_panel::show(app, ctx);
     crate::dev_compare::show(app, ctx);
     crate::branch_ui::show(app, ctx);
     if app.ui.export_preview {

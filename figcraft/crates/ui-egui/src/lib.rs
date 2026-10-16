@@ -1064,6 +1064,8 @@ impl FigApp {
             return;
         }
         if !self.has_files() || self.ui.home {
+            // (The Variables page belongs to the file's view.)
+            self.ui.variables = None;
             tabs::tab_bar(self, ui);
             home::show(self, ui);
             dialogs::keys(self, &ctx);
@@ -1084,67 +1086,72 @@ impl FigApp {
                     layers::rail(self, ui)
                 });
         }
-        // The panels are as wide as asked, less in a window too small for them and the canvas.
-        let left_open = !hidden && !self.ui.left_collapsed;
-        let (left_w, right_w) = fit_panels(ui.available_width(), left_open.then_some(self.ui.left_width), self.ui.right_width);
-        let rows = ui.available_rect_before_wrap().y_range();
-        let mut edges: Vec<(&str, f32, f32, f32)> = Vec::new();
-        if left_open {
-            edges.push(("left", ui.available_rect_before_wrap().min.x + left_w, left_w, 1.0));
-            egui::Panel::left("left_panel")
-                .resizable(false)
-                .exact_size(left_w)
-                .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
-                .show(ui, |ui| {
-                    let label = match self.ui.left_tab {
-                        _ if self.ui.versions.open => i18n::tr("Version history"),
-                        LeftTab::File => i18n::tr("Layers"),
-                        LeftTab::Assets => i18n::tr("Assets"),
-                    };
-                    a11y::region(&mut self.ui.nav, ui, a11y::Region::Layers, egui::accesskit::Role::Pane, label);
-                    layers::left_panel(self, ui)
-                });
-        }
-        if !hidden {
-            edges.push(("right", ui.available_rect_before_wrap().max.x - right_w, right_w, -1.0));
-            egui::Panel::right("right_panel")
-                .resizable(false)
-                .exact_size(right_w)
-                .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
-                .show(ui, |ui| {
-                    let label = match self.ui.right_tab {
-                        RightTab::Design => i18n::tr("Design"),
-                        RightTab::Prototype => i18n::tr("Prototype"),
-                        RightTab::Inspect => i18n::tr("Dev Mode"),
-                    };
-                    a11y::region(&mut self.ui.nav, ui, a11y::Region::Properties, egui::accesskit::Role::Pane, label);
-                    right::right_panel(self, ui)
-                });
-        }
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
-            let worker = self.worker.take();
-            let mut worker = worker.unwrap_or_else(|| render_worker::Worker::new(ctx.clone()));
-            canvas::show(self, ui, &mut worker);
-            self.worker = Some(worker);
+        // The Variables page takes the window beside the rail, in place of the panels and canvas.
+        if self.ui.variables.is_some() {
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| variables_panel::page(self, ui));
+        } else {
+            // The panels are as wide as asked, less in a window too small for them and the canvas.
+            let left_open = !hidden && !self.ui.left_collapsed;
+            let (left_w, right_w) = fit_panels(ui.available_width(), left_open.then_some(self.ui.left_width), self.ui.right_width);
+            let rows = ui.available_rect_before_wrap().y_range();
+            let mut edges: Vec<(&str, f32, f32, f32)> = Vec::new();
+            if left_open {
+                edges.push(("left", ui.available_rect_before_wrap().min.x + left_w, left_w, 1.0));
+                egui::Panel::left("left_panel")
+                    .resizable(false)
+                    .exact_size(left_w)
+                    .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
+                    .show(ui, |ui| {
+                        let label = match self.ui.left_tab {
+                            _ if self.ui.versions.open => i18n::tr("Version history"),
+                            LeftTab::File => i18n::tr("Layers"),
+                            LeftTab::Assets => i18n::tr("Assets"),
+                        };
+                        a11y::region(&mut self.ui.nav, ui, a11y::Region::Layers, egui::accesskit::Role::Pane, label);
+                        layers::left_panel(self, ui)
+                    });
+            }
             if !hidden {
-                ui.scope_builder(egui::UiBuilder::new().id_salt("toolbar"), |ui| {
-                    a11y::container(ui, egui::accesskit::Role::Toolbar, i18n::tr("Tools"));
-                    toolbar::show(self, ui);
-                });
+                edges.push(("right", ui.available_rect_before_wrap().max.x - right_w, right_w, -1.0));
+                egui::Panel::right("right_panel")
+                    .resizable(false)
+                    .exact_size(right_w)
+                    .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
+                    .show(ui, |ui| {
+                        let label = match self.ui.right_tab {
+                            RightTab::Design => i18n::tr("Design"),
+                            RightTab::Prototype => i18n::tr("Prototype"),
+                            RightTab::Inspect => i18n::tr("Dev Mode"),
+                        };
+                        a11y::region(&mut self.ui.nav, ui, a11y::Region::Properties, egui::accesskit::Role::Pane, label);
+                        right::right_panel(self, ui)
+                    });
             }
-        });
-        // The panels' edges, over the canvas and the panels (drawn after them: they take the press).
-        for (name, x, shown, grows) in edges {
-            if let Some(w) = Self::panel_edge(ui, name, x, rows, shown, grows) {
-                let (l, r) = if name == "left" { (w, self.ui.right_width) } else { (self.ui.left_width, w) };
-                self.set_panel_widths(l, r);
-                self.panels_unsaved = true;
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
+                let worker = self.worker.take();
+                let mut worker = worker.unwrap_or_else(|| render_worker::Worker::new(ctx.clone()));
+                canvas::show(self, ui, &mut worker);
+                self.worker = Some(worker);
+                if !hidden {
+                    ui.scope_builder(egui::UiBuilder::new().id_salt("toolbar"), |ui| {
+                        a11y::container(ui, egui::accesskit::Role::Toolbar, i18n::tr("Tools"));
+                        toolbar::show(self, ui);
+                    });
+                }
+            });
+            // The panels' edges, over the canvas and the panels (drawn after them: they take the press).
+            for (name, x, shown, grows) in edges {
+                if let Some(w) = Self::panel_edge(ui, name, x, rows, shown, grows) {
+                    let (l, r) = if name == "left" { (w, self.ui.right_width) } else { (self.ui.left_width, w) };
+                    self.set_panel_widths(l, r);
+                    self.panels_unsaved = true;
+                }
             }
-        }
-        // Kept once the drag is over (not on every pointer move).
-        if self.panels_unsaved && !ctx.input(|i| i.pointer.any_down()) {
-            self.panels_unsaved = false;
-            self.services.save_prefs(&self.session.prefs);
+            // Kept once the drag is over (not on every pointer move).
+            if self.panels_unsaved && !ctx.input(|i| i.pointer.any_down()) {
+                self.panels_unsaved = false;
+                self.services.save_prefs(&self.session.prefs);
+            }
         }
         // Before the shortcuts: keys the hovered pane's prototype uses don't reach the editor, and
         // the arrows step through comment threads with the Comment tool.
