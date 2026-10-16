@@ -25,7 +25,7 @@ pub fn viewport_id() -> ViewportId {
 /// The presenter takes the whole window of the editor (it plays full window rather than in a window
 /// of its own).
 pub fn covers_window(app: &FigApp) -> bool {
-    app.ui.present.as_ref().is_some_and(|p| !p.ux.window)
+    app.ui.present.as_ref().is_some_and(|p| !p.ux.window && (!p.ux.tab || super::tab::active(app)))
 }
 
 /// The presenter plays in a window of its own and shows comments: the open comment thread is its.
@@ -73,9 +73,17 @@ pub fn apply_to(app: &mut FigApp, ctx: &Context, p: &mut Presenter, on: bool) {
     }
     p.ux.window = on;
     p.ux.window_doc = app.session.ds().map(|d| d.uid).unwrap_or(0);
-    if !on {
-        // The window closes with its last frame; the editor's window shows the presentation.
+    if on {
+        // The tab goes: the window plays in its place.
+        p.ux.tab = false;
+    } else {
+        // The window closes with its last frame; the presentation is a tab of the editor's window
+        // again (a shared prototype has none: it covers the window).
         ctx.send_viewport_cmd_to(viewport_id(), ViewportCommand::Close);
+        if !p.ux.viewer {
+            (p.ux.tab, p.ux.tab_doc, p.ux.tab_active) = (true, p.ux.window_doc, true);
+            app.ui.home = false;
+        }
     }
     // Both windows change what they show.
     ctx.request_repaint_of(ViewportId::ROOT);

@@ -33,7 +33,7 @@ fn responsive_frames_take_the_devices_screen_live() {
     s.execute("proto.settings", &json!({"device": "iPhone 16", "color": "Pink"})).unwrap();
     let (w, button, small) = wide(&mut s);
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": w}));
+    u.run("proto.present", json!({"start": w, "mode": "fullWindow"}));
     let p = presenter(&u);
     assert_eq!((p["responsive"].clone(), p["deviceColor"].clone()), (Value::Null, json!("Pink")));
     assert_eq!(size(&p["frameSize"]), (600.0, 400.0), "fixed size: the frame as designed");
@@ -67,7 +67,7 @@ fn without_a_device_a_responsive_frame_takes_the_windows_width_at_100_percent() 
     let (w, ..) = wide(&mut s);
     s.execute("proto.settings", &json!({"responsive": true})).unwrap();
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": w}));
+    u.run("proto.present", json!({"start": w, "mode": "fullWindow"}));
     let p = presenter(&u);
     // The window is 1440 wide; the frame keeps its designed height (a taller one scrolls).
     assert_eq!(size(&p["frameSize"]), (1440.0, 400.0), "{p}");
@@ -88,7 +88,7 @@ fn without_a_device_a_responsive_frame_takes_the_windows_width_at_100_percent() 
 fn custom_sizes_present_as_a_bare_screen() {
     let (mut u, a, ..) = setup();
     u.run("proto.settings", json!({"width": 500, "height": 700}));
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     let p = presenter(&u);
     assert_eq!(p["device"], "Custom size");
     assert_eq!(p["deviceColor"], Value::Null, "no body");

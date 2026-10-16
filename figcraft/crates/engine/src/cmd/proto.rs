@@ -116,7 +116,7 @@ pub fn specs() -> Vec<CommandSpec> {
         spec!(
             "proto.present",
             "Present",
-            "{start? (frame id; default: the selected frame, else the first flow, else the first frame)}",
+            "{start? (frame id; default: the selected frame, else the first flow, else the first frame), mode? tab|fullWindow (where it plays: `tab`, the default, is a tab of the app next to the file's, which keeps its state while you edit and ends with its × or with the file; `fullWindow` covers the editor's window and ends with Escape)}",
             false,
             |s, p| { open_player(s, p, "proto.present", "present") }
         ),
@@ -255,6 +255,9 @@ fn rotation_of(v: &Value) -> Option<DeviceRotation> {
     }
 }
 
+/// Where `proto.present` can play.
+const PRESENT_MODES: [&str; 2] = ["tab", "fullWindow"];
+
 /// Ask the UI to present (full screen or in the preview pane) from `start`, else the selected
 /// top-level frame, the page's first flow or its first frame.
 fn open_player(s: &mut Session, p: &Value, cmd: &str, ui: &str) -> Result<Value> {
@@ -273,7 +276,15 @@ fn open_player(s: &mut Session, p: &Value, cmd: &str, ui: &str) -> Result<Value>
             .or_else(|| ds.doc.top_frames(ds.page).first().copied())
             .ok_or_else(|| bad(cmd, "no frame to present"))?,
     };
-    s.request_ui(ui, json!({"start": start}));
+    // Where the presentation plays (present only).
+    let mut data = json!({"start": start});
+    if cmd == "proto.present"
+        && let Some(v) = p.get("mode").filter(|v| !v.is_null())
+    {
+        let mode = v.as_str().filter(|m| PRESENT_MODES.contains(m)).ok_or_else(|| bad(cmd, "mode: tab|fullWindow"))?;
+        data["mode"] = json!(mode);
+    }
+    s.request_ui(ui, data);
     Ok(json!({"start": start}))
 }
 
@@ -617,6 +628,15 @@ mod tests {
         s.execute("select.set", &json!({"ids": [a]})).unwrap();
         s.execute("proto.present", &json!({})).unwrap();
         assert_eq!(last(&mut s), ("present".to_string(), Some(a)));
+        // Where it plays: a tab by default (no `mode` in the request), or full window.
+        assert!(s.ui_requests.is_empty() || s.ui_requests.iter().all(|r| r.data.get("mode").is_none()));
+        s.execute("proto.present", &json!({"mode": "fullWindow"})).unwrap();
+        assert_eq!(s.ui_requests.pop().map(|r| r.data["mode"].clone()), Some(json!("fullWindow")));
+        s.execute("proto.present", &json!({"mode": "tab"})).unwrap();
+        s.ui_requests.clear();
+        assert!(s.execute("proto.present", &json!({"mode": "sideways"})).is_err());
+        assert!(s.execute("proto.present", &json!({"mode": 3})).is_err());
+        assert!(s.ui_requests.is_empty(), "a refused mode asks for nothing");
         // A start that isn't in a frame is an error, not a silent fallback.
         assert!(s.execute("proto.preview", &json!({"start": 987_654})).is_err());
         s.execute("proto.closePreview", &json!({})).unwrap();

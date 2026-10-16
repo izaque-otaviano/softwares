@@ -76,6 +76,7 @@ files! {
     "lock",
     "lock-open",
     "menu",
+    "maximize",
     "message-circle",
     "minus",
     "monitor-play",

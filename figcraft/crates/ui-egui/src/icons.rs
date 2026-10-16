@@ -199,6 +199,8 @@ icons! {
     NewWindow,
     /// Resources (components, plugins) in the bottom dock: building blocks.
     Resources,
+    /// Full screen: four corners pointing outwards.
+    Fullscreen,
 }
 
 /// The SVG file behind `icon`, as its key under `assets/ui/lucide/` (without `.svg`): a Lucide
@@ -226,6 +228,7 @@ pub(crate) fn source(icon: Icon) -> Option<&'static str> {
         Text => "type",
         Comment => "message-circle",
         Resources => "blocks",
+        Fullscreen => "maximize",
         Actions => "zap",
         // Interface.
         Chevron => "chevron-down",

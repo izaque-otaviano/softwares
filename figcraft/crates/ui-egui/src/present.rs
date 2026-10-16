@@ -46,8 +46,12 @@ use crate::widgets;
 
 // The presenter's own controls (shortcut table and list, stepping through screens, ...), in files
 // of their own; they work on the player's private state.
+#[path = "present_bar.rs"]
+pub(crate) mod bar;
 #[path = "present_panel.rs"]
 pub(crate) mod panel;
+#[path = "present_tab.rs"]
+pub(crate) mod tab;
 #[path = "present_chrome.rs"]
 pub(crate) mod ux;
 #[path = "present_window.rs"]
@@ -275,6 +279,9 @@ pub struct PresentView {
     pub background: ux::Background,
     /// The screens panel at the left: the page's screens under their flows, to jump to one.
     pub side_panel: bool,
+    /// The bar rests hidden: a few seconds without the pointer near the window's top edge slide it
+    /// away, and the pointer there slides it back (Options ▸ Auto-hide the bar). Off by default.
+    pub auto_hide: bool,
 }
 
 impl Default for PresentView {
@@ -289,6 +296,7 @@ impl Default for PresentView {
             hide_ui: false,
             background: ux::Background::Page,
             side_panel: false,
+            auto_hide: false,
         }
     }
 }
@@ -473,7 +481,7 @@ impl Presenter {
             pads_held: 0,
             widget_clicks: Vec::new(),
             media: media::State::default(),
-            ux: ux::Ux::default(),
+            ux: ux::Ux { web: cfg!(target_arch = "wasm32"), ..ux::Ux::default() },
         }
     }
 
@@ -721,7 +729,7 @@ impl Presenter {
     pub fn inspect(&self) -> Value {
         let doc = self.doc.as_ref();
         let pan = self.offset(Scroller::View);
-        json!({
+        let mut v = json!({
             "current": self.current,
             "name": doc.and_then(|d| d.node(self.current)).map(|n| n.name.as_str()),
             "start": self.start,
@@ -760,7 +768,12 @@ impl Presenter {
             "barReveal": self.ux.reveal,
             "position": ux::position(self).map(|(i, n)| [i, n]),
             "controls": self.ux.controls.iter().map(|(n, r)| (n.clone(), json!([r.min.x, r.min.y, r.max.x, r.max.y]))).collect::<serde_json::Map<String, Value>>(),
-        })
+        });
+        // (Apart: `json!` stops expanding past this many keys.)
+        v["tab"] = json!(self.ux.tab);
+        v["tabActive"] = json!(self.ux.tab && self.ux.tab_active);
+        v["autoHide"] = json!(self.view.auto_hide);
+        v
     }
 
     fn snapshot(&self) -> Option<Snapshot> {
@@ -1954,18 +1967,14 @@ enum BarAction {
     Restart,
     /// Present full-window (from the pane).
     Present,
-    /// The full-window presenter's options menu (handled in the bar).
-    Options,
     /// Show or hide the comments on the presented frame.
     Comments,
-    /// Show or hide the Inspect panel.
-    Inspect,
-    /// Show or hide the shortcut list.
-    Help,
-    /// Show or hide the screens panel.
-    Screens,
     /// Present in a window of its own (from the pane).
     Window,
+    /// The full-window bar's mark: the app's main menu.
+    Menu,
+    /// Share prototype: the website export.
+    Share,
 }
 
 impl BarAction {
@@ -1975,12 +1984,10 @@ impl BarAction {
             BarAction::Close => "close",
             BarAction::Restart => "restart",
             BarAction::Present => "present",
-            BarAction::Options => "options",
             BarAction::Comments => "comments",
-            BarAction::Inspect => "inspect",
-            BarAction::Help => "help",
-            BarAction::Screens => "screens",
             BarAction::Window => "window",
+            BarAction::Menu => "menu",
+            BarAction::Share => "share",
         }
     }
 }
@@ -2005,6 +2012,7 @@ fn run(app: &mut FigApp, ui: &mut Ui, pres: &mut Presenter) -> bool {
     poll_pads(app, pres, &ctx);
     // (The controls note where they are drawn, panels and bar, from nothing each frame.)
     pres.ux.controls.clear();
+    bar::note_people(app, &ctx, pres);
     let mut action = None;
     // A menu that is open takes Escape (the key then doesn't end the presentation too).
     let menu_open = egui::Popup::is_any_open(&ctx);
@@ -2018,6 +2026,9 @@ fn run(app: &mut FigApp, ui: &mut Ui, pres: &mut Presenter) -> bool {
     }
     // Hidden, the presenter's own controls give the window to the prototype.
     let hidden = pres.view.hide_ui;
+    // The bar alone also rests away (Auto-hide the bar): it slides over the prototype like the
+    // hidden one does.
+    let bar_away = hidden || pres.view.auto_hide;
     if pres.view.inspect && !hidden {
         let t = Tokens::get(&ctx);
         egui::Panel::right("present_inspect")
@@ -2035,13 +2046,14 @@ fn run(app: &mut FigApp, ui: &mut Ui, pres: &mut Presenter) -> bool {
             .show(ui, |ui| panel::show(pres, ui, now));
     }
     egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
-        action = player(pres, ui, ui.max_rect(), now, Chrome { keys: !typing, hidden, ..FULL }).or(action);
+        action = player(pres, ui, ui.max_rect(), now, Chrome { keys: !typing, hidden: bar_away, ..FULL }).or(action);
     });
     match action {
         Some(BarAction::Comments) => pres.view.comments = !pres.view.comments,
-        Some(BarAction::Inspect) => pres.view.inspect = !pres.view.inspect,
-        Some(BarAction::Help) => pres.ux.help = !pres.ux.help,
-        Some(BarAction::Screens) => pres.view.side_panel = !pres.view.side_panel,
+        // The app's main menu (drawn by the window's frame, as in the editor).
+        Some(BarAction::Menu) => app.ui.main_menu = !app.ui.main_menu,
+        // The website export of what is presented.
+        Some(BarAction::Share) => crate::viewer::export_dialog_from(app, Some(pres.start)),
         _ => {}
     }
     ux::help_window(&ctx, pres);
@@ -2063,7 +2075,12 @@ fn run(app: &mut FigApp, ui: &mut Ui, pres: &mut Presenter) -> bool {
     // Escape ends the presentation unless something took it first: a comment thread, a menu, the
     // shortcut list ([`ux::escape`]).
     let escape = !menu_open && ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    !(action == Some(BarAction::Close) || (escape && ux::escape(pres)))
+    // Leaving full screen is Escape's last job when the presentation is a tab (the tab's × ends it).
+    if escape && pres.ux.tab && !pres.ux.help && !pres.view.hide_ui && ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        return true;
+    }
+    !(action == Some(BarAction::Close) || std::mem::take(&mut pres.ux.close_request) || (escape && ux::escape(pres)))
 }
 
 /// How often the player polls the controllers while its prototype has gamepad triggers (seconds).
@@ -2433,7 +2450,7 @@ fn player(p: &mut Presenter, ui: &mut Ui, rect: Rect, now: f64, chrome: Chrome) 
         painter.rect_filled(l.screen, CornerRadius::ZERO, page_bg);
     }
     draw(p, &painter, &ctx, &l, now);
-    if p.view.inspect && !chrome.pane && !hidden {
+    if p.view.inspect && !chrome.pane && !p.view.hide_ui {
         inspect_hover(p, &painter, &ctx, &l, area);
     }
     if let Some((d, _)) = body {
@@ -2477,114 +2494,48 @@ fn inspect_hover(p: &mut Presenter, painter: &egui::Painter, ctx: &egui::Context
     }
 }
 
-/// The bar above the prototype: the flow picker and the frame's name on the left, the buttons on
-/// the right (text on the dark full-window bar, icons in the pane, which follows the theme).
+/// The bar above the prototype: the full-window one is [`bar::top_bar`] (three zones on a dark
+/// strip); the preview pane's is a row of small icons at its right, after the screen's name.
 fn top_bar(p: &mut Presenter, ui: &mut Ui, bar: Rect, now: f64, chrome: Chrome) -> Option<BarAction> {
-    let t = Tokens::get(ui.ctx());
-    let (fill, text, dim, hover) = if chrome.pane {
-        (t.panel, t.text, t.text_secondary, t.hover)
-    } else {
-        (Color32::from_rgb(0x2C, 0x2C, 0x2C), Color32::WHITE, Color32::from_gray(140), Color32::from_white_alpha(28))
-    };
-    let r = chrome.round;
-    ui.painter().rect_filled(bar, CornerRadius { nw: r, ne: r, sw: 0, se: 0 }, fill);
-    if chrome.pane {
-        ui.painter().line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, t.border));
+    if !chrome.pane {
+        return bar::top_bar(p, ui, bar, now);
     }
+    let t = Tokens::get(ui.ctx());
+    let (text, dim, hover) = (t.text, t.text_secondary, t.hover);
+    let r = chrome.round;
+    ui.painter().rect_filled(bar, CornerRadius { nw: r, ne: r, sw: 0, se: 0 }, t.panel);
+    ui.painter().line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, t.border));
     let doc = p.doc.as_ref()?;
     let name = doc.node(p.current).map(|n| n.name.clone()).unwrap_or_default();
     let flows = match doc.page_of(p.start).and_then(|pg| doc.node(pg)).map(|n| &n.kind) {
         Some(NodeKind::Page { flows, .. }) => flows.clone(),
         _ => vec![],
     };
-    let settings = page_settings(doc, p.current);
-    let device = settings.device();
     let mut action = None;
     // Right: the buttons, right to left (English labels key their ids; shown translated).
-    let buttons: &[(BarAction, &str, Icon)] = if chrome.pane {
-        &[
-            (BarAction::Close, tr_noop("Close preview"), Icon::Close),
-            (BarAction::Present, tr_noop("Present"), Icon::Play),
-            (BarAction::Window, tr_noop("Open in new window"), Icon::NewWindow),
-            (BarAction::Restart, tr_noop("Restart"), Icon::Reset),
-        ]
-    } else {
-        &[
-            (BarAction::Close, tr_noop("Close"), Icon::Close),
-            (BarAction::Restart, tr_noop("Restart"), Icon::Reset),
-            (BarAction::Options, tr_noop("Options"), Icon::Dots),
-            (BarAction::Comments, tr_noop("Comments"), Icon::Comment),
-            (BarAction::Inspect, tr_noop("Inspect"), Icon::Code),
-            (BarAction::Help, tr_noop("Keyboard shortcuts"), Icon::Help),
-        ]
-    };
-    let mut x = bar.max.x - if chrome.pane { 6.0 } else { 8.0 };
+    let buttons: &[(BarAction, &str, Icon)] = &[
+        (BarAction::Close, tr_noop("Close preview"), Icon::Close),
+        (BarAction::Present, tr_noop("Present"), Icon::Play),
+        (BarAction::Window, tr_noop("Open in new window"), Icon::NewWindow),
+        (BarAction::Restart, tr_noop("Restart"), Icon::Reset),
+    ];
+    let mut x = bar.max.x - 6.0;
     for (act, label, icon) in buttons {
-        // A shared prototype has no way back to the editor, no comments and no Inspect.
-        if p.ux.viewer && matches!(act, BarAction::Close | BarAction::Comments | BarAction::Inspect) {
-            continue;
-        }
-        // (The shortcut list's button reads "?", as the key.)
-        let shown = if *act == BarAction::Help { ux::spec(ux::Act::Help) } else { tr(label) };
-        let w = if chrome.pane { 24.0 } else { ui.painter().layout_no_wrap(shown.to_string(), regular(11.5), text).size().x + 16.0 };
-        let br = Rect::from_min_size(pos2(x - w, bar.center().y - 12.0), vec2(w, 24.0));
+        let br = Rect::from_min_size(pos2(x - 24.0, bar.center().y - 12.0), vec2(24.0, 24.0));
         p.ux.note(act.id(), br);
-        x = br.min.x - if chrome.pane { 2.0 } else { 4.0 };
-        let mut resp = ui.interact(br, ui.id().with(("pbar", *label)), Sense::click());
-        if chrome.pane {
-            resp = resp.tip(shown);
-        }
-        let on = (*act == BarAction::Comments && p.view.comments)
-            || (*act == BarAction::Inspect && p.view.inspect)
-            || (*act == BarAction::Help && p.ux.help);
-        if on {
-            ui.painter().rect_filled(br, CornerRadius::same(5), ACCENT);
-        } else if resp.hovered() {
+        x = br.min.x - 2.0;
+        let resp = ui.interact(br, ui.id().with(("pbar", *label)), Sense::click()).tip(tr(label));
+        if resp.hovered() {
             ui.painter().rect_filled(br, CornerRadius::same(5), hover);
         }
-        if *act == BarAction::Comments {
-            resp = resp.tip(tr("Show comments (Shift+C)"));
-        }
-        if *act == BarAction::Inspect {
-            resp = resp.tip(tr("Inspect the layer under the pointer: size, colours, typography"));
-        }
-        if *act == BarAction::Help {
-            resp = resp.tip(format!("{} ({})", tr("Keyboard shortcuts"), ux::spec(ux::Act::Help)));
-        }
-        if chrome.pane {
-            icons::paint(ui.painter(), br.shrink(5.0), *icon, t.icon);
-        } else {
-            ui.painter().text(br.center(), Align2::CENTER_CENTER, shown, regular(11.5), text);
-        }
-        if *act == BarAction::Options {
-            crate::right::menu_popup(&resp)
-                .width(220.0)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show(|ui| options_menu(p, ui, device, now));
-        } else if resp.clicked() {
+        icons::paint(ui.painter(), br.shrink(5.0), *icon, t.icon);
+        if resp.clicked() {
             action = Some(*act);
         }
     }
     // Left: the flow picker and the frame's name, clipped before the buttons.
     let left = ui.painter().with_clip_rect(Rect::from_min_max(bar.min, pos2(x, bar.max.y)));
-    let mut lx = bar.min.x + if chrome.pane { 8.0 } else { 12.0 };
-    // The full-window bar opens with the screens panel's toggle.
-    if !chrome.pane {
-        let br = Rect::from_min_size(pos2(bar.min.x + 8.0, bar.center().y - 12.0), vec2(24.0, 24.0));
-        p.ux.note(BarAction::Screens.id(), br);
-        let resp = ui.interact(br.intersect(left.clip_rect()), ui.id().with("pbar_screens"), Sense::click());
-        let resp = resp.tip(format!("{} ({})", tr("Screens"), crate::toolbar::pretty_shortcut(ux::spec(ux::Act::Screens))));
-        if p.view.side_panel {
-            left.rect_filled(br, CornerRadius::same(5), ACCENT);
-        } else if resp.hovered() {
-            left.rect_filled(br, CornerRadius::same(5), hover);
-        }
-        icons::paint(&left, br.shrink(5.0), Icon::Screens, text);
-        if resp.clicked() {
-            action = Some(BarAction::Screens);
-        }
-        lx = br.max.x + 8.0;
-    }
+    let mut lx = bar.min.x + 8.0;
     // The flow playing: its name on the picker, its description on hover; the menu lists each
     // flow with its description.
     let playing = flows.iter().find(|f| f.start == p.start);
@@ -2618,8 +2569,7 @@ fn top_bar(p: &mut Presenter, ui: &mut Ui, bar: Rect, now: f64, chrome: Chrome) 
         lx += 14.0;
     }
     // The screen's name and where it is among the page's screens ("3 / 12", with previous and next).
-    let name_color = if chrome.pane { text } else { Color32::from_gray(220) };
-    ux::name_and_counter(p, ui, &left, bar, lx, x, &name, name_color, ux::BarColors { text, dim, hover }, now);
+    ux::name_and_counter(p, ui, &left, bar, lx, x, &name, text, ux::BarColors { text, dim, hover }, now);
     action
 }
 
@@ -2673,8 +2623,25 @@ fn options_menu(p: &mut Presenter, ui: &mut Ui, device: Option<Device>, now: f64
     let page_bg = p.doc.as_ref().map(|d| page_settings(d, p.current)).unwrap_or_default().background;
     ux::background_menu(p, ui, crate::theme::doc_c32(ui.ctx(), page_bg));
     ui.separator();
+    // The panels the bar no longer has buttons for.
+    if menu_check(ui, p.view.side_panel, tr("Screens"), ux::spec(ux::Act::Screens)) {
+        ux::run(p, ux::Act::Screens, ui.ctx(), now, false);
+        ui.close();
+    }
+    // (A shared prototype has no Inspect.)
+    if !p.ux.viewer && menu_check(ui, p.view.inspect, tr("Inspect"), "") {
+        p.view.inspect = !p.view.inspect;
+        ui.close();
+    }
     if menu_check(ui, p.view.hide_ui, tr("Hide UI"), ux::spec(ux::Act::HideUi)) {
         ux::run(p, ux::Act::HideUi, ui.ctx(), now, false);
+        ui.close();
+    }
+    // The bar rests away after a few seconds; the pointer at the window's top edge brings it back.
+    if menu_check(ui, p.view.auto_hide, tr("Auto-hide the bar"), "") {
+        p.view.auto_hide = !p.view.auto_hide;
+        p.ux.reveal = 0.0;
+        p.ux.near_at = None;
         ui.close();
     }
     // The prototype in a window of its own, the editor's window free to go on working.
@@ -2688,6 +2655,11 @@ fn options_menu(p: &mut Presenter, ui: &mut Ui, device: Option<Device>, now: f64
     }
     if menu_check(ui, false, tr("Restart"), ux::spec(ux::Act::Restart)) {
         p.restart(p.start, now);
+        ui.close();
+    }
+    // Presented over the editor's window (no tab to close): the way out.
+    if !p.ux.viewer && !p.ux.tab && !p.ux.window && menu_check(ui, false, tr("Close the presentation"), ux::spec(ux::Act::Close)) {
+        p.ux.close_request = true;
         ui.close();
     }
 }
@@ -3270,6 +3242,10 @@ pub(crate) mod raster_tests;
 #[cfg(test)]
 #[path = "present_window_tests.rs"]
 mod window_tests;
+
+#[cfg(test)]
+#[path = "present_tab_tests.rs"]
+mod tab_tests;
 
 #[cfg(test)]
 mod tests {

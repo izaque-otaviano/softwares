@@ -11,7 +11,7 @@ use std::time::Duration;
 use egui::{Color32, ColorImage, Event, Key, Modifiers, Pos2, Rect, ViewportCommand, ViewportEvent, ViewportId, ViewportInfo, pos2, vec2};
 use serde_json::{Value, json};
 
-use super::ux_tests::{abc, click, control, ex, frame_out, has_text, key_events, presenter, screen, t, text_at, texts};
+use super::ux_tests::{abc, click, click_control, control, ex, frame_out, has_text, key_events, presenter, screen, t, text_at, texts};
 use super::window;
 use crate::present_tests::{Ui, setup};
 
@@ -97,8 +97,7 @@ fn where_viewports_are_embedded_the_presentation_stays_in_the_editors_window_and
     assert!(u.ctx.embed_viewports(), "a headless context has no window of its own to give");
     let why = t("This build has one window: the prototype presents here");
     // The Options entry.
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     let menu = frame_out(&mut u, vec![]);
     click(&mut u, text_at(&menu, &t("Open in new window")));
     assert_eq!(presenter(&u)["window"], json!(false));
@@ -147,8 +146,7 @@ fn the_panes_window_button_moves_the_preview_out_where_there_are_windows() {
 fn a_window_of_its_own_takes_the_presentation_and_leaves_the_editors_window_to_the_editor() {
     let (mut u, _) = abc();
     u.ctx.set_embed_viewports(false);
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     let menu = frame_out(&mut u, vec![]);
     click(&mut u, text_at(&menu, &t("Open in new window")));
     assert_eq!(presenter(&u)["window"], json!(true), "{:?}", toast(&u));
@@ -169,15 +167,15 @@ fn a_window_of_its_own_takes_the_presentation_and_leaves_the_editors_window_to_t
     let win = child_out(&mut u, vec![], false);
     assert!(has_text(&win, "1 / 3") && has_text(&win, "A"), "{:?}", texts(&win));
     assert!(!has_text(&win, &t("Design")), "{:?}", texts(&win));
-    let close = control(&u, false, "close");
-    assert!(close.x < WINDOW.x && close.y < 60.0, "the bar is the window's: {close:?}");
+    let options = control(&u, false, "options");
+    assert!(options.x < WINDOW.x && options.y < 60.0, "the bar is the window's: {options:?}");
 }
 
 #[test]
 fn keys_go_to_the_window_they_happen_in() {
     let (mut u, a, b, card) = setup();
     u.ctx.set_embed_viewports(false);
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     window::apply(&mut u.app, &u.ctx, true);
     u.frames(2, Vec::new);
     child_frames(&mut u, 3);
@@ -206,11 +204,6 @@ fn escape_the_close_button_and_the_windows_own_close_end_the_presentation_and_th
     // Nothing keeps the window open any longer: the editor's window stops asking for it.
     let out = frame_out(&mut u, vec![]);
     assert!(!out.viewport_output.contains_key(&child()));
-    // The bar's Close.
-    let (mut u, _) = windowed();
-    let at = control(&u, false, "close");
-    child_click(&mut u, at);
-    assert!(u.app.ui.present.is_none());
     // The close button of the window itself (or the system's).
     let (mut u, _) = windowed();
     let out = child_out(&mut u, vec![], true);
@@ -376,8 +369,7 @@ fn a_screen_reader_or_another_window_keeps_the_presentation_where_it_is() {
     u.frame(vec![]);
     // (egui builds the screen reader's tree only while a pass runs, and that is where the entry
     // asks: so the Options entry is clicked rather than `window::apply` called between frames.)
-    let out = frame_out(&mut u, vec![]);
-    click(&mut u, text_at(&out, &t("Options")));
+    click_control(&mut u, "options");
     let menu = frame_out(&mut u, vec![]);
     click(&mut u, text_at(&menu, &t("Open in new window")));
     assert_eq!(presenter(&u)["window"], json!(false));
@@ -396,7 +388,7 @@ fn a_screen_reader_or_another_window_keeps_the_presentation_where_it_is() {
 fn a_new_presentation_starts_in_the_editors_window_and_the_old_window_closes() {
     let (mut u, [_, b, _]) = windowed();
     // Present from the editor again while the window plays: the new one covers the editor's window.
-    u.run("proto.present", json!({"start": b}));
+    u.run("proto.present", json!({"start": b, "mode": "fullWindow"}));
     assert_eq!(presenter(&u)["window"], json!(false));
     assert!(window::covers_window(&u.app));
     child_out(&mut u, vec![], false);
@@ -555,19 +547,26 @@ fn a_close_request_is_read_only_in_its_own_windows_frame() {
 }
 
 #[test]
-fn the_presenters_close_where_the_frameless_windows_close_button_sits_ends_only_the_presentation() {
-    // Windows and Linux draw the main window's buttons themselves: while presenting full window the
-    // presenter's bar takes the top of the window, its Close at the right end.
+fn the_presenters_way_out_where_the_frameless_windows_close_button_sits_ends_only_the_presentation() {
+    // Windows and Linux draw the main window's buttons themselves. A full-window presentation has
+    // no strip for them, and its bar (the Options menu's "Close the presentation" is its way out,
+    // after Escape) mustn't be what closes the window.
     let (mut u, _) = abc();
     u.app.ui.title_bar = crate::TitleBar::Custom;
     saved(&mut u);
     u.frames(2, Vec::new);
-    let at = control(&u, false, "close");
-    let b = |pressed| Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
     let mut sent = Vec::new();
-    for events in [vec![Event::PointerMoved(at)], vec![b(true)], vec![b(false)], vec![], vec![]] {
-        sent.extend(commands(&frame_out(&mut u, events), ViewportId::ROOT));
-    }
+    let mut click_sent = |u: &mut Ui, at: Pos2| {
+        let b = |pressed| Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
+        for events in [vec![Event::PointerMoved(at)], vec![b(true)], vec![b(false)], vec![], vec![]] {
+            sent.extend(commands(&frame_out(u, events), ViewportId::ROOT));
+        }
+    };
+    let options = control(&u, false, "options");
+    click_sent(&mut u, options);
+    let menu = frame_out(&mut u, vec![]);
+    let close = text_at(&menu, &t("Close the presentation"));
+    click_sent(&mut u, close);
     assert!(u.app.ui.present.is_none());
     assert!(!sent.contains(&ViewportCommand::Close), "{sent:?}");
     assert!(!u.app.ui.quit);

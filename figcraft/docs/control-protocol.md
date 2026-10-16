@@ -201,7 +201,7 @@ clicks) as separate calls. Returns `{queued}`.
 
 Invoke a menu item exactly like clicking it (this may open a dialog). Returns `{ok, lastError}`.
 
-### `ui.set {rightTab?, leftTab?, theme?, home?, homeSection?, homeRecentsView?, homeRecentsSort?, homeRecentsOrder?, palette?, mainMenu?, focusRegion?, colorPicker?, variables?, layerFilter?, collapseLayers?, exportPreview?, preview?, presentScroll?, colorProfileDialog?, stylePicker?, stylePickerEdit?, stylePickerView?, iconGallery?, protoEditor?, contextMenu?, contextSelectLayer?, commentOpen?, commentDraft?, commentFilter?, commentSort?, commentSearch?, commentReply?, commentEdit?, presentComments?, presentHideUi?, presentBackground?, presentSidePanel?, presentWindow?, devCompare?, devCompareMode?, devCompareSplit?, annotationFilter?, resetFrameStats?, pluginsWindow?, pluginsTab?, pluginConfirm?, pluginForm?}`
+### `ui.set {rightTab?, leftTab?, theme?, home?, homeSection?, homeRecentsView?, homeRecentsSort?, homeRecentsOrder?, palette?, mainMenu?, focusRegion?, colorPicker?, variables?, layerFilter?, collapseLayers?, exportPreview?, preview?, presentScroll?, colorProfileDialog?, stylePicker?, stylePickerEdit?, stylePickerView?, iconGallery?, protoEditor?, contextMenu?, contextSelectLayer?, commentOpen?, commentDraft?, commentFilter?, commentSort?, commentSearch?, commentReply?, commentEdit?, presentComments?, presentHideUi?, presentAutoHide?, presentBackground?, presentSidePanel?, presentWindow?, devCompare?, devCompareMode?, devCompareSplit?, annotationFilter?, resetFrameStats?, pluginsWindow?, pluginsTab?, pluginConfirm?, pluginForm?}`
 
 Switch panels and modes: `rightTab` `design|prototype|inspect`, `leftTab` `file|assets`, `theme`,
 `home` (bool), `homeSection` (`recents`, `online` or `templates`: which section the home screen shows, as `ui.inspect` reports it; opening
@@ -238,11 +238,12 @@ text, focused with the cursor at its end: an `@` there shows the mention picker)
 message index of the open thread to edit, 0 for the first; `null` stops), `presentComments` (bool:
 the presenter shows the presented frame's comments, also Shift+C there), `presentHideUi` (bool: hide the
 presenter's bar and Inspect panel, also `Cmd/Ctrl+\` there; the pointer at the window's top edge slides
-the bar back in), `presentBackground` (`page|dark|grey|light|white|black` or a hex colour: the colour
+the bar back in), `presentAutoHide` (bool: the bar rests away a few seconds after the pointer left the top edge; off by
+default), `presentBackground` (`page|dark|grey|light|white|black` or a hex colour: the colour
 around the prototype, kept for the next presentation and not saved in the file), `presentSidePanel`
 (bool: the presenter's screens panel with thumbnails, also S there) and `presentWindow` (bool: play the
 prototype in a window of its own, starting a presentation from the selection or the first screen when none
-plays; false puts it back in the editor's window; where there is no window to give, in the browser build,
+plays; false puts it back in the editor's window as a presentation tab; where there is no window to give, in the browser build,
 with a screen reader running or from a window that isn't the main one, it stays where it is and a message
 says why). Dev Mode: `devCompare` (a
 ready-for-dev frame or section id opens the Compare changes view, like `dev.compare {id, show:
@@ -313,3 +314,13 @@ read -r reply <&3; echo "$reply"
 
 For agents, prefer the MCP server (`figcraft-cli mcp --attach 7979`, see `docs/mcp.md`): it wraps
 these methods in documented tools and returns images inline.
+
+### Presenting in a tab
+
+`proto.present {start?, mode?}` opens the presentation as a tab of the app's tab strip next to the file's
+(`mode: "tab"`, the default); `mode: "fullWindow"` covers the editor's window instead (Escape or Options ▸
+Close the presentation end it). The tab plays the file it was started from, keeps its state while the
+editor's tab shows, follows the file's edits and ends with its ×, Ctrl/Cmd+W, a middle click or its file.
+`ui.inspect` reports it as `presentTab {title, active, doc, rect, closeRect}` (`null` without one) and
+`presenter {tab, tabActive, autoHide}`; the bar's controls are in `presenter.controls`: `logo`, `comments`,
+`file`, `prev`, `position`, `next`, `avatar`, `share`, `options`, `fullscreen`.

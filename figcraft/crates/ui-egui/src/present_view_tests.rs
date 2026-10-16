@@ -101,7 +101,7 @@ fn big() -> (Ui, NodeId) {
     let big = id(&s.execute("node.create", &json!({"type": "frame", "name": "Big", "x": 0, "y": 0, "width": 2000, "height": 3000})).unwrap());
     s.execute("node.create", &json!({"type": "frame", "name": "Small", "x": 2100, "y": 0, "width": 300, "height": 200})).unwrap();
     let mut u = Ui::new(s);
-    u.run("proto.present", json!({"start": big}));
+    u.run("proto.present", json!({"start": big, "mode": "fullWindow"}));
     (u, big)
 }
 
@@ -170,7 +170,7 @@ fn presenter_scales_by_its_options_and_pans_what_overflows() {
     u.key(at, Key::Escape);
     assert!(u.app.ui.present.is_none());
     assert_eq!(u.app.inspect()["presentOptions"]["scale"], "fill");
-    u.run("proto.present", json!({"start": big}));
+    u.run("proto.present", json!({"start": big, "mode": "fullWindow"}));
     assert_eq!(presenter(&u)["scale"], "fill");
     // R restarts.
     u.key(at, Key::ArrowRight);
@@ -193,7 +193,7 @@ fn devices_turn_and_their_frame_can_hide() {
     // Full window, upright, fitting the window: hiding the device's body leaves more room for the
     // screen.
     u.run("proto.settings", json!({"rotation": "portrait"}));
-    u.run("proto.present", json!({"start": a}));
+    u.run("proto.present", json!({"start": a, "mode": "fullWindow"}));
     u.run("proto.presentOptions", json!({"scale": "fit"}));
     let with_body = num(&presenter(&u)["zoom"]);
     u.run("proto.presentOptions", json!({"deviceFrame": false}));

@@ -76,6 +76,7 @@ logo and the document mark, are rendered from the SVG files listed below
 | `assets/ui/lucide/lock.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `lock`, unchanged; used by `Icon::Lock` |
 | `assets/ui/lucide/lock-open.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `lock-open`, unchanged; used by `Icon::Unlock` |
 | `assets/ui/lucide/menu.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `menu`, unchanged; used by `Icon::Menu` |
+| `assets/ui/lucide/maximize.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `maximize`, unchanged; used by `Icon::Fullscreen` |
 | `assets/ui/lucide/message-circle.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `message-circle`, unchanged; used by `Icon::Comment` |
 | `assets/ui/lucide/minus.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `minus`, unchanged; used by `Icon::Line`, `Icon::Minus`, `Icon::WinMinimize` |
 | `assets/ui/lucide/monitor-play.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `monitor-play`, unchanged; used by `Icon::Preview` |

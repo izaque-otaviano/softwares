@@ -43,16 +43,21 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
         icons::paint(ui.painter(), Rect::from_center_size(hr.center(), vec2(16.0, 16.0)), Icon::Home, t.icon);
         if hresp.clicked() {
             app.ui.home = true;
+            crate::present::tab::deselect(app);
         }
         x += 44.0;
         ui.painter().line_segment([pos2(x, rect.min.y), pos2(x, rect.max.y)], Stroke::new(1.0, t.border));
         let mut switch = None;
         let mut close = None;
+        // The presentation's tab (it sits after its file's) and what a click on it asked for.
+        let pres = crate::present::tab::info(app);
+        let mut pres_click = None;
+        let mut pres_rects = None;
         // A tab dragged off the strip, or "Open in new window", moves to a window of its own.
         let mut detach = None;
         let several = !ui.ctx().embed_viewports();
         for (i, d) in app.session.docs.iter().enumerate().filter(|(_, d)| app.shows(d.uid)) {
-            let active = i == app.session.active && !app.ui.home;
+            let active = i == app.session.active && !app.ui.home && !pres.as_ref().is_some_and(|p| p.active);
             let name = d.doc.name.clone();
             // In a live session: a mark after the name says whether others get in.
             let live = live_mark(app, d.uid);
@@ -131,6 +136,10 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
             }
             x += w;
             ui.painter().line_segment([pos2(x, rect.min.y + 10.0), pos2(x, rect.max.y - 10.0)], Stroke::new(1.0, t.border));
+            if let Some(info) = pres.as_ref().filter(|p| p.doc == d.uid) {
+                let (next, click, rects) = crate::present::tab::draw_tab(ui, rect, x, info, &t);
+                (x, pres_click, pres_rects) = (next, click, Some(rects));
+            }
         }
         // New tab.
         let nr = Rect::from_center_size(pos2(x + 20.0, rect.center().y), vec2(28.0, 28.0));
@@ -142,6 +151,7 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
         if nresp.clicked() {
             app.run("file.new", json!({}));
             app.ui.home = false;
+            crate::present::tab::deselect(app);
         }
         // Right side: theme toggle (left of the window buttons).
         let theme_r = Rect::from_center_size(pos2(rect.max.x - buttons_w - 24.0, rect.center().y), vec2(28.0, 28.0));
@@ -154,9 +164,18 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
             let cmd = if app.ui.dark { "view.themeLight" } else { "view.themeDark" };
             app.run(cmd, json!({}));
         }
+        if let Some(p) = app.ui.present.as_mut() {
+            (p.ux.tab_rect, p.ux.tab_close_rect) = pres_rects.map_or((None, None), |[r, c]| (Some(r), Some(c)));
+        }
+        match pres_click {
+            Some(crate::present::tab::Click::Select) => crate::present::tab::select(app),
+            Some(crate::present::tab::Click::Close) => crate::present::tab::close(app),
+            None => {}
+        }
         if let Some(i) = switch {
             app.run("doc.switch", json!({"index": i}));
             app.ui.home = false;
+            crate::present::tab::deselect(app);
         }
         if let Some((i, at)) = detach {
             // Where the pointer let go, on the screen.
