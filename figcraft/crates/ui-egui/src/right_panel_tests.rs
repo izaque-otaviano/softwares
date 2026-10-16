@@ -99,6 +99,35 @@ fn dock_gallery() {
     r.save_region(&dir.join("dock.png"), area, 3);
 }
 
+/// Whole editor windows on a shop page, as PNGs (`FIGCRAFT_SNAPSHOTS=/some/dir`).
+#[test]
+fn editor_gallery() {
+    use figcraft_engine::synthetic_shop::{ShopSpec, shop_document};
+    let Some(dir) = gallery_dir() else { return };
+    figcraft_text::scan_system_fonts();
+    let spec = ShopSpec { screens: 5, distinct_photos: 10, photo_px: 900, ..ShopSpec::HEAVY };
+    let (doc, _) = shop_document(&spec).unwrap();
+    let photo = doc.nodes().find(|n| n.fills.iter().any(|f| matches!(f.kind, figcraft_color::PaintKind::Image(_)))).map(|n| n.id);
+    let mut r = Rec::new(Session::with_document(doc));
+    r.u.app.ui.home = false;
+    r.resize(1440.0, 900.0);
+    let settle = |r: &mut Rec| {
+        for _ in 0..40 {
+            r.frames(2);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    };
+    r.run("view.zoomFit", json!({}));
+    settle(&mut r);
+    let all = Rect::from_min_size(Pos2::ZERO, r.u.size);
+    r.save_region(&dir.join("editor.png"), all, 2);
+    if let Some(p) = photo {
+        r.run("select.set", json!({"ids": [p]}));
+        settle(&mut r);
+        r.save_region(&dir.join("editor-photo.png"), all, 2);
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Layout invariants, driven through egui headless with the AccessKit tree on.
 
