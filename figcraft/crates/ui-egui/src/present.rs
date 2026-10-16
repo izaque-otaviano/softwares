@@ -3261,11 +3261,11 @@ mod page_tests;
 
 #[cfg(test)]
 #[path = "present_chrome_tests.rs"]
-mod ux_tests;
+pub(crate) mod ux_tests;
 
 #[cfg(test)]
 #[path = "present_raster_tests.rs"]
-mod raster_tests;
+pub(crate) mod raster_tests;
 
 #[cfg(test)]
 #[path = "present_window_tests.rs"]

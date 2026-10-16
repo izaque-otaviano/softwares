@@ -100,7 +100,11 @@ pub fn handle(app: &mut FigApp, ctx: &Context, typing: bool) {
     if typing || crate::a11y::field_focused(ctx) || app.ui.palette.is_some() {
         return;
     }
-    let events: Vec<Event> = ctx.input(|i| i.events.clone());
+    let mut events: Vec<Event> = ctx.input(|i| i.events.clone());
+    // The Variables page hides the canvas: only undo and redo (of its edits) reach the document.
+    if app.ui.variables.is_some() {
+        events.retain(|e| matches!(e, Event::Key { key: Key::Z | Key::Y, modifiers, .. } if modifiers.command));
+    }
     if events.is_empty() {
         return;
     }

@@ -103,7 +103,12 @@ pub fn rail(app: &mut FigApp, ui: &mut Ui) {
         let ir = Rect::from_center_size(pos2(r.center().x, y + 14.0), vec2(36.0, 28.0));
         let hit = Rect::from_min_max(pos2(r.min.x, y), pos2(r.max.x, y + 48.0));
         let resp = ui.interact(hit, ui.id().with(("rail", label)), Sense::click()).tip(label);
-        let active = tab.is_some_and(|tb| tb == app.ui.left_tab && !app.ui.left_collapsed && !app.ui.versions.open);
+        // While the Variables page covers the window, its button is the active one.
+        let vars_open = app.ui.variables.is_some();
+        let active = match tab {
+            Some(tb) => tb == app.ui.left_tab && !app.ui.left_collapsed && !app.ui.versions.open && !vars_open,
+            None => vars_open,
+        };
         if tab.is_some() {
             a11y::tab(&resp, label, active);
         }
@@ -117,6 +122,7 @@ pub fn rail(app: &mut FigApp, ui: &mut Ui) {
         if resp.clicked() {
             match tab {
                 Some(tb) => {
+                    app.ui.variables = None;
                     // Leaving the version history shows the tab rather than collapsing it.
                     if active {
                         app.ui.left_collapsed = true;
@@ -126,6 +132,8 @@ pub fn rail(app: &mut FigApp, ui: &mut Ui) {
                     }
                     app.ui.versions = Default::default();
                 }
+                // Variables: the page opens over the window, and the button closes it again.
+                None if vars_open => app.ui.variables = None,
                 None => {
                     app.ui.variables.get_or_insert_with(Default::default);
                 }

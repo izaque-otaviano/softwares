@@ -577,7 +577,7 @@ name and sets them this way);
   variables. A variable the library adds to the extended collection is an update of its own
   (`library.updates` lists it without an `id`, it has no copy yet). A library collection that is
   itself an extended collection can be extended again: the chain follows as each file accepts
-  its library's updates. The Variables editor offers Extend collection on a library collection and marks
+  its library's updates. The Variables page offers Extend collection on a library collection and marks
   overridden values, with a reset button.
 - **Update**: `library.updates` lists the components, styles, variable collections and variables
   with a newer published version; `library.acceptUpdates {ids? (library ids)}` pulls them in,
@@ -829,7 +829,7 @@ JSON text or a path) reads one back: a collection joins this file's collection o
 (values matched by mode name, new modes and variables added, a same-named variable of another type
 skipped with a warning; library copies and extended collections are never targets), others are
 added; aliases are checked for loops; it returns `{collections, variables, updated, warnings}`. The
-Variables editor's Import… and Export… buttons do the same through file dialogs.
+Variables page's Import… and Export… (the sliders button beside Collections) do the same through file dialogs.
 
 Strokes take colour styles and variables like fills: `style.apply {style, target: "stroke"}` links
 a colour style to the strokes (`styles.stroke`; edits of the style follow, `style.detach {which:
