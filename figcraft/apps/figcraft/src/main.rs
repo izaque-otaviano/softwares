@@ -15,6 +15,10 @@ mod args;
 mod control_server;
 mod gamepad;
 mod graphics;
+#[cfg(target_os = "macos")]
+mod mac_menu;
+#[cfg(test)]
+mod mac_menu_tests;
 mod recovery;
 mod services;
 
@@ -48,6 +52,9 @@ struct App {
     title: String,
     /// Shared with the services, which write the copies after a panic.
     recovery: recovery::Shared,
+    /// The macOS menu bar is FigCraft's (not in the prototype viewer, which has no menus).
+    #[cfg(target_os = "macos")]
+    menu_bar: bool,
 }
 
 impl eframe::App for App {
@@ -57,6 +64,12 @@ impl eframe::App for App {
             if slot.is_none() {
                 *slot = Some(ctx.clone());
             }
+        }
+        // The menu bar replaces winit's (an app menu with Quit only), from the first frame: the app
+        // has finished launching by then.
+        #[cfg(target_os = "macos")]
+        if self.menu_bar {
+            mac_menu::install(ctx);
         }
         let title = with_app(|fig| {
             control_server::drain_queue(&self.queue, &mut fig.control_queue);
@@ -203,10 +216,25 @@ fn main() -> eframe::Result {
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }
+    #[cfg(target_os = "macos")]
+    let menu_bar = viewer.is_none();
     let mut options = eframe::NativeOptions { viewport, renderer: eframe::Renderer::Wgpu, ..Default::default() };
     graphics::configure(&mut options.wgpu_options);
     figcraft_ui_egui::windows::install(fig);
-    eframe::run_native("FigCraft", options, Box::new(move |_cc| Ok(Box::new(App { queue, ctx_slot, title: String::new(), recovery }))))
+    eframe::run_native(
+        "FigCraft",
+        options,
+        Box::new(move |_cc| {
+            Ok(Box::new(App {
+                queue,
+                ctx_slot,
+                title: String::new(),
+                recovery,
+                #[cfg(target_os = "macos")]
+                menu_bar,
+            }))
+        }),
+    )
 }
 
 #[cfg(test)]

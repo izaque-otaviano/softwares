@@ -375,6 +375,56 @@ pub(crate) fn confirm_close(app: &mut FigApp, ctx: &Context) {
     }
 }
 
+/// Quit the app (the macOS app menu's Quit, ⌘Q): at once with nothing unsaved, else after asking
+/// about the files with unsaved changes in every window.
+pub fn request_quit(app: &mut FigApp, ctx: &Context) {
+    if unsaved_anywhere(app).is_empty() {
+        quit_now(app, ctx);
+    } else {
+        app.ui.confirm_quit = true;
+        ctx.request_repaint();
+    }
+}
+
+/// The open files with unsaved changes, in every window (a branch's edits live on in its file).
+fn unsaved_anywhere(app: &FigApp) -> Vec<String> {
+    app.session.docs.iter().filter(|d| d.is_dirty() && d.branch_of.is_none()).map(|d| d.doc.name.clone()).collect()
+}
+
+fn quit_now(app: &mut FigApp, ctx: &Context) {
+    app.ui.quit = true;
+    ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Close);
+    ctx.request_repaint_of(ViewportId::ROOT);
+}
+
+/// The unsaved-changes question when the app quits.
+pub(crate) fn confirm_quit(app: &mut FigApp, ctx: &Context) {
+    if !app.ui.confirm_quit {
+        return;
+    }
+    let names = unsaved_anywhere(app);
+    if names.is_empty() {
+        app.ui.confirm_quit = false;
+        quit_now(app, ctx);
+        return;
+    }
+    let t = crate::theme::Tokens::get(ctx);
+    let (mut open, mut discard, mut cancel) = (true, false, false);
+    crate::dialogs::window(tr("Unsaved changes"), ctx).open(&mut open).show(ctx, |ui| {
+        ui.set_width(340.0);
+        crate::widgets::label(ui, &trf("Unsaved changes in {names}. Quit and lose them?", &[("names", &names.join(", "))]), t.text);
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            discard = crate::widgets::button(ui, tr("Quit without saving"), true, true).clicked();
+            cancel = crate::widgets::button(ui, tr("Cancel"), false, true).clicked();
+        });
+    });
+    app.ui.confirm_quit = open && !discard && !cancel;
+    if discard {
+        quit_now(app, ctx);
+    }
+}
+
 /// Before the main window draws: windows asked to close close, closed files leave their windows
 /// (a window left with none closes) and the main window shows one of its own files.
 pub(crate) fn begin(app: &mut FigApp, ctx: &Context) {

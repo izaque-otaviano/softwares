@@ -195,6 +195,19 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 impl Services for Desktop {
+    // The macOS menu bar (`mac_menu`): elsewhere the main menu is the in-window one only.
+    #[cfg(target_os = "macos")]
+    fn native_menu(&self) -> bool {
+        crate::mac_menu::installed()
+    }
+    #[cfg(target_os = "macos")]
+    fn set_native_menu(&mut self, bar: &[figcraft_ui_egui::menu_model::Top]) {
+        crate::mac_menu::update(bar);
+    }
+    #[cfg(target_os = "macos")]
+    fn native_menu_events(&mut self) -> Vec<String> {
+        crate::mac_menu::take_events()
+    }
     fn pick_open(&mut self, title: &str, exts: &[&str]) -> Option<PathBuf> {
         rfd::FileDialog::new().set_title(title).add_filter("Supported files", exts).pick_file()
     }

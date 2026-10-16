@@ -1,6 +1,6 @@
 # FigCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (the `figcraft-media` crate: video and animated images for prototypes; the shared hub in `collab-net` and the `figcraft-server` app) · **Target:** Figma Design
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-16 · **Change:** minor (the main menu as one tree for the logo's menu and the macOS menu bar; the `figcraft-media` crate: video and animated images for prototypes; the shared hub in `collab-net` and the `figcraft-server` app) · **Target:** Figma Design
 
 How FigCraft is built today. Engine first, a thin swappable UI, everything a command; a Figma-shaped
 data model (a scene graph of frames with auto layout, components and variables). ~108,800 lines of
@@ -53,6 +53,10 @@ shortcuts, Actions palette, CLI (`figcraft-cli run`), JSON control channel (`--c
 MCP server all dispatch the same ids, so agents can do anything a person can; WebAssembly plugins call them too, within their manifest's permissions. Commands never open
 dialogs themselves; they request UI, and programmatic callers drop those requests.
 `cargo xtask parity` measures the catalog's coverage ([`parity-checklist.md`](parity-checklist.md)).
+The main menu is one tree built from the catalog and the app's state
+(`crates/ui-egui/src/menu_model.rs`): the logo's in-window menu draws it on every platform, and on
+macOS the desktop app also shows it in the system menu bar (`apps/figcraft/src/mac_menu.rs`, via
+muda; picks come back through `Services::native_menu_events` and run in the next frame).
 
 ## Rendering
 
@@ -82,6 +86,7 @@ input.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | The main menu as one tree (`menu_model`) drawn by the logo's menu and, on macOS, the system menu bar (`apps/figcraft/src/mac_menu.rs`, muda) |
 | 2026-10-15 | minor | Added `figcraft-media` (L0): video and animated-image readers and the player clock for prototypes; video paints in `figcraft-color`; the renderer draws a video's poster picture and can render just an area of a screen |
 | 2026-10-11 | minor | `collab-net` hosts through one hub for the app's sessions and the standalone server; added the `figcraft-server` app |
 | 2026-10-10 | minor | Merged main after #101–#103: WASM plugins (plugins area 0% → 35% breadth, 20% ready; ecosystem 5% → 20%) and the multiplayer core without networking (multiplayer 5% → 15% breadth, 5% ready; collaboration 8% → 12%); menu breadth 97.5% → 98.5% (200/203); ready for real work ~46% → ~47%; full parity 420–790 h → 390–745 h; beta 210–380 h → 200–365 h. Fixed the stated weight sums (areas 1–16 sum to 94, total 113; percentages were already computed with those) |
