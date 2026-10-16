@@ -291,12 +291,29 @@ pub fn list(app: &FigApp) -> Value {
     )
 }
 
+/// Window `id` was asked to close (its close button, the system's, Alt+F4), read in that window's
+/// own frame only: the frame of another window (the prototype's own, say) never answers for it,
+/// and its close request is never this one's.
+pub fn close_requested(ctx: &Context, id: ViewportId) -> bool {
+    ctx.viewport_id() == id && ctx.input(|i| i.viewport().close_requested())
+}
+
 /// The window drawing now was asked to close (its close button, the system's): its files close
 /// with it, after asking when one has unsaved changes. The main window closes last: while other
 /// windows are open it takes over one of them. The desktop app calls it from the main window's
 /// `logic` (which runs even while the window is minimised); other windows call it themselves.
+///
+/// A presentation covering the window, or the prototype preview pane over it, is closed first:
+/// the window goes back to the editor and stays open (closing it again closes it as above).
 pub fn on_close_request(app: &mut FigApp, ctx: &Context) {
-    if app.ui.quit || !ctx.input(|i| i.viewport().close_requested()) {
+    if app.ui.quit || !close_requested(ctx, viewport(app.windows.current)) {
+        return;
+    }
+    if close_player(app) {
+        // (For the main window eframe would quit without this; other windows close only when the
+        // app stops showing them.)
+        ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+        ctx.request_repaint();
         return;
     }
     let unsaved = !app.unsaved().is_empty();
@@ -308,6 +325,21 @@ pub fn on_close_request(app: &mut FigApp, ctx: &Context) {
         ctx.request_repaint();
     } else {
         close_current(app, ctx);
+    }
+}
+
+/// Close what plays over the editor in the window drawing now: a presentation covering it (one
+/// in a window of its own has that window's close button), else the preview pane showing over its
+/// file. False when there is neither.
+fn close_player(app: &mut FigApp) -> bool {
+    if crate::present::window::covers_window(app) {
+        app.ui.present = None;
+        true
+    } else if crate::present::pane_shown(app) {
+        app.ui.preview = None;
+        true
+    } else {
+        false
     }
 }
 

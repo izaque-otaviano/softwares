@@ -171,7 +171,7 @@ pub fn draw(app: &mut FigApp, ui: &mut Ui) {
         app.session.active = i;
         // Within the swap, so a panic can't leave another file active.
         crate::windows::guard(app, &ctx, |app| {
-            keep = !ctx.input(|i| i.viewport().close_requested()) && super::run(app, ui, &mut pres);
+            keep = !crate::windows::close_requested(&ctx, viewport_id()) && super::run(app, ui, &mut pres);
             app.toast_ui(&ctx);
         });
         app.session.active = previous;

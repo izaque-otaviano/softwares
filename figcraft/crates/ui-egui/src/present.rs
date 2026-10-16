@@ -2157,6 +2157,12 @@ pub fn pane_id() -> Id {
     Id::new("proto_preview_pane")
 }
 
+/// The preview pane shows in the window drawing now: over the open file it previews (not on the
+/// home screen, nor over another tab, which closes it).
+pub fn pane_shown(app: &FigApp) -> bool {
+    app.ui.preview.as_ref().is_some_and(|p| !app.ui.home && app.has_files() && app.session.ds().is_ok_and(|ds| ds.uid == p.doc_uid))
+}
+
 /// Show the preview pane while `app.ui.preview` is set (call once per frame, before shortcuts:
 /// keys a hovered pane's prototype uses don't reach the editor).
 pub fn show_pane(app: &mut FigApp, ctx: &egui::Context) {
