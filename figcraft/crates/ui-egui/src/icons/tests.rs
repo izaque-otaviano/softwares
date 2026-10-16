@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Color32, ColorImage, Rect, Shape, pos2, vec2};
 
-use super::lucide::{self, FILES, MAX_PX, light_stroke_units, rasterize, stroke_units};
+use super::lucide::{self, FILES, MAX_PX, rasterize, stroke_units};
 use super::{Icon, paint, source};
 
 fn assets_dir() -> PathBuf {
@@ -46,9 +46,9 @@ fn every_embedded_svg_parses_and_draws() {
     assert!(FILES.len() > 100);
     for (key, svg) in FILES {
         for px in [12, 16, 20, 24, 48] {
-            let img = rasterize(svg, px, stroke_units(px)).unwrap_or_else(|| panic!("{key} does not parse at {px}"));
+            let img = rasterize(svg, px, stroke_units(px, 1.0)).unwrap_or_else(|| panic!("{key} does not parse at {px}"));
             assert_eq!(img.size, [px as usize, px as usize]);
-            assert!(opaque(&img) >= px as usize, "{key} is blank at {px}");
+            assert!(opaque(&img) >= px as usize / 2, "{key} is blank at {px}");
         }
         // The stroke width is set once on the root element (what `rasterize` overrides).
         assert_eq!(svg.matches("stroke-width=\"2\"").count(), 1, "{key}");
@@ -100,25 +100,26 @@ fn every_icon_has_art() {
 }
 
 #[test]
-fn strokes_thicken_when_small_and_never_go_hairline() {
-    for px in 1..=64u32 {
-        let s = stroke_units(px);
-        assert!(s.is_finite() && (1.8..=3.0).contains(&s), "{px}: {s}");
-        let phys = s * px as f32 / 24.0;
-        assert!(phys >= 1.29 || s >= 3.0, "{px} px: {phys} px stroke");
+fn the_line_is_seven_tenths_of_a_point_at_every_size() {
+    for ppp in [1.0f32, 1.5, 2.0, 3.0] {
+        for pts in [10u32, 12, 14, 16, 18, 20, 24, 32] {
+            let px = (pts as f32 * ppp).floor() as u32;
+            let s = stroke_units(px, ppp);
+            assert!(s.is_finite() && (0.25..=3.0).contains(&s), "{px} px at {ppp}: {s}");
+            // Grid units back to points on screen.
+            let phys = s * px as f32 / 24.0;
+            assert!(phys >= 0.99 || s >= 3.0, "{pts} pt at {ppp}x: {phys} px line");
+            if ppp >= 1.5 && s < 3.0 {
+                assert!((phys / ppp - 0.7).abs() < 0.02, "{pts} pt at {ppp}x: {} pt line", phys / ppp);
+            }
+        }
     }
-    assert!((stroke_units(24) - 1.8).abs() < 1e-6 && stroke_units(96) == stroke_units(24));
-    assert!(stroke_units(12) > stroke_units(20));
-}
-
-#[test]
-fn the_light_weight_is_finer_than_the_regular_one_at_every_size() {
-    for px in 1..=64u32 {
-        let (light, regular) = (light_stroke_units(px), stroke_units(px));
-        assert!(light.is_finite() && light <= regular, "{px}: {light} vs {regular}");
-        assert!(light * px as f32 / 24.0 >= 0.99 || light >= 3.0, "{px} px: {} px stroke", light * px as f32 / 24.0);
+    // Junk display scales and sizes fall back to something drawable.
+    for ppp in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let s = stroke_units(24, ppp);
+        assert!(s.is_finite() && s > 0.0, "{ppp}: {s}");
     }
-    assert!((light_stroke_units(36) - 1.4).abs() < 1e-6);
+    assert!(stroke_units(0, 2.0).is_finite());
 }
 
 #[test]
@@ -200,10 +201,10 @@ fn every_icon_draws_something_inside_its_square() {
     for &icon in Icon::ALL {
         let Some(svg) = source(icon).and_then(lucide::file) else { continue };
         for px in [16u32, 20, 24, 32, 40, 48] {
-            let img = rasterize(svg, px, stroke_units(px)).unwrap();
+            let img = rasterize(svg, px, stroke_units(px, 1.0)).unwrap();
             let n = opaque(&img);
             let area = (px * px) as usize;
-            assert!(n * 100 >= area * 4, "{icon:?} at {px}: only {n}/{area} pixels");
+            assert!(n * 100 >= area, "{icon:?} at {px}: only {n}/{area} pixels");
             assert!(n * 100 <= area * 85, "{icon:?} at {px}: {n}/{area} pixels is a blob");
             let (x0, y0, x1, y1) = bounds(&img).unwrap();
             // (A line is thin one way.)

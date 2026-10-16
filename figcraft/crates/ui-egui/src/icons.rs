@@ -361,14 +361,6 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     }
 }
 
-/// [`paint`] with the light (finer) stroke, for the dock.
-pub fn paint_light(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
-    match icon {
-        Icon::Logo | Icon::Document => paint(painter, rect, icon, color),
-        _ => lucide::paint_light(painter, rect, icon, color),
-    }
-}
-
 /// Allocate a square icon button; returns the response. `active` paints the selected look.
 pub fn button(ui: &mut egui::Ui, icon: Icon, size: f32, active: bool, tooltip: &str) -> egui::Response {
     let t = crate::theme::Tokens::get(ui.ctx());
