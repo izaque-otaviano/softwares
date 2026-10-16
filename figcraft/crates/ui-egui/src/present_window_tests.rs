@@ -405,3 +405,170 @@ fn a_new_presentation_starts_in_the_editors_window_and_the_old_window_closes() {
     assert!(!out.viewport_output.contains_key(&child()), "so the window isn't asked for any longer");
     assert_eq!(screen(&u), "B");
 }
+
+/// One frame of the editor's (main) window as eframe runs it: the app's `logic` reads the window's
+/// close request first (`windows::on_close_request`, as the desktop app does), then it draws.
+/// `close` is that window's close button (or Alt+F4, or the taskbar's Close); `child_close` the
+/// presenter window's, which eframe reports in every window's frame until that window has drawn.
+fn main_out(u: &mut Ui, close: bool, child_close: bool) -> egui::FullOutput {
+    u.time += 1.0 / 60.0;
+    let info = |on: bool| ViewportInfo { events: if on { vec![ViewportEvent::Close] } else { Vec::new() }, ..Default::default() };
+    let mut viewports = egui::ViewportIdMap::default();
+    viewports.insert(ViewportId::ROOT, info(close));
+    if child_close {
+        viewports.insert(child(), info(true));
+    }
+    let input = egui::RawInput {
+        viewport_id: ViewportId::ROOT,
+        viewports,
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, u.size)),
+        time: Some(u.time),
+        ..Default::default()
+    };
+    let app = &mut u.app;
+    let mut out = u.ctx.run_ui(input, |ui| {
+        crate::windows::on_close_request(app, ui.ctx());
+        app.ui(ui);
+    });
+    out.textures_delta.clear();
+    out
+}
+
+/// eframe ends the app when the main window was asked to close and its frame didn't cancel that.
+fn lets_close(out: &egui::FullOutput) -> bool {
+    !commands(out, ViewportId::ROOT).contains(&ViewportCommand::CancelClose)
+}
+
+/// The open file has no unsaved changes.
+fn saved(u: &mut Ui) {
+    if let Ok(ds) = u.app.session.ds_mut() {
+        ds.mark_saved();
+    }
+}
+
+#[test]
+fn the_main_windows_close_button_ends_a_full_window_presentation_and_then_closes_the_window() {
+    // (The user's report: closing the window while presenting quit the whole app.)
+    let (mut u, _) = abc();
+    saved(&mut u);
+    assert!(window::covers_window(&u.app));
+    let out = main_out(&mut u, true, false);
+    assert!(u.app.ui.present.is_none(), "the presentation ends");
+    assert!(!lets_close(&out), "the window stays open: {:?}", commands(&out, ViewportId::ROOT));
+    assert!(!u.app.ui.quit && !u.app.ui.confirm_close);
+    // The editor is back in the window ...
+    let out = main_out(&mut u, false, false);
+    assert!(has_text(&out, &t("Design")), "{:?}", texts(&out));
+    assert!(!commands(&out, ViewportId::ROOT).contains(&ViewportCommand::Close));
+    // ... and closing it again, with nothing presenting, closes it (the app) as before.
+    let out = main_out(&mut u, true, false);
+    assert!(lets_close(&out));
+    assert!(u.app.ui.quit);
+}
+
+#[test]
+fn with_unsaved_changes_the_second_close_asks_as_before() {
+    let (mut u, _) = abc();
+    assert!(u.app.session.ds().is_ok_and(|d| d.is_dirty()), "(the screens are unsaved)");
+    // The first close ends the presentation and asks nothing.
+    let out = main_out(&mut u, true, false);
+    assert!(u.app.ui.present.is_none() && !u.app.ui.confirm_close);
+    assert!(!lets_close(&out));
+    // The second asks about the unsaved changes, over the editor.
+    let out = main_out(&mut u, true, false);
+    assert!(!lets_close(&out) && u.app.ui.confirm_close && !u.app.ui.quit);
+    let out = main_out(&mut u, false, false);
+    assert!(has_text(&out, &t("Unsaved changes")), "{:?}", texts(&out));
+}
+
+#[test]
+fn the_main_windows_close_button_closes_the_preview_pane_first() {
+    let (mut u, [a, ..]) = abc();
+    u.app.ui.present = None;
+    u.run("proto.preview", json!({"start": a}));
+    u.frames(2, Vec::new);
+    saved(&mut u);
+    let out = main_out(&mut u, true, false);
+    assert!(u.app.ui.preview.is_none(), "the pane closes");
+    assert!(!lets_close(&out) && !u.app.ui.quit);
+    let out = main_out(&mut u, true, false);
+    assert!(lets_close(&out) && u.app.ui.quit, "then the window");
+    // A pane that doesn't show (the home screen is up) isn't in the way.
+    let (mut u, [a, ..]) = abc();
+    u.app.ui.present = None;
+    u.run("proto.preview", json!({"start": a}));
+    saved(&mut u);
+    u.app.ui.home = true;
+    let out = main_out(&mut u, true, false);
+    assert!(lets_close(&out) && u.app.ui.quit);
+}
+
+#[test]
+fn the_presenter_windows_close_button_closes_only_that_window() {
+    let (mut u, _) = windowed();
+    saved(&mut u);
+    // eframe may draw the editor's window first, with the presenter window's close request in the
+    // frame's input: the editor's window neither closes nor ends the presentation for it.
+    let out = main_out(&mut u, false, true);
+    assert!(!commands(&out, ViewportId::ROOT).contains(&ViewportCommand::Close), "{:?}", commands(&out, ViewportId::ROOT));
+    assert!(!u.app.ui.quit);
+    assert!(out.viewport_output.contains_key(&child()), "the presenter window is still kept open");
+    // The presenter's window then draws: the presentation and that window end.
+    let out = child_out(&mut u, vec![], true);
+    assert!(u.app.ui.present.is_none());
+    assert!(closes(&out, child()));
+    assert!(!closes(&out, ViewportId::ROOT), "{:?}", commands(&out, ViewportId::ROOT));
+    // The editor's window goes on (its close request, if eframe still reports the other's, isn't one).
+    let out = main_out(&mut u, false, true);
+    assert!(!commands(&out, ViewportId::ROOT).contains(&ViewportCommand::Close));
+    assert!(!u.app.ui.quit);
+    assert!(!out.viewport_output.contains_key(&child()), "the presenter window goes");
+    assert!(has_text(&out, &t("Design")), "{:?}", texts(&out));
+    // Closing the editor's window afterwards quits as usual.
+    let out = main_out(&mut u, true, false);
+    assert!(lets_close(&out) && u.app.ui.quit);
+}
+
+#[test]
+fn a_close_request_is_read_only_in_its_own_windows_frame() {
+    let (u, _) = windowed();
+    // The presenter window's frame, asked to close: it isn't the main window's request.
+    let ctx = u.ctx.clone();
+    let mut viewports = egui::ViewportIdMap::default();
+    viewports.insert(child(), ViewportInfo { events: vec![ViewportEvent::Close], ..Default::default() });
+    let input = egui::RawInput { viewport_id: child(), viewports, ..Default::default() };
+    let mut seen = (true, false);
+    let _ = ctx.run_ui(input, |ui| {
+        seen = (crate::windows::close_requested(ui.ctx(), ViewportId::ROOT), crate::windows::close_requested(ui.ctx(), child()));
+    });
+    assert_eq!(seen, (false, true));
+    // The main window's frame with only the other window asked to close.
+    let mut viewports = egui::ViewportIdMap::default();
+    viewports.insert(child(), ViewportInfo { events: vec![ViewportEvent::Close], ..Default::default() });
+    viewports.insert(ViewportId::ROOT, ViewportInfo::default());
+    let input = egui::RawInput { viewport_id: ViewportId::ROOT, viewports, ..Default::default() };
+    let mut seen = (true, true);
+    let _ = ctx.run_ui(input, |ui| {
+        seen = (crate::windows::close_requested(ui.ctx(), ViewportId::ROOT), crate::windows::close_requested(ui.ctx(), child()));
+    });
+    assert_eq!(seen, (false, false));
+}
+
+#[test]
+fn the_presenters_close_where_the_frameless_windows_close_button_sits_ends_only_the_presentation() {
+    // Windows and Linux draw the main window's buttons themselves: while presenting full window the
+    // presenter's bar takes the top of the window, its Close at the right end.
+    let (mut u, _) = abc();
+    u.app.ui.title_bar = crate::TitleBar::Custom;
+    saved(&mut u);
+    u.frames(2, Vec::new);
+    let at = control(&u, false, "close");
+    let b = |pressed| Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
+    let mut sent = Vec::new();
+    for events in [vec![Event::PointerMoved(at)], vec![b(true)], vec![b(false)], vec![], vec![]] {
+        sent.extend(commands(&frame_out(&mut u, events), ViewportId::ROOT));
+    }
+    assert!(u.app.ui.present.is_none());
+    assert!(!sent.contains(&ViewportCommand::Close), "{sent:?}");
+    assert!(!u.app.ui.quit);
+}
