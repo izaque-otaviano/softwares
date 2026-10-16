@@ -27,6 +27,8 @@ base64 = { workspace = true }
 image = { workspace = true }
 egui_extras = { workspace = true }
 resvg = { workspace = true }
+# The browser's clock for the render budget (std's Instant isn't implemented there).
+web-time = "1.1.0"
 
 [build-dependencies]
 serde_json = { workspace = true }

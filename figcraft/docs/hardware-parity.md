@@ -1,6 +1,6 @@
 # Hardware and platform parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-16 · **Change:** minor (the macOS system menu bar; smoother canvas panning and zooming: overscan render reused while panning, half-resolution drafts while zooming, no panel cache rebuilds on view changes; Windows QA pass; Display P3: gamut warning and soft-proof (true P3 blocked upstream); several windows, the prototype in a window of its own; pen pressure for the Pencil and brushes on Windows and from browser styluses) · **Target:** Figma Design (desktop app 126.10.7)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-16 · **Change:** minor (canvas speed on photo-heavy pages: pictures drawn from a mip pyramid kept in a cache with a byte budget and decoded ahead in parallel, box blur and shadows several times faster, zoom drafts without grain, background blur and glass, and the web build rendering in frame-sized pieces instead of freezing the page; the macOS system menu bar; smoother canvas panning and zooming: overscan render reused while panning, half-resolution drafts while zooming, no panel cache rebuilds on view changes; Windows QA pass; Display P3: gamut warning and soft-proof (true P3 blocked upstream); several windows, the prototype in a window of its own; pen pressure for the Pencil and brushes on Windows and from browser styluses) · **Target:** Figma Design (desktop app 126.10.7)
 
 How FigCraft uses hardware and which platforms it runs on, against Figma. Figma's desktop app is
 Electron with a GPU helper process; its canvas renders on the GPU (WebGL, with WebGPU rolling out
@@ -12,7 +12,7 @@ since 2025). FigCraft renders the canvas on the CPU and presents it through wgpu
 
 | Feature | Figma | FigCraft (macOS / Windows / Linux / web) | Hours |
 |---|---|---|---|
-| Canvas rendering | GPU | CPU (tiny-skia), banded across cores, retained (re-renders only what an edit or pan touches), levels of detail below 50% zoom; shown through wgpu (WebGPU or WebGL2 in the browser). The canvas renders a margin of a quarter of the view around it and reuses that image while panning (nothing is rendered or uploaded until a pan has used half the margin; the next render keeps more margin ahead of the pan), renders half-resolution drafts while a wheel or pinch zoom is under way and the full image once it settles, and keeps every render within the GPU's texture limit | 30–60 for a GPU path |
+| Canvas rendering | GPU | CPU (tiny-skia), banded across cores, retained (re-renders only what an edit or pan touches), levels of detail below 50% zoom; shown through wgpu (WebGPU or WebGL2 in the browser). The canvas renders a margin of a quarter of the view around it and reuses that image while panning (nothing is rendered or uploaded until a pan has used half the margin; the next render keeps more margin ahead of the pan), renders half-resolution drafts while a wheel or pinch zoom is under way and the full image once it settles, and keeps every render within the GPU's texture limit. Pictures drawn at under half size come from a mip pyramid (levels halved with a box filter, kept in a 256 MB least-recently-used cache, 96 MB in the browser, decoded ahead in parallel); the browser draws a few bands of the view per frame instead of the whole render at once | 30–60 for a GPU path |
 | Effects (blurs, glass, noise) | GPU | CPU | in the above |
 | HiDPI / Retina | yes | yes (all) | — |
 | Wide-gamut display (Display P3) | yes, on capable displays | colours stored and exported in P3; the screen shows sRGB: eframe/egui-wgpu 0.36 configure an 8-bit sRGB surface with no colour space option, although wgpu 30 can present Display P3 or extended sRGB on Metal, DX12, Vulkan and WebGPU (see gaps #18). The colour picker warns about colours outside sRGB and View ▸ Soft-proof sRGB stripes them on the canvas | 2–5 |
@@ -36,6 +36,52 @@ since 2025). FigCraft renders the canvas on the CPU and presents it through wgpu
 | Wheel zoom, 30 steps then settled, same file (container, test profile) | ~0.35 s render thread, 81 MB uploads (was ~0.58 s, 257 MB) | not timed |
 | UI frame while panning with the Assets panel open (2k components × 2k instances; container, test profile) | ~8 ms (was ~13–20 ms: every pan frame rebuilt the assets listing and rescanned names) | not timed |
 
+### A photo-heavy page (2026-10-16)
+
+The owner reported lag scrolling and zooming a large e-commerce file, on the Mac and in the browser. Measured on a
+synthetic "sale" page (`figcraft_engine::synthetic_shop`: 12 screens of 1440 × 2,100, 721 layers, 72 photo fills of 48
+distinct procedural JPEGs of 1.6–4 k pixels, 1.17 GB decoded, rounded clipping cards with drop shadows, ~300 texts, auto
+layout), release build, 1920 × 1080 view, in a 4-core container; the browser runs the one-thread rows 2–4× slower than
+native (`cargo test --release -p figcraft-engine --lib bench_shop -- --ignored --nocapture`).
+
+| Case | Before | After |
+|---|---|---|
+| First render at zoom 0.25 (decodes the pictures in view) | 1,372 ms | 650–750 ms |
+| Full render, 4 threads: zoom 1 / 0.5 / 0.25 / 0.1 | 94.5 / 68.7 / 49.0 / 25.4 ms | 39.6 / 28.5 / 20.6 / 10.7 ms |
+| Full render, one thread (the browser's work): zoom 1 / 0.5 / 0.25 / 0.1 | 231 / 142 / 93 / 58 ms | 92.5 / 54.1 / 35.6 / 17.4 ms |
+| Zoom gesture, 30 half-resolution drafts: mean / worst; the settled render after | 21.0 / 28.8 ms; 186 ms | 8.4 / 16.1 ms; 87 ms |
+| Pan, 300 frames of 24 px, zoom 1 / 0.5 / 0.25: renders, render-thread time (worst) | 25: 1,036 (95) / 480 (54) / 288 (47) ms | 25: 763 (90) / 394 (83) / 273 (27) ms |
+| Decoded pictures held | every picture seen, up to 256 (1.17 GB here) | at most 256 MB (96 MB in the browser), least recently used out |
+| Preview against the exact render, zoom 1 / 0.5 | — | mean difference 0.52 / 0.67 of 255 per channel |
+| One UI frame (test profile): idle, hover, wheel pan, pinch zoom, a photo selected | — | 0.16 / 0.19 / 0.17 / 0.25 / 0.34 ms (the UI thread was never the cost) |
+
+Where the time went (one thread, zoom 1, pictures from mip levels, before the blur change): **drop shadows 165 of 214 ms
+(77%)**, pictures ~38 ms, text ~4 ms. The box blur behind every shadow, layer blur, glass and background blur walked
+its pixels four channels at a time with a bounds-checked read for each byte, and cast shadows from the whole RGBA layer:
+it is now a running sum in whole rows, on the alpha channel alone for shadows (bit-identical to the old one, tested
+against it), with a multiply for the division and a 256-entry tint table; blur-heavy layers cost a third of what they
+did. Pictures were drawn bicubically from the decoded pixels at any scale, aliasing and striding through 48 MB
+for a 300-pixel card: they now come from a reduced level (bilinear), which is also what removes the aliasing.
+
+What changed, in order of impact: shadows and blurs (above); the picture cache (`render::mips`): decode once, levels by
+halving with a box filter, the level chosen so its pixels are at most a screen pixel (none at half size or more, so
+1:1 and zoomed-in canvases and every export are unchanged), one lock per picture so the bands of a parallel render
+decode a photo once, a byte budget with least-recently-used eviction in place of `clear()` at 256 entries, the big
+level 0 dropped after its levels are made (a view that needs level 5 of fifty photos has no use for their level 0;
+level 2 is kept as a floor so zooming in from far out needs no decode), decoding ahead in parallel for the pictures
+in view (`render::prefetch`, in rounds under 512 MB of simultaneous decode); drafts while zooming leave out grain,
+background blur and glass and sample pictures bilinearly (a page with a frosted header: 95 → 81 ms at zoom 1, 69 → 49 ms
+at 0.5), and the canvas asks for one draft at a time; in the browser the render runs in pieces (`Retained::begin` /
+`Sliced::step`: a picture decode or a band of rows each, about 8 ms of them a frame, sized from how long rows take),
+a newer request waiting for the render under way, and the image identical to the whole render within the bands'
+anti-aliasing.
+
+Left out: a Web Worker (it needs hand-written JS glue, and shared memory the static hosts' headers don't allow), so a
+single large picture still decodes in one piece in the browser (hundreds of ms for a 12-megapixel JPEG; a decoder that
+scales while decoding would fix it); uploading only the strips a pan renders (the texture is replaced whole, ~13 MB
+a render); a pre-scaled copy of each picture at the zoom (blits instead of sampling, ~30% of the rest); the O(radius)
+spread morphology of shadows with a spread on groups.
+
 Nothing has been timed against Figma on the same document (needs `.fig` import). 
 
 ## Platforms
@@ -53,6 +99,7 @@ Nothing has been timed against Figma on the same document (needs `.fig` import).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | Canvas speed on photo-heavy pages (owner's report: lag scrolling and zooming a big e-commerce file, on the Mac and in the browser). Measured first on a synthetic sale page (12 screens, 72 photo fills of 1.6–4 k pixel pictures, shadows, rounded clipping cards): drop shadows were 77% of a one-thread render, pictures about a fifth. The box blur is a running sum in rows (alpha only for shadows, bit-identical to the old one), pictures at under half size draw from a mip pyramid in a byte-budgeted LRU cache decoded ahead in parallel (exports and 1:1 canvases unchanged), zoom drafts skip grain, background blur and glass, and the browser renders in pieces of about 8 ms a frame. Full render at zoom 1: 94.5 → 39.6 ms (4 threads), 231 → 92.5 ms (one thread); zoom gesture drafts 21 → 8.4 ms; first render 1,372 → ~700 ms; decoded pictures held: unbounded → 256 MB (96 MB in the browser). Performance 60% unchanged (nothing timed against Figma) |
 | 2026-10-16 | minor | macOS system menu bar (owner's report: it showed only "FigCraft"): FigCraft's menus in it, from the main menu's tree (`menu_model`), with the Mac app, Window and Help menus; Quit asks about unsaved changes. Cross-checked from Linux with `cargo check/clippy --target aarch64-apple-darwin` / `x86_64-apple-darwin` (ring's C build script skipped for the check: `--config 'target.<triple>.ring_core_0_17_14_.rustc-link-search=[]'`); the look and the key handling still need a Mac. Platforms ~75% unchanged |
 | 2026-10-15 | minor | Several windows, the presenter's part: the prototype can play in an operating-system window of its own while the editor keeps working (integration of the presenter branches); the row said "presenter in its own window" and "the presenter stays inside its window" at once, and now says what is built and that it hasn't been seen on a real desktop. No number moves. |
 | 2026-10-15 | minor | Smoother canvas panning and zooming (owner's Windows report: stutter while panning and zooming, a grey band while scrolling down). Root causes: each pan frame rendered the exact viewport, so the strip a pan uncovered showed bare page background until the render arrived, and every frame converted and uploaded a whole-screen texture; each zoom frame rendered a full-resolution image; and every pan or zoom frame bumped the document revision, which rebuilt the panels' per-document caches (the assets listing, the CJK name scan…). Now the canvas renders a quarter-view margin and reuses it while panning, zoom frames render half-resolution drafts, and view changes leave the revision alone. Measured in the container (test profile): 300 scroll frames 300 → 26 render jobs and 2,492 → 486 MB of uploads with no bare frames; a zoom 257 → 81 MB; UI frames panning with a large Assets panel ~13–20 → ~8 ms (`canvas_scroll_tests`). Percentages and hours unchanged |

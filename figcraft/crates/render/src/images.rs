@@ -1,6 +1,8 @@
 //! Decoded image cache (content hash + filters + colour profile → premultiplied pixmap). Images
 //! are converted from their own colour profile (see [`crate::image_profile`]; sRGB when they have
-//! none) into the document's space, once per image and profile.
+//! none) into the document's space, once per image and profile. The cache is [`crate::mips`]: every
+//! picture with its mip levels under a byte budget, so canvas previews draw big photos from a
+//! reduced copy ([`for_paint`]) and exports from the picture as decoded ([`get`]).
 //!
 //! Animated GIFs keep their original bytes like any image; their first frame is the image
 //! everywhere (canvas, exports). The presenter plays them: [`frame_at`] decodes every frame on
@@ -9,16 +11,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use figcraft_color::{ColorProfile, ImageFilters, PaintKind};
+use figcraft_color::{ColorProfile, ImageFilters, ImagePaint, PaintKind};
 use figcraft_doc::{Document, ImageData, NodeId};
 use tiny_skia::Pixmap;
 
-type Key = (String, [i32; 7], ColorProfile);
-
-fn cache() -> &'static Mutex<HashMap<Key, Arc<Pixmap>>> {
-    static C: OnceLock<Mutex<HashMap<Key, Arc<Pixmap>>>> = OnceLock::new();
-    C.get_or_init(|| Mutex::new(HashMap::new()))
-}
+use crate::mips::{self, Picture, Source};
 
 fn fkey(f: &ImageFilters) -> [i32; 7] {
     let q = |v: f32| (v * 1000.0).round() as i32;
@@ -38,9 +35,18 @@ fn decode_in(bytes: &[u8], target: ColorProfile) -> Option<(Pixmap, bool)> {
     let source = crate::image_profile::Source::read(bytes, &mut dec);
     let img = image::DynamicImage::from_decoder(dec).ok()?;
     match source.convert(&img, target) {
-        Some(rgba) => Some((premultiplied(&rgba)?, false)),
-        None => Some((premultiplied(&img.to_rgba8())?, true)),
+        Some(rgba) => Some((premultiplied_owned(rgba)?, false)),
+        None => Some((premultiplied_owned(img.into_rgba8())?, true)),
     }
+}
+
+/// [`decode_in`] of `data`, then the `filters` and the conversion into `profile`: level 0 of a
+/// cached picture.
+pub(crate) fn decode_filtered(data: &ImageData, filters: &ImageFilters, profile: ColorProfile) -> Option<Pixmap> {
+    let (mut p, srgb) = decode_in(&data.bytes, profile)?;
+    // Images with their own profile are in `profile` already (sRGB → sRGB is the identity).
+    finish(&mut p, filters, if srgb { profile } else { ColorProfile::Srgb });
+    Some(p)
 }
 
 fn profile_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
@@ -61,6 +67,25 @@ pub fn profile_name(hash: &str, data: Option<&ImageData>) -> Option<String> {
     }
     c.insert(hash.to_string(), name.clone());
     name
+}
+
+/// Straight RGBA → a premultiplied pixmap, in the buffer it came in (max 16k per side). Opaque
+/// pixels (most photos) are left as they are.
+fn premultiplied_owned(rgba: image::RgbaImage) -> Option<Pixmap> {
+    let (w, h) = rgba.dimensions();
+    if w == 0 || h == 0 || w > 16_384 || h > 16_384 {
+        return None;
+    }
+    let mut raw = rgba.into_raw();
+    for px in raw.as_chunks_mut::<4>().0 {
+        let a = u32::from(px.get(3).copied().unwrap_or(255));
+        if a != 255 {
+            for c in px.iter_mut().take(3) {
+                *c = ((u32::from(*c) * a + 127) / 255) as u8;
+            }
+        }
+    }
+    Pixmap::from_vec(raw, tiny_skia::IntSize::from_wh(w, h)?)
 }
 
 /// Straight RGBA → a premultiplied pixmap (max 16k per side).
@@ -88,22 +113,44 @@ fn premultiplied_raw(w: u32, h: u32, rgba: &[u8]) -> Option<Pixmap> {
     Some(p)
 }
 
-/// The decoded (and filtered) image for `hash` in the colour space `profile`, cached.
+/// The decoded (and filtered) image for `hash` in the colour space `profile`, cached: the picture
+/// as it is, what exports and everything at 1:1 or closer draw from.
 pub fn get(hash: &str, data: Option<&ImageData>, filters: &ImageFilters, profile: ColorProfile) -> Option<Arc<Pixmap>> {
-    let key = (hash.to_string(), fkey(filters), profile);
-    if let Some(p) = cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key) {
-        return Some(p.clone());
+    mips::global().picture(&Source { hash, data, filters, profile }, 0, false).map(|p| p.pixmap)
+}
+
+/// The mip level a canvas preview draws image paint `img` from, on a `w` × `h` box shown at `scale`
+/// device pixels per unit: 0 (the picture as it is) unless the picture shows at under half its
+/// size. Tiles repeat every picture width, so they take only levels that divide it exactly.
+pub fn paint_level(img: &ImagePaint, data: &ImageData, w: f64, h: f64, scale: f64) -> u32 {
+    if data.width == 0 || data.height == 0 || !(w.is_finite() && h.is_finite() && scale.is_finite()) {
+        return 0;
     }
-    let (mut p, srgb) = decode_in(&data?.bytes, profile)?;
-    // Images with their own profile are in `profile` already (sRGB → sRGB is the identity).
-    finish(&mut p, filters, if srgb { profile } else { ColorProfile::Srgb });
-    let p = Arc::new(p);
-    let mut c = cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if c.len() > 256 {
-        c.clear();
+    let t = crate::paint::image_transform(img, f64::from(data.width), f64::from(data.height), w, h);
+    // Device pixels per picture pixel: the placement's scale times the layer's.
+    let per_pixel = f64::from((t.sx * t.sy - t.kx * t.ky).abs()).sqrt() * scale;
+    let level = mips::level_for(per_pixel).min(mips::max_level(data.width, data.height));
+    if img.scale_mode == figcraft_color::ImageScaleMode::Tile {
+        return (0..=level).rev().find(|l| data.width.trailing_zeros() >= *l && data.height.trailing_zeros() >= *l).unwrap_or(0);
     }
-    c.insert(key, p.clone());
-    Some(p)
+    level
+}
+
+/// Where an image paint shows: its layer's box and the device pixels per unit it is drawn at.
+#[derive(Clone, Copy, Debug)]
+pub struct Shown {
+    pub w: f64,
+    pub h: f64,
+    pub scale: f64,
+    /// Canvas previews draw from a reduced mip level when the picture shows small.
+    pub mip: bool,
+}
+
+/// The picture for image paint `img` as `shown`: its mip level when `shown.mip`, else level 0.
+/// `padded` adds a transparent 1-pixel border (Fit and Crop spread transparency, not edge pixels).
+pub fn for_paint(img: &ImagePaint, data: Option<&ImageData>, profile: ColorProfile, shown: Shown, padded: bool) -> Option<Picture> {
+    let level = if shown.mip { paint_level(img, data?, shown.w, shown.h, shown.scale) } else { 0 };
+    mips::global().picture(&Source { hash: &img.image, data, filters: &img.filters, profile }, level, padded)
 }
 
 /// The filters, then the conversion into the document's colour space.
@@ -352,25 +399,5 @@ pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
 pub fn pad(pm: &Pixmap) -> Option<Pixmap> {
     let mut out = Pixmap::new(pm.width() + 2, pm.height() + 2)?;
     out.draw_pixmap(1, 1, pm.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
-    Some(out)
-}
-
-fn padded_cache() -> &'static Mutex<HashMap<Key, Arc<Pixmap>>> {
-    static C: OnceLock<Mutex<HashMap<Key, Arc<Pixmap>>>> = OnceLock::new();
-    C.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// `pm` with a transparent 1-pixel border (cached).
-pub fn padded(hash: &str, filters: &ImageFilters, profile: ColorProfile, pm: &Pixmap) -> Option<Arc<Pixmap>> {
-    let key = (hash.to_string(), fkey(filters), profile);
-    if let Some(p) = padded_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key) {
-        return Some(p.clone());
-    }
-    let out = Arc::new(pad(pm)?);
-    let mut c = padded_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if c.len() > 256 {
-        c.clear();
-    }
-    c.insert(key, out.clone());
     Some(out)
 }

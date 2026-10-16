@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::mips::Picture;
 use figcraft_color::{BlendMode, Color, Gradient, GradientKind, ImagePaint, ImageScaleMode, Paint, PaintKind};
 use figcraft_doc::Document;
 use tiny_skia::{FilterQuality, GradientStop, Pixmap, Point, Shader, SpreadMode, Transform};
@@ -100,6 +101,21 @@ pub fn prepare(paint: &Paint, w: f64, h: f64, scale: f64, doc: &Document) -> Opt
 
 /// [`prepare`] `time` seconds into animated GIFs (0: their first frame).
 pub fn prepare_at(paint: &Paint, w: f64, h: f64, scale: f64, doc: &Document, time: f64) -> Option<Prepared> {
+    prepare_with(paint, w, h, scale, doc, time, Detail::default())
+}
+
+/// How exactly a canvas preview draws pictures.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Detail {
+    /// Pictures that show at under half size are drawn from a reduced mip level (see
+    /// [`crate::mips`]).
+    pub mip: bool,
+    /// A draft (the canvas while a zoom is under way): every picture is sampled bilinearly.
+    pub draft: bool,
+}
+
+/// [`prepare_at`], with canvas previews' [`Detail`].
+pub fn prepare_with(paint: &Paint, w: f64, h: f64, scale: f64, doc: &Document, time: f64, detail: Detail) -> Option<Prepared> {
     if !paint.visible || paint.opacity <= 0.0 {
         return None;
     }
@@ -138,27 +154,36 @@ pub fn prepare_at(paint: &Paint, w: f64, h: f64, scale: f64, doc: &Document, tim
         PaintKind::Image(img) => {
             let data = doc.images.get(&img.image);
             let moving = crate::images::frame_at(&img.image, data, &img.filters, doc.color_profile, time);
-            let pm = match &moving {
-                Some(f) => f.clone(),
-                None => crate::images::get(&img.image, data, &img.filters, doc.color_profile)?,
+            let shown = crate::images::Shown { w, h, scale, mip: detail.mip };
+            let pic = match &moving {
+                Some(f) => Picture::whole(f.clone()),
+                None => crate::images::for_paint(img, data, doc.color_profile, shown, false)?,
             };
-            let transform = image_transform(img, f64::from(pm.width()), f64::from(pm.height()), w, h);
+            // The placement is worked out on the picture's own size; a mip level's pixels are
+            // `shrink` of them wide.
+            let (fw, fh) = (f64::from(pic.full.0), f64::from(pic.full.1));
+            let shrink = pic.shrink();
+            // A level's pixels are within a factor of two of the screen's: bilinear is plenty there, and
+            // cheaper than bicubic.
+            let quality = if pic.level > 0 || detail.draft { FilterQuality::Bilinear } else { FilterQuality::Bicubic };
+            let at_level = |t: Transform| if pic.level > 0 { Transform::from_scale(shrink, shrink).post_concat(t) } else { t };
+            let transform = at_level(image_transform(img, fw, fh, w, h));
             if img.scale_mode == ImageScaleMode::Tile {
-                return Some(Prepared::Pattern { pixmap: pm, mode: SpreadMode::Repeat, quality: FilterQuality::Bicubic, opacity: op, transform });
+                return Some(Prepared::Pattern { pixmap: pic.pixmap, mode: SpreadMode::Repeat, quality, opacity: op, transform });
             }
             // An image covering the whole box fills it to its edges (a transparent border would
             // fade them where the image is scaled up).
-            if covers_box(img, f64::from(pm.width()), f64::from(pm.height()), w, h) {
-                return Some(Prepared::Pattern { pixmap: pm, mode: SpreadMode::Pad, quality: FilterQuality::Bicubic, opacity: op, transform });
+            if covers_box(img, fw, fh, w, h) {
+                return Some(Prepared::Pattern { pixmap: pic.pixmap, mode: SpreadMode::Pad, quality, opacity: op, transform });
             }
             // Fit/Crop: a transparent 1-px border so Pad spreads transparency, not edge pixels.
             // A GIF's later frames each show once per loop: not worth caching padded.
             let padded = match moving {
-                Some(_) => Arc::new(crate::images::pad(&pm)?),
-                None => crate::images::padded(&img.image, &img.filters, doc.color_profile, &pm)?,
+                Some(_) => Arc::new(crate::images::pad(&pic.pixmap)?),
+                None => crate::images::for_paint(img, data, doc.color_profile, shown, true)?.pixmap,
             };
             let transform = Transform::from_translate(-1.0, -1.0).post_concat(transform);
-            Some(Prepared::Pattern { pixmap: padded, mode: SpreadMode::Pad, quality: FilterQuality::Bicubic, opacity: op, transform })
+            Some(Prepared::Pattern { pixmap: padded, mode: SpreadMode::Pad, quality, opacity: op, transform })
         }
         // A video shows its poster picture (the presenter sets it to the moment it plays).
         PaintKind::Video(v) => {

@@ -16,14 +16,16 @@ pub mod grain;
 pub mod image_profile;
 pub mod images;
 pub mod lod;
+pub mod mips;
 pub mod paint;
 pub mod pattern;
+pub mod prefetch;
 pub mod retained;
 pub mod shadow;
 
 pub use draw::{node_outline, paint_bounds, stroke_fill, subtree_outline, ts_path};
 pub use export_depth::{ExportDepthError, MAX_EXPORT_DEPTH, check_export_depth};
-pub use retained::{Retained, Work};
+pub use retained::{Retained, Sliced, Work};
 pub use tiny_skia::{FillRule, Pixmap};
 
 use figcraft_color::{Color, ColorProfile};
@@ -79,6 +81,10 @@ pub struct Options {
     /// detail, see [`lod`]. Off for everything that must be exact (exports, thumbnails); no
     /// effect in outline mode.
     pub lod: bool,
+    /// A draft of a preview (the canvas while a zoom is under way, replaced when it settles):
+    /// grain, background blur and glass are left out and pictures are sampled bilinearly. No effect
+    /// in outline mode.
+    pub draft: bool,
 }
 
 fn new_pixmap(w: u32, h: u32) -> Option<Pixmap> {
@@ -101,6 +107,12 @@ pub(crate) fn backdrop_reach(radius: f64, scale: f64) -> f64 {
 
 /// Render a page region, splitting it into horizontal bands rendered in parallel (desktop).
 pub fn render_view(doc: &Document, page: NodeId, view: &View, opts: &Options) -> Option<Pixmap> {
+    // Decode the pictures in view first, in parallel, one thread for each (not in the order the
+    // render meets them, nor once per band).
+    let needs = prefetch::needs(doc, page, view, opts);
+    if !needs.is_empty() {
+        prefetch::run(doc, doc.color_profile, &needs);
+    }
     #[cfg(not(target_arch = "wasm32"))]
     {
         let threads = rayon::current_num_threads().clamp(1, 16) as u32;
@@ -178,6 +190,8 @@ pub fn render_view_single(doc: &Document, page: NodeId, view: &View, opts: &Opti
         outlined: &opts.outlined,
         skip: &opts.skip,
         lod,
+        mip: opts.lod && !opts.outline_mode,
+        draft: opts.draft && !opts.outline_mode,
         under: None,
         time: 0.0,
     };
@@ -209,6 +223,8 @@ fn nodes_into(doc: &Document, ids: &[NodeId], view: &View, pix: &mut Pixmap, tim
         outlined: &[],
         skip: &[],
         lod: false,
+        mip: false,
+        draft: false,
         under: None,
         time,
     };
@@ -491,6 +507,8 @@ mod image_profile_tests;
 #[cfg(test)]
 mod lod_tests;
 #[cfg(test)]
+mod mips_tests;
+#[cfg(test)]
 mod paint_behaviour_tests;
 #[cfg(test)]
 mod progressive_tests;
@@ -500,6 +518,8 @@ mod retained_edit_tests;
 mod retained_tests;
 #[cfg(test)]
 mod rtl_list_tests;
+#[cfg(test)]
+mod sliced_tests;
 #[cfg(test)]
 mod solo_tests;
 #[cfg(test)]

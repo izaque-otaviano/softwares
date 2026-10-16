@@ -45,6 +45,7 @@ struct Frame {
     outline_extras: crate::Outline,
     outlined: Vec<NodeId>,
     lod: bool,
+    draft: bool,
     skip: Vec<NodeId>,
     solo: Option<NodeId>,
     background: Option<figcraft_color::Color>,
@@ -125,6 +126,115 @@ impl Px {
     }
 }
 
+/// What the next render does against the kept image.
+enum Outcome {
+    /// The kept image shifted, and the areas to draw over it.
+    Patch(Patched, Arc<Sensitive>),
+    /// The whole view.
+    Full(Arc<Sensitive>),
+}
+
+struct Start {
+    snapped: View,
+    px: (i64, i64),
+    fonts: u64,
+    outcome: Outcome,
+}
+
+/// The kept image brought to the new view, with what is left to draw on it.
+struct Patched {
+    pix: Pixmap,
+    /// Areas of `pix` to draw, in device pixels (none: it is as it should be).
+    damage: Vec<Px>,
+    /// Their area.
+    pixels: u64,
+    /// Device pixels drawn past each area, for effects that read around (discarded).
+    margin: i64,
+}
+
+impl Patched {
+    /// Draw the damaged areas.
+    fn draw(&mut self, doc: &Document, page: NodeId, view: &View, px: (i64, i64), opts: &Options) -> Option<()> {
+        for d in &self.damage {
+            render_into(doc, page, view, px, d, self.margin, opts, &mut self.pix)?;
+        }
+        Some(())
+    }
+}
+
+/// Rows of a piece the browser draws between frames: not fewer, not more.
+pub const MIN_ROWS: u32 = 16;
+pub const MAX_ROWS: u32 = 512;
+
+/// One piece of a render in pieces.
+enum Piece {
+    /// Decode a picture level the view draws from.
+    Decode(crate::prefetch::Need),
+    /// Draw an area of the image.
+    Draw(Px),
+}
+
+/// A render in pieces: [`Retained::begin`], then [`Sliced::step`] until it is done, then
+/// [`Retained::finish`].
+pub struct Sliced {
+    doc: Arc<Document>,
+    page: NodeId,
+    view: View,
+    px: (i64, i64),
+    fonts: u64,
+    opts: Options,
+    sens: Arc<Sensitive>,
+    pix: Pixmap,
+    pieces: Vec<Piece>,
+    next: usize,
+    margin: i64,
+    work: Work,
+}
+
+impl Sliced {
+    /// Run pieces until `more` says to stop (it is asked after each one; at least one runs).
+    /// Returns whether every piece has run.
+    pub fn step(&mut self, more: &mut dyn FnMut() -> bool) -> bool {
+        while let Some(piece) = self.pieces.get(self.next) {
+            match piece {
+                Piece::Decode(need) => crate::prefetch::run(&self.doc, self.doc.color_profile, std::slice::from_ref(need)),
+                // A band that fails to draw is left as it was (stale pixels beat none).
+                Piece::Draw(d) => {
+                    let _ = render_into(&self.doc, self.page, &self.view, self.px, d, self.margin, &self.opts, &mut self.pix);
+                }
+            }
+            self.next += 1;
+            if !more() {
+                break;
+            }
+        }
+        self.is_done()
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.next >= self.pieces.len()
+    }
+
+    /// Pieces run and in all.
+    pub fn progress(&self) -> (usize, usize) {
+        (self.next, self.pieces.len())
+    }
+
+    /// The rows the draw pieces cover in all, for timing how long a row takes.
+    pub fn rows(&self) -> u64 {
+        self.pieces.iter().map(|p| if let Piece::Draw(d) = p { (d.y1 - d.y0).max(0) as u64 } else { 0 }).sum()
+    }
+
+    /// The view the finished render shows (snapped to device pixels).
+    pub fn view(&self) -> &View {
+        &self.view
+    }
+}
+
+fn new_pixmap_for(v: &View) -> Option<Pixmap> {
+    Pixmap::new(v.width.clamp(1, 16_384), v.height.clamp(1, 16_384))
+}
+
 /// Keeps the last rendered view; see the module docs.
 #[derive(Default)]
 pub struct Retained {
@@ -137,16 +247,16 @@ impl Retained {
         self.last = None;
     }
 
-    /// Render `view` of `page`, reusing the previous render where nothing changed. Returns the
-    /// view actually drawn (snapped to device pixels, see [`snap`]), the image and what it took.
-    pub fn render(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options) -> Option<(View, &Pixmap, Work)> {
+    /// Decide what rendering `view` takes against the kept image: patch it (the previous image
+    /// shifted, with the areas to redraw) or draw it whole. `None` for a view that can't be put on
+    /// a pixel grid.
+    fn start(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options) -> Option<Start> {
         // A view that can't be put on a pixel grid (non-finite or absurd) draws nothing.
         let Some((snapped, px)) = snap(view) else {
             self.last = None;
             return None;
         };
         let fonts = figcraft_text::layout_generation();
-        let mut work = Work::Full;
         let mut sens = None;
         if let Some(last) = self.last.take()
             && last.page == page
@@ -156,6 +266,7 @@ impl Retained {
             && !opts.outline.hidden
             && last.outlined == opts.outlined
             && last.lod == opts.lod
+            && last.draft == opts.draft
             && last.skip == opts.skip
             && last.solo == opts.solo
             && last.background == opts.background
@@ -168,17 +279,86 @@ impl Retained {
         {
             let same_doc = Arc::ptr_eq(&last.doc, doc);
             let s = if same_doc { last.sensitive.clone() } else { Arc::new(sensitive(doc)) };
-            if let Some((pix, pixels)) = patch(last, doc, page, &snapped, px, opts, &s) {
-                work = if pixels == 0 { Work::Reused } else { Work::Partial { pixels } };
-                let frame = self.keep(doc, page, (&snapped, px, fonts), opts, pix, s);
-                return Some((snapped, &frame.pix, work));
+            if let Some(patched) = plan_patch(last, doc, page, &snapped, px, &s) {
+                return Some(Start { snapped, px, fonts, outcome: Outcome::Patch(patched, s) });
             }
             sens = Some(s);
         }
-        let pix = render_view(doc, page, &snapped, opts)?;
         let s = sens.unwrap_or_else(|| Arc::new(sensitive(doc)));
+        Some(Start { snapped, px, fonts, outcome: Outcome::Full(s) })
+    }
+
+    /// Render `view` of `page`, reusing the previous render where nothing changed. Returns the
+    /// view actually drawn (snapped to device pixels, see [`snap`]), the image and what it took.
+    pub fn render(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options) -> Option<(View, &Pixmap, Work)> {
+        let Start { snapped, px, fonts, outcome } = self.start(doc, page, view, opts)?;
+        let (pix, s, work) = match outcome {
+            Outcome::Patch(mut p, s) => match p.draw(doc, page, &snapped, px, opts) {
+                Some(()) => (p.pix, s, if p.pixels == 0 { Work::Reused } else { Work::Partial { pixels: p.pixels } }),
+                // A patch that can't be drawn: the whole view.
+                None => (render_view(doc, page, &snapped, opts)?, s, Work::Full),
+            },
+            Outcome::Full(s) => (render_view(doc, page, &snapped, opts)?, s, Work::Full),
+        };
         let frame = self.keep(doc, page, (&snapped, px, fonts), opts, pix, s);
         Some((snapped, &frame.pix, work))
+    }
+
+    /// Start rendering `view` in pieces (the browser draws on the one thread that also runs the UI:
+    /// a render in one go freezes it): the pictures to decode, then the areas to draw as bands of
+    /// about `rows` rows. Run the pieces with [`Sliced::step`] and keep the result with
+    /// [`Retained::finish`]. The same image as [`Retained::render`] (bands that cut an effect are
+    /// drawn with the margin patches use). Dropping a [`Sliced`] unfinished forgets the kept image
+    /// (the next render is whole).
+    pub fn begin(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options, rows: u32) -> Option<Sliced> {
+        let Start { snapped, px, fonts, outcome } = self.start(doc, page, view, opts)?;
+        let rows = i64::from(rows.clamp(MIN_ROWS, MAX_ROWS));
+        let (w, h) = (i64::from(snapped.width), i64::from(snapped.height));
+        let (pix, damage, margin, work, sens) = match outcome {
+            Outcome::Patch(p, s) => {
+                let work = if p.pixels == 0 { Work::Reused } else { Work::Partial { pixels: p.pixels } };
+                (p.pix, p.damage, p.margin, work, s)
+            }
+            Outcome::Full(s) => {
+                let reach = crate::backdrop_reach(s.backdrop_blur, snapped.scale).ceil();
+                // Grain works on whole layers and a backdrop that reaches past a band needs the
+                // whole view: those draw in one piece.
+                let whole = !s.areas.is_empty() || !reach.is_finite() || reach > rows as f64 / 2.0;
+                let all = vec![Px { x0: 0, y0: 0, x1: w, y1: h }];
+                (new_pixmap_for(&snapped)?, all, if whole { 0 } else { reach as i64 + 1 }, Work::Full, s)
+            }
+        };
+        let mut pieces: Vec<Piece> = Vec::new();
+        // Pictures not held yet decode first, one piece each.
+        for need in crate::prefetch::missing(doc, &crate::prefetch::needs(doc, page, &snapped, opts)) {
+            pieces.push(Piece::Decode(need));
+        }
+        // Bands: no taller than `rows` (a whole piece stays whole).
+        let splits = !matches!(work, Work::Full) || margin > 0;
+        for d in damage {
+            if !splits {
+                pieces.push(Piece::Draw(d));
+                continue;
+            }
+            let mut y = d.y0;
+            while y < d.y1 {
+                let y1 = (y + rows).min(d.y1);
+                pieces.push(Piece::Draw(Px { y0: y, y1, ..d }));
+                y = y1;
+            }
+        }
+        let image = pix;
+        Some(Sliced { doc: doc.clone(), page, view: snapped, px, fonts, opts: opts.clone(), sens, pix: image, pieces, next: 0, margin, work })
+    }
+
+    /// Keep a finished [`Sliced`] render as the last image; returns it like [`Retained::render`].
+    pub fn finish(&mut self, done: Sliced) -> Option<(View, &Pixmap, Work)> {
+        let Sliced { doc, page, view, px, fonts, opts, sens, pix, work, next, pieces, .. } = done;
+        if next < pieces.len() {
+            return None;
+        }
+        let frame = self.keep(&doc, page, (&view, px, fonts), &opts, pix, sens);
+        Some((view, &frame.pix, work))
     }
 
     /// Keep `pix`, the render of `at`: the snapped view, its top-left device pixel and the font
@@ -200,6 +380,7 @@ impl Retained {
             outline_extras: opts.outline,
             outlined: opts.outlined.clone(),
             lod: opts.lod,
+            draft: opts.draft,
             skip: opts.skip.clone(),
             solo: opts.solo,
             background: opts.background,
@@ -259,9 +440,9 @@ fn changed_areas(doc: &Document, page: NodeId, id: NodeId, out: &mut Vec<Rect>) 
     Some(())
 }
 
-/// The previous frame brought up to date for `doc` at `px`, rendering only what changed; `None`
-/// when a full render is the better (or only correct) choice. Also returns the pixels rendered.
-fn patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (i64, i64), opts: &Options, s: &Sensitive) -> Option<(Pixmap, u64)> {
+/// The previous frame brought to `px` for `doc`, with the areas to render; `None` when a full
+/// render is the better (or only correct) choice.
+fn plan_patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (i64, i64), s: &Sensitive) -> Option<Patched> {
     let (w, h) = (i64::from(view.width), i64::from(view.height));
     let (dx, dy) = (px.0.checked_sub(last.px.0)?, px.1.checked_sub(last.px.1)?);
     if dx.abs() >= w || dy.abs() >= h {
@@ -305,7 +486,7 @@ fn patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (i64, 
     }
     let mut damage: Vec<Px> = damage.iter().filter_map(|d| d.clamp(w, h)).collect();
     if damage.is_empty() && dx == 0 && dy == 0 {
-        return Some((last.pix, 0));
+        return Some(Patched { pix: last.pix, damage: Vec::new(), pixels: 0, margin: 0 });
     }
     // Layers whose look depends on where they are cut are redrawn whole.
     let sensitive: Vec<Px> = s.areas.iter().chain(last.sensitive.areas.iter()).filter_map(|r| to_px(*r, view.scale, px)).collect();
@@ -333,14 +514,10 @@ fn patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (i64, 
     if pixels as f64 > MAX_PARTIAL_SHARE * (w * h) as f64 {
         return None;
     }
-    // Render with the backdrop reach as a margin (so blurs see their whole backdrop), keep the inside.
-    let margin = reach + 1;
+    // Rendered with the backdrop reach as a margin (so blurs see their whole backdrop), keeping the inside.
     let mut pix = last.pix;
     shift(&mut pix, dx, dy)?;
-    for d in &damage {
-        render_into(doc, page, view, px, d, margin, opts, &mut pix)?;
-    }
-    Some((pix, pixels))
+    Some(Patched { pix, damage, pixels, margin: reach + 1 })
 }
 
 /// Move the image's content by `(-dx, -dy)` pixels in place (what was at `(x, y)` goes to
@@ -393,21 +570,22 @@ fn merge(mut rects: Vec<Px>) -> Vec<Px> {
     rects
 }
 
-/// Render the frame pixels `d` (with `margin` more around, discarded) into `pix`.
+/// Render the frame pixels `d` (with `margin` more around, discarded) into `pix`. The margin stops
+/// at the frame's edges: a whole render ends there, and what lies past it must not show in the
+/// patch (a background blur at the edge reads the same backdrop either way).
 #[allow(clippy::too_many_arguments)]
 fn render_into(doc: &Document, page: NodeId, view: &View, px: (i64, i64), d: &Px, margin: i64, opts: &Options, pix: &mut Pixmap) -> Option<()> {
     let s = view.scale;
-    let (ox, oy) = (d.x0 - margin, d.y0 - margin);
-    let (rw, rh) = (u32::try_from(d.x1 - d.x0 + 2 * margin).ok()?, u32::try_from(d.y1 - d.y0 + 2 * margin).ok()?);
+    let (fw, fh) = (i64::from(view.width), i64::from(view.height));
+    let (left, top) = (margin.min(d.x0).max(0), margin.min(d.y0).max(0));
+    let (right, bottom) = (margin.min(fw - d.x1).max(0), margin.min(fh - d.y1).max(0));
+    let (ox, oy) = (d.x0 - left, d.y0 - top);
+    let (rw, rh) = (u32::try_from(d.x1 - d.x0 + left + right).ok()?, u32::try_from(d.y1 - d.y0 + top + bottom).ok()?);
     // The same pixel grid as the frame: origin (px + offset) / scale.
     let sub = View { origin: ((px.0 + ox) as f64 / s, (px.1 + oy) as f64 / s), scale: s, width: rw, height: rh };
     let part = render_view(doc, page, &sub, opts)?;
-    let inner = IntRect::from_xywh(
-        i32::try_from(margin).ok()?,
-        i32::try_from(margin).ok()?,
-        u32::try_from(d.x1 - d.x0).ok()?,
-        u32::try_from(d.y1 - d.y0).ok()?,
-    )?;
+    let inner =
+        IntRect::from_xywh(i32::try_from(left).ok()?, i32::try_from(top).ok()?, u32::try_from(d.x1 - d.x0).ok()?, u32::try_from(d.y1 - d.y0).ok()?)?;
     let inner = part.clone_rect(inner)?;
     let copy = PixmapPaint { blend_mode: tiny_skia::BlendMode::Source, ..Default::default() };
     pix.draw_pixmap(i32::try_from(d.x0).ok()?, i32::try_from(d.y0).ok()?, inner.as_ref(), &copy, Transform::identity(), None);

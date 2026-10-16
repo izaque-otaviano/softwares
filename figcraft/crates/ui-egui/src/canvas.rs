@@ -114,6 +114,8 @@ struct JobKey {
     /// Text lays out anew when fonts arrive (system fonts load in the background).
     fonts: u64,
     proof: bool,
+    /// A zoom is under way: the render is a draft.
+    draft: bool,
 }
 
 impl FigApp {
@@ -371,6 +373,7 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
         solo: ds.focused(),
         fonts: figcraft_text::layout_generation(),
         proof,
+        draft: zooming,
     };
     let last = app.canvas.submitted.as_ref();
     let view = if pixel_preview.is_some() || zooming {
@@ -386,8 +389,23 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
     {
         return;
     }
-    let job =
-        Job { doc, page: ds.page, view: view.clone(), outline: ds.view.outlines, outline_extras, outlined, skip: vec![], solo: key.solo, proof };
+    // A zoom steps on every frame, and each draft is out of date by the next. One at a time: the
+    // render under way shows (re-projected) and the next draft is of where the zoom has got to.
+    if zooming && worker.in_flight() {
+        return;
+    }
+    let job = Job {
+        doc,
+        page: ds.page,
+        view: view.clone(),
+        outline: ds.view.outlines,
+        outline_extras,
+        outlined,
+        skip: vec![],
+        solo: key.solo,
+        proof,
+        draft: zooming,
+    };
     worker.submit(job);
     app.canvas.submitted = Some((key, view));
 }
