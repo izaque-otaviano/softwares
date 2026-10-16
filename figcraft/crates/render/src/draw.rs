@@ -11,7 +11,7 @@ use tiny_skia::{FillRule, IntRect, Mask, MaskType, Pixmap, PixmapPaint, Transfor
 
 use crate::backdrop::{self, Under};
 use crate::boolean::{PathCache, locked};
-use crate::paint::{composite, prepare_at, ts_blend};
+use crate::paint::{Detail, composite, prepare_with, ts_blend};
 use crate::{blur, grain, lod, shadow};
 
 /// Shared state for one render.
@@ -29,6 +29,12 @@ pub struct Ctx<'a> {
     pub skip: &'a [NodeId],
     /// Approximate what's too small to see in detail (canvas previews; see [`crate::lod`]).
     pub lod: bool,
+    /// Draw big pictures from a reduced mip level when they show small (canvas previews; see
+    /// [`crate::mips`]). Exports and thumbnails draw them as they are.
+    pub mip: bool,
+    /// A draft, drawn while the view zooms and replaced when it settles: what is slow and subtle
+    /// (grain, background blur, glass) is left out and pictures are sampled bilinearly.
+    pub draft: bool,
     /// The surfaces under the one being drawn into, when it is an isolated layer (for backdrops).
     pub under: Option<&'a Under<'a>>,
     /// Seconds into animated GIFs (0: their first frame; only the presenter plays them).
@@ -59,7 +65,7 @@ pub fn ts_path(p: &BezPath) -> Option<tiny_skia::Path> {
 fn fill_with(pix: &mut Pixmap, path: &tiny_skia::Path, paints: &[Paint], w: f64, h: f64, xf: Affine, rule: FillRule, ctx: &Ctx, mask: Option<&Mask>) {
     let scale = xf.determinant().abs().sqrt();
     for p in paints {
-        let Some(prep) = prepare_at(p, w, h, scale, ctx.doc, ctx.time) else { continue };
+        let Some(prep) = prepare_with(p, w, h, scale, ctx.doc, ctx.time, Detail { mip: ctx.mip, draft: ctx.draft }) else { continue };
         let paint = tiny_skia::Paint { shader: prep.shader(), anti_alias: true, blend_mode: ts_blend(p.blend), ..Default::default() };
         if p.blend == BlendMode::PlusDarker {
             // No tiny-skia mode: the paint alone over its pixels, then blended in.
@@ -424,6 +430,7 @@ pub fn draw_node(ctx: &Ctx, pix: &mut Pixmap, id: NodeId, parent_xf: Affine, dep
     // Background blur and glass: the whole backdrop under the layer (every surface below this
     // one, composited), through the shape, under the content.
     if backdrop::has_effects(n)
+        && !ctx.draft
         && let Some(sh) = &backdrop::outline(ctx.doc, n)
     {
         let pad = backdrop::pad(n, ctx.scale);
@@ -468,8 +475,8 @@ pub fn draw_node(ctx: &Ctx, pix: &mut Pixmap, id: NodeId, parent_xf: Affine, dep
     for e in n.effects.iter().filter(|e| e.visible) {
         match &e.kind {
             EffectKind::LayerBlur(b) => blur::apply(&mut layer, b, (n.width, n.height), lxf, ctx.scale),
-            EffectKind::Noise(nz) => grain::noise(&mut layer, nz, lxf, id.0 as u32),
-            EffectKind::Texture(t) => grain::texture(&mut layer, t, lxf, ctx.scale, id.0 as u32),
+            EffectKind::Noise(nz) if !ctx.draft => grain::noise(&mut layer, nz, lxf, id.0 as u32),
+            EffectKind::Texture(t) if !ctx.draft => grain::texture(&mut layer, t, lxf, ctx.scale, id.0 as u32),
             _ => {}
         }
     }

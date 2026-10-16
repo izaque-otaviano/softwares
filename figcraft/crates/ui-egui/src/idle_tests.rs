@@ -212,6 +212,7 @@ fn a_finished_background_render_wakes_the_ui() {
         skip: vec![],
         solo: None,
         proof: false,
+        draft: false,
     });
     let start = Instant::now();
     while wakes.load(Ordering::SeqCst) == 0 {

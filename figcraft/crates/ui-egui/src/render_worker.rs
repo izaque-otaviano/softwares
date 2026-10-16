@@ -1,14 +1,18 @@
-//! Canvas rendering off the UI thread (desktop) or inline (web). The latest request wins (queued
-//! older ones are skipped); the UI shows each finished image, re-projected to the current view,
-//! until the next one arrives.
+//! Canvas rendering off the UI thread (desktop) or in pieces between frames (web). The latest
+//! request wins (queued older ones are skipped); the UI shows each finished image, re-projected to
+//! the current view, until the next one arrives.
 //! The renderer keeps its last image ([`figcraft_render::Retained`]): a pan renders only the
 //! uncovered strips and an edit only the areas of the layers that changed.
+//!
+//! The browser has one thread for the UI and the renderer. A render in one go froze every frame it
+//! took (a page of big photos: a second or more), so the web [`Stepper`] draws a few bands of the
+//! view per frame, inside a time budget, and hands the image over when the last band is done.
 
 use std::sync::Arc;
 
 use figcraft_color::ColorProfile;
 use figcraft_doc::{Document, NodeId};
-use figcraft_render::{Pixmap, Retained, View, Work};
+use figcraft_render::{Pixmap, Retained, Sliced, View, Work};
 
 #[derive(Clone)]
 pub struct Job {
@@ -25,6 +29,8 @@ pub struct Job {
     pub solo: Option<NodeId>,
     /// Soft-proof sRGB: stripe the colours sRGB can't show.
     pub proof: bool,
+    /// A draft while a zoom is under way: leaves out grain, background blur and glass.
+    pub draft: bool,
 }
 
 pub struct Done {
@@ -58,29 +64,118 @@ fn mark_outside_srgb(image: &mut egui::ColorImage, pix: &Pixmap, profile: ColorP
     }
 }
 
-fn run(job: &Job, retained: &mut Retained) -> Option<Done> {
-    #[cfg(not(target_arch = "wasm32"))]
-    let t0 = std::time::Instant::now();
-    // The canvas is a preview: what's too small to see in detail at this zoom is approximated.
-    let opts = figcraft_render::Options {
+/// What the canvas renders: a preview, so what's too small to see in detail at this zoom is
+/// approximated.
+fn options(job: &Job) -> figcraft_render::Options {
+    figcraft_render::Options {
         outline_mode: job.outline,
         outline: job.outline_extras,
         outlined: job.outlined.clone(),
         skip: job.skip.clone(),
         solo: job.solo,
         lod: true,
+        draft: job.draft,
         ..Default::default()
-    };
-    let (view, pix, work) = retained.render(&job.doc, job.page, &job.view, &opts)?;
+    }
+}
+
+/// The finished render of `job` as a texture image.
+fn done(job: &Job, view: View, pix: &Pixmap, work: Work, ms: f64) -> Done {
     let mut image = screen_image(pix, job.doc.color_profile);
     if job.proof {
         mark_outside_srgb(&mut image, pix, job.doc.color_profile);
     }
+    Done { image, view, ms, work }
+}
+
+fn run(job: &Job, retained: &mut Retained) -> Option<Done> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let t0 = std::time::Instant::now();
+    let (view, pix, work) = retained.render(&job.doc, job.page, &job.view, &options(job))?;
     #[cfg(not(target_arch = "wasm32"))]
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     #[cfg(target_arch = "wasm32")]
     let ms = 0.0;
-    Some(Done { image, view, ms, work })
+    Some(done(job, view, pix, work, ms))
+}
+
+/// Time a frame may spend rendering in the browser (ms): what is left of a 60 Hz frame after the
+/// UI, with room for a band that runs long.
+pub const FRAME_BUDGET_MS: f64 = 8.0;
+
+/// A render under way.
+struct Running {
+    job: Job,
+    sliced: Sliced,
+    /// Milliseconds spent on it so far.
+    ms: f64,
+}
+
+/// Renders jobs in pieces, a few milliseconds a call: the browser's worker (it is the same code on
+/// every target, so desktop tests exercise it). A job is never abandoned for a newer one: a
+/// half-finished render leaves nothing for the next to patch, and the next would start over.
+/// Newer jobs wait (the newest only), and run when the one under way is done.
+pub struct Stepper {
+    retained: Retained,
+    pending: Option<Job>,
+    running: Option<Running>,
+    /// Rows a piece of the next render covers (sized from how long rows took).
+    rows: u32,
+    budget_ms: f64,
+}
+
+impl Default for Stepper {
+    fn default() -> Self {
+        Self::new(FRAME_BUDGET_MS)
+    }
+}
+
+impl Stepper {
+    pub fn new(budget_ms: f64) -> Self {
+        Self { retained: Retained::default(), pending: None, running: None, rows: 48, budget_ms }
+    }
+
+    pub fn submit(&mut self, job: Job) {
+        self.pending = Some(job);
+    }
+
+    pub fn in_flight(&self) -> bool {
+        self.pending.is_some() || self.running.is_some()
+    }
+
+    /// Rows a piece of the next render covers.
+    pub fn rows(&self) -> u32 {
+        self.rows
+    }
+
+    /// Run pieces of the render under way (starting the newest job when none is) for about the
+    /// budget, `clock` giving milliseconds. The image when its last piece has run.
+    pub fn poll(&mut self, clock: &mut dyn FnMut() -> f64) -> Option<Done> {
+        if self.running.is_none() {
+            let job = self.pending.take()?;
+            let sliced = self.retained.begin(&job.doc, job.page, &job.view, &options(&job), self.rows)?;
+            self.running = Some(Running { job, sliced, ms: 0.0 });
+        }
+        let run = self.running.as_mut()?;
+        let start = clock();
+        let deadline = start + self.budget_ms;
+        let finished = run.sliced.step(&mut || clock() < deadline);
+        run.ms += (clock() - start).max(0.0);
+        if !finished {
+            return None;
+        }
+        let Running { job, sliced, ms } = self.running.take()?;
+        // The next render's pieces: about three quarters of a budget each.
+        let rows = sliced.rows();
+        if rows > 0 && ms > 0.0 && ms.is_finite() {
+            let per_row = ms / rows as f64;
+            let fit = (self.budget_ms * 0.75 / per_row)
+                .clamp(f64::from(figcraft_render::retained::MIN_ROWS), f64::from(figcraft_render::retained::MAX_ROWS));
+            self.rows = (f64::from(self.rows) * 0.5 + fit * 0.5) as u32;
+        }
+        let (view, pix, work) = self.retained.finish(sliced)?;
+        Some(done(&job, view, pix, work, ms))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -157,24 +252,32 @@ impl Worker {
 
 #[cfg(target_arch = "wasm32")]
 pub struct Worker {
-    pending: Option<Job>,
-    retained: Retained,
+    ctx: egui::Context,
+    stepper: Stepper,
+    start: web_time::Instant,
 }
 
 #[cfg(target_arch = "wasm32")]
 impl Worker {
-    pub fn new(_ctx: egui::Context) -> Self {
-        Self { pending: None, retained: Retained::default() }
+    pub fn new(ctx: egui::Context) -> Self {
+        Self { ctx, stepper: Stepper::default(), start: web_time::Instant::now() }
     }
     pub fn submit(&mut self, job: Job) {
-        self.pending = Some(job);
+        self.stepper.submit(job);
+        // The next frame starts it.
+        self.ctx.request_repaint();
     }
     pub fn in_flight(&self) -> bool {
-        self.pending.is_some()
+        self.stepper.in_flight()
     }
     pub fn poll(&mut self) -> Option<Done> {
-        let job = self.pending.take()?;
-        run(&job, &mut self.retained)
+        let start = self.start;
+        let done = self.stepper.poll(&mut || start.elapsed().as_secs_f64() * 1000.0);
+        if done.is_none() && self.stepper.in_flight() {
+            // More pieces to run: the next frame runs them.
+            self.ctx.request_repaint();
+        }
+        done
     }
 }
 

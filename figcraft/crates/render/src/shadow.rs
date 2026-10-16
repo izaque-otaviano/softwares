@@ -192,6 +192,8 @@ pub fn drop_shadow(c: &Caster, s: &Shadow) -> Option<Pixmap> {
     let spread = if s.spread.is_finite() { s.spread } else { 0.0 };
     let mut sh = match c.silhouette.as_deref() {
         Some(sil) if spread != 0.0 && dx.is_finite() && dy.is_finite() => spread_alpha(sil, spread, Affine::translate((dx, dy)) * c.xf, w, h)?,
+        // The layer's alpha at the offset (no spread: it isn't grown first).
+        _ if whole_px(spread * c.scale) == 0 => fx::shifted_alpha(c.layer, whole_px(dx), whole_px(dy))?,
         _ => {
             let mut base = c.layer.clone();
             fx::morph(&mut base, whole_px(spread * c.scale));
@@ -200,7 +202,8 @@ pub fn drop_shadow(c: &Caster, s: &Shadow) -> Option<Pixmap> {
             out
         }
     };
-    fx::blur(&mut sh, s.radius / 2.0 * c.scale);
+    // Tinted next: only the alpha is blurred.
+    fx::blur_alpha(&mut sh, s.radius / 2.0 * c.scale);
     fx::tint(&mut sh, color4(s.color));
     if !s.show_behind {
         fx::mask_by(&mut sh, c.cover.as_ref().unwrap_or(c.layer), true);
@@ -249,7 +252,7 @@ pub fn inner_shadow_of(cover: &Pixmap, scale: f64, s: &Shadow) -> Option<Pixmap>
 /// spread), `pad` pixels larger each way than the layer, whose pixels `cover` the shape.
 fn inner_from(mut big: Pixmap, pad: u32, cover: &Pixmap, scale: f64, s: &Shadow) -> Option<Pixmap> {
     fx::invert_alpha(&mut big);
-    fx::blur(&mut big, s.radius / 2.0 * scale);
+    fx::blur_alpha(&mut big, s.radius / 2.0 * scale);
     let mut out = Pixmap::new(cover.width(), cover.height())?;
     let pad = i32::try_from(pad).ok()?;
     out.draw_pixmap(

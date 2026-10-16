@@ -50,6 +50,7 @@ pub mod snap;
 pub mod style_vars;
 pub mod synthetic;
 pub mod synthetic_ds;
+pub mod synthetic_shop;
 pub mod templates;
 pub mod textedit;
 pub mod textpreview;
@@ -1597,6 +1598,8 @@ mod shapebuilder_tests;
 mod shapes_behaviour_tests;
 #[cfg(test)]
 mod share_tests;
+#[cfg(test)]
+mod shop_bench_tests;
 #[cfg(test)]
 mod shortcut_parity_tests;
 #[cfg(test)]

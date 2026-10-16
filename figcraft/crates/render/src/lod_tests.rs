@@ -162,6 +162,8 @@ fn exports_never_use_lod() {
         outlined: &[],
         skip: &[],
         lod: true,
+        mip: false,
+        draft: false,
         under: None,
         time: 0.0,
     };

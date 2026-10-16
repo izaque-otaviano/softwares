@@ -150,6 +150,8 @@ mod proto_reorder_tests;
 #[cfg(test)]
 mod proto_responsive_tests;
 #[cfg(test)]
+mod render_worker_tests;
+#[cfg(test)]
 mod right_panel_tests;
 #[cfg(test)]
 mod shortcut_keys_tests;

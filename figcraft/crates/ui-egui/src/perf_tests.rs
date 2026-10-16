@@ -270,6 +270,55 @@ fn the_assets_panel_renders_thumbnails_in_view_and_only_changed_ones_again() {
     assert_eq!(kept, scrolled.len() - 1, "unchanged thumbnails stay cached");
 }
 
+/// UI frames on a page of big photos (the shop page: rounded cards with shadows, image fills): idle,
+/// hovering, wheel panning, pinch zooming with the render thread busy, a photo selected (its image
+/// fill in the Design panel). `cargo test --release -p figcraft-ui-egui --lib perf_ui_shop -- --ignored --nocapture`.
+#[test]
+#[ignore = "benchmark"]
+fn perf_ui_shop() {
+    let spec = figcraft_engine::synthetic_shop::ShopSpec {
+        screens: 6,
+        distinct_photos: 12,
+        photo_px: 2000,
+        ..figcraft_engine::synthetic_shop::ShopSpec::HEAVY
+    };
+    let (doc, page) = figcraft_engine::synthetic_shop::shop_document(&spec).unwrap();
+    let photo = doc.nodes().find(|n| n.fills.iter().any(|f| matches!(f.kind, figcraft_color::PaintKind::Image(_)))).map(|n| n.id);
+    let mut b = Bench::with_document(doc);
+    b.app.ui.home = false;
+    let _ = page;
+    // Let the first renders (decoding the photos) finish.
+    for _ in 0..120 {
+        b.frame(vec![]);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let mut rows: Vec<(&str, f64)> = Vec::new();
+    rows.push(("idle frame", b.mean(60, |_| vec![])));
+    let pts: Vec<Vec<Event>> = (0..60).map(|i| vec![Event::PointerMoved(b.canvas_point(i))]).collect();
+    rows.push(("hover over the canvas", b.mean(60, |i| pts[i].clone())));
+    let centre = b.app.canvas.rect.center();
+    rows.push(("pan (wheel), render thread busy", b.mean(120, |i| vec![Event::PointerMoved(centre), wheel(if i % 60 < 30 { -40.0 } else { 40.0 })])));
+    rows.push((
+        "pinch zoom, render thread busy",
+        b.mean(60, |i| vec![Event::PointerMoved(centre), Event::Zoom(if i % 40 < 20 { 1.03 } else { 0.97 })]),
+    ));
+    for _ in 0..60 {
+        b.frame(vec![]);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    b.app.session.set_selection(photo.into_iter().collect());
+    b.frame(vec![]);
+    rows.push(("a photo selected (image fill in the Design panel)", b.mean(60, |_| vec![])));
+    println!(
+        "UI frame ms — shop page, {} layers ({})",
+        b.app.session.doc().map(|d| d.node_count()).unwrap_or(0),
+        if cfg!(debug_assertions) { "debug" } else { "release" }
+    );
+    for (name, v) in rows {
+        println!("| {name:<52} | {v:>8.2} |");
+    }
+}
+
 #[test]
 fn bench_harness_draws_frames() {
     let mut b = Bench::new(200);
