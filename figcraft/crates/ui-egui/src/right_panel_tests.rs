@@ -86,6 +86,19 @@ fn right_panel_gallery() {
     r.save_region(&dir.join("devmode.png"), panel(&r), 2);
 }
 
+/// The dock along the bottom of the canvas, as a PNG (`FIGCRAFT_SNAPSHOTS=/some/dir`).
+#[test]
+fn dock_gallery() {
+    let Some(dir) = gallery_dir() else { return };
+    let (mut r, [_, rect, ..]) = rec();
+    r.resize(1440.0, 900.0);
+    r.run("select.set", json!({"ids": [rect]}));
+    r.frames(3);
+    let size = r.u.size;
+    let area = Rect::from_min_size(Pos2::new(size.x / 2.0 - 400.0, size.y - 90.0), vec2(800.0, 80.0));
+    r.save_region(&dir.join("dock.png"), area, 3);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Layout invariants, driven through egui headless with the AccessKit tree on.
 

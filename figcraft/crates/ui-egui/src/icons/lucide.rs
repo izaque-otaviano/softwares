@@ -157,13 +157,17 @@ const BASE_STROKE: f32 = 1.8;
 /// Strokes are never thinner than this many physical pixels (small icons get thicker lines).
 const MIN_STROKE_PX: f32 = 1.3;
 const MAX_STROKE: f32 = 3.0;
+/// The stroke width in grid units of the light weight (the dock's icons).
+const LIGHT_STROKE: f32 = 1.4;
+/// The light weight is never thinner than this many physical pixels.
+const LIGHT_MIN_STROKE_PX: f32 = 1.0;
 /// The largest texture side rasterised; bigger requests are drawn from this one.
 pub(crate) const MAX_PX: u32 = 512;
 /// Textures kept before the cache starts over (sizes change only with the display scale).
 const CACHE_CAP: usize = 1024;
 
 #[derive(Clone, Default)]
-struct Cache(HashMap<(Icon, u32), Option<TextureHandle>>);
+struct Cache(HashMap<(Icon, u32, bool), Option<TextureHandle>>);
 
 fn cache_id() -> Id {
     Id::new("figcraft_icon_textures")
@@ -178,6 +182,11 @@ pub(crate) fn file(key: &str) -> Option<&'static str> {
 /// thicker when that would be under [`MIN_STROKE_PX`] (small sizes).
 pub(crate) fn stroke_units(px: u32) -> f32 {
     (MIN_STROKE_PX * GRID / px.max(1) as f32).clamp(BASE_STROKE, MAX_STROKE)
+}
+
+/// [`stroke_units`] for the light weight: a finer line, thickened only below one physical pixel.
+pub(crate) fn light_stroke_units(px: u32) -> f32 {
+    (LIGHT_MIN_STROKE_PX * GRID / px.max(1) as f32).clamp(LIGHT_STROKE, MAX_STROKE)
 }
 
 /// Rasterise `svg` (a 24-unit Lucide-style icon) into a `px`×`px` mask: white with the art's
@@ -202,15 +211,15 @@ pub(crate) fn rasterize(svg: &str, px: u32, stroke: f32) -> Option<ColorImage> {
     Some(ColorImage::from_rgba_premultiplied([px as usize, px as usize], &rgba))
 }
 
-fn texture(ctx: &egui::Context, icon: Icon, px: u32) -> Option<TextureHandle> {
-    let key = (icon, px);
+fn texture(ctx: &egui::Context, icon: Icon, px: u32, light: bool) -> Option<TextureHandle> {
+    let key = (icon, px, light);
     if let Some(hit) = ctx.data_mut(|d| d.get_temp_mut_or_default::<Cache>(cache_id()).0.get(&key).cloned()) {
         return hit;
     }
     let made = super::source(icon)
         .and_then(file)
-        .and_then(|svg| rasterize(svg, px, stroke_units(px)))
-        .map(|img| ctx.load_texture(format!("figcraft-icon-{icon:?}-{px}"), img, TextureOptions::LINEAR));
+        .and_then(|svg| rasterize(svg, px, if light { light_stroke_units(px) } else { stroke_units(px) }))
+        .map(|img| ctx.load_texture(format!("figcraft-icon-{icon:?}-{px}-{}", if light { "light" } else { "regular" }), img, TextureOptions::LINEAR));
     ctx.data_mut(|d| {
         let cache = d.get_temp_mut_or_default::<Cache>(cache_id());
         if cache.0.len() >= CACHE_CAP {
@@ -240,6 +249,15 @@ pub(crate) fn pixels(side: f32, ppp: f32) -> Option<u32> {
 /// Paint `icon` as the largest square that fits `rect`, centred and on whole physical pixels,
 /// its mask tinted `tint`. Nothing for an empty, infinite or NaN box.
 pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, tint: Color32) {
+    paint_weighted(painter, rect, icon, tint, false);
+}
+
+/// [`paint`] with the light (finer) stroke.
+pub(crate) fn paint_light(painter: &Painter, rect: Rect, icon: Icon, tint: Color32) {
+    paint_weighted(painter, rect, icon, tint, true);
+}
+
+fn paint_weighted(painter: &Painter, rect: Rect, icon: Icon, tint: Color32, light: bool) {
     let ctx = painter.ctx();
     let ppp = ctx.pixels_per_point();
     if !rect.is_finite() || tint.a() == 0 {
@@ -254,6 +272,6 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, tint: Color32) {
         if snapped >= lo - 1e-4 && snapped + pts <= hi + 1e-4 { snapped } else { at }
     };
     let min = pos2(place(rect.min.x, rect.max.x, rect.center().x), place(rect.min.y, rect.max.y, rect.center().y));
-    let Some(tex) = texture(ctx, icon, px) else { return };
+    let Some(tex) = texture(ctx, icon, px, light) else { return };
     painter.image(tex.id(), Rect::from_min_size(min, vec2(pts, pts)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
 }

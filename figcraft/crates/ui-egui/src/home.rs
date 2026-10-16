@@ -243,8 +243,14 @@ fn recents(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
         let mut switch = None;
         for (i, d) in app.session.docs.iter().enumerate() {
             let detail = d.path.as_deref().unwrap_or_default();
-            let row =
-                FileRow { mark: Some((Icon::Document, ACCENT)), name: &d.doc.name, ink: t.text, detail, detail_size: 11.0, detail_ink: t.text_secondary };
+            let row = FileRow {
+                mark: Some((Icon::Document, ACCENT)),
+                name: &d.doc.name,
+                ink: t.text,
+                detail,
+                detail_size: 11.0,
+                detail_ink: t.text_secondary,
+            };
             if listed(ui, t, ui.id().with(("open", d.uid)), 36.0, &row) {
                 switch = Some(i);
             }

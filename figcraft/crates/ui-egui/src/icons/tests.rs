@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Color32, ColorImage, Rect, Shape, pos2, vec2};
 
-use super::lucide::{self, FILES, MAX_PX, rasterize, stroke_units};
+use super::lucide::{self, FILES, MAX_PX, light_stroke_units, rasterize, stroke_units};
 use super::{Icon, paint, source};
 
 fn assets_dir() -> PathBuf {
@@ -109,6 +109,16 @@ fn strokes_thicken_when_small_and_never_go_hairline() {
     }
     assert!((stroke_units(24) - 1.8).abs() < 1e-6 && stroke_units(96) == stroke_units(24));
     assert!(stroke_units(12) > stroke_units(20));
+}
+
+#[test]
+fn the_light_weight_is_finer_than_the_regular_one_at_every_size() {
+    for px in 1..=64u32 {
+        let (light, regular) = (light_stroke_units(px), stroke_units(px));
+        assert!(light.is_finite() && light <= regular, "{px}: {light} vs {regular}");
+        assert!(light * px as f32 / 24.0 >= 0.99 || light >= 3.0, "{px} px: {} px stroke", light * px as f32 / 24.0);
+    }
+    assert!((light_stroke_units(36) - 1.4).abs() < 1e-6);
 }
 
 #[test]
