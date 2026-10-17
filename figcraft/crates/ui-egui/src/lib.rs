@@ -1096,14 +1096,11 @@ impl FigApp {
         let hidden = self.session.ds().map(|d| d.view.ui_hidden).unwrap_or(false);
         tabs::tab_bar(self, ui);
         if !hidden {
-            egui::Panel::left("left_rail")
-                .exact_size(56.0)
-                .resizable(false)
-                .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
-                .show(ui, |ui| {
-                    a11y::region(&mut self.ui.nav, ui, a11y::Region::Layers, egui::accesskit::Role::Navigation, i18n::tr("Sidebar"));
-                    layers::rail(self, ui)
-                });
+            let rail = egui::Panel::left("left_rail").exact_size(56.0).resizable(false).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
+                a11y::region(&mut self.ui.nav, ui, a11y::Region::Layers, egui::accesskit::Role::Navigation, i18n::tr("Sidebar"));
+                layers::rail(self, ui)
+            });
+            divider(ui, rail.response.rect, Side::Right, t.border);
         }
         // The Variables page takes the window beside the rail, in place of the panels and canvas.
         if self.ui.variables.is_some() {
@@ -1116,11 +1113,8 @@ impl FigApp {
             let mut edges: Vec<(&str, f32, f32, f32)> = Vec::new();
             if left_open {
                 edges.push(("left", ui.available_rect_before_wrap().min.x + left_w, left_w, 1.0));
-                egui::Panel::left("left_panel")
-                    .resizable(false)
-                    .exact_size(left_w)
-                    .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
-                    .show(ui, |ui| {
+                let left =
+                    egui::Panel::left("left_panel").resizable(false).exact_size(left_w).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
                         let label = match self.ui.left_tab {
                             _ if self.ui.versions.open => i18n::tr("Version history"),
                             LeftTab::File => i18n::tr("Layers"),
@@ -1129,14 +1123,12 @@ impl FigApp {
                         a11y::region(&mut self.ui.nav, ui, a11y::Region::Layers, egui::accesskit::Role::Pane, label);
                         layers::left_panel(self, ui)
                     });
+                divider(ui, left.response.rect, Side::Right, t.border);
             }
             if !hidden {
                 edges.push(("right", ui.available_rect_before_wrap().max.x - right_w, right_w, -1.0));
-                egui::Panel::right("right_panel")
-                    .resizable(false)
-                    .exact_size(right_w)
-                    .frame(egui::Frame::NONE.fill(t.panel).stroke(egui::Stroke::new(1.0, t.border)))
-                    .show(ui, |ui| {
+                let right =
+                    egui::Panel::right("right_panel").resizable(false).exact_size(right_w).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
                         let label = match self.ui.right_tab {
                             RightTab::Design => i18n::tr("Design"),
                             RightTab::Prototype => i18n::tr("Prototype"),
@@ -1145,6 +1137,7 @@ impl FigApp {
                         a11y::region(&mut self.ui.nav, ui, a11y::Region::Properties, egui::accesskit::Role::Pane, label);
                         right::right_panel(self, ui)
                     });
+                divider(ui, right.response.rect, Side::Left, t.border);
             }
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
                 let worker = self.worker.take();
@@ -1298,4 +1291,21 @@ impl FigApp {
             "lastError": self.ui.last_error,
         })
     }
+}
+
+/// The side of a panel its divider runs along.
+#[derive(Clone, Copy)]
+pub(crate) enum Side {
+    Left,
+    Right,
+}
+
+/// The one-point line between a panel and what lies beside it, inside the panel's own rectangle
+/// (so two neighbours never add their borders up to a gap).
+pub(crate) fn divider(ui: &egui::Ui, panel: egui::Rect, side: Side, colour: egui::Color32) {
+    let x = match side {
+        Side::Left => panel.min.x + 0.5,
+        Side::Right => panel.max.x - 0.5,
+    };
+    ui.painter().vline(x, panel.y_range(), egui::Stroke::new(1.0, colour));
 }

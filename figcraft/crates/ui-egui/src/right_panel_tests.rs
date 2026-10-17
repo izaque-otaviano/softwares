@@ -128,6 +128,49 @@ fn editor_gallery() {
     }
 }
 
+/// Between the rail, the left panel, the canvas and the right panel there is one point of line
+/// each, not two borders side by side.
+#[test]
+fn panels_are_divided_by_one_point_lines() {
+    let (mut r, [_, rect, ..]) = rec();
+    r.resize(1440.0, 900.0);
+    r.run("select.set", json!({"ids": [rect]}));
+    r.frames(3);
+    let path = std::env::temp_dir().join(format!("figcraft-dividers-{}.png", std::process::id()));
+    let size = r.u.size;
+    r.save_region(&path, Rect::from_min_size(Pos2::ZERO, size), 2);
+    let img = image::open(&path).unwrap().to_rgba8();
+    let _ = std::fs::remove_file(&path);
+    // A row low on the screen, where the panels hold nothing but their background.
+    let y = (size.y * 2.0 - 40.0) as u32;
+    let border = crate::theme::Tokens::light().border;
+    let is_border = |x: u32| {
+        let p = img.get_pixel(x, y).0;
+        p[..3] == [border.r(), border.g(), border.b()]
+    };
+    let mut runs = Vec::new();
+    let mut x = 0;
+    while x < img.width() {
+        if is_border(x) {
+            let start = x;
+            while x < img.width() && is_border(x) {
+                x += 1;
+            }
+            runs.push((start, x - start));
+        } else {
+            x += 1;
+        }
+    }
+    // The rail's, the left panel's and the right panel's edges: three lines, each one point (two
+    // pixels at this scale) wide (the dock's own border, on the canvas, is left out).
+    let panel_w = (r.u.app.ui.right_width * 2.0) as u32;
+    let runs: Vec<_> = runs.into_iter().filter(|&(x, _)| x < 800 || x + panel_w + 40 > img.width()).collect();
+    assert_eq!(runs.len(), 3, "dividers on the row: {runs:?}");
+    assert!(runs.iter().all(|&(_, w)| w <= 2), "a divider is wider than one point: {runs:?}");
+    // The rail's edge is the window's 56 points in.
+    assert!(runs[0].0 >= 110 && runs[0].0 <= 112, "{runs:?}");
+}
+
 // ---------------------------------------------------------------------------------------------
 // Layout invariants, driven through egui headless with the AccessKit tree on.
 
