@@ -1096,7 +1096,7 @@ impl FigApp {
         let hidden = self.session.ds().map(|d| d.view.ui_hidden).unwrap_or(false);
         tabs::tab_bar(self, ui);
         if !hidden {
-            let rail = egui::Panel::left("left_rail").exact_size(56.0).resizable(false).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
+            let rail = egui::Panel::left("left_rail").exact_size(RAIL_W).resizable(false).frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
                 a11y::region(&mut self.ui.nav, ui, a11y::Region::Layers, egui::accesskit::Role::Navigation, i18n::tr("Sidebar"));
                 layers::rail(self, ui)
             });
@@ -1292,6 +1292,10 @@ impl FigApp {
         })
     }
 }
+
+/// The width of the rail along the window's left edge; the first tab starts at its right edge, where
+/// the left panel does.
+pub(crate) const RAIL_W: f32 = 56.0;
 
 /// The side of a panel its divider runs along.
 #[derive(Clone, Copy)]

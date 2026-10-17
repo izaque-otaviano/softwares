@@ -171,6 +171,17 @@ fn panels_are_divided_by_one_point_lines() {
     assert!(runs[0].0 >= 110 && runs[0].0 <= 112, "{runs:?}");
 }
 
+/// The first tab starts where the left panel does (the rail's width in), not a few points before.
+#[test]
+fn the_first_tab_lines_up_with_the_left_panel() {
+    let (mut u, _) = ui_with(&[]);
+    let all = controls(&mut u);
+    let tab = all.iter().find(|c| c.role == Role::Tab && c.rect.min.y < 40.0 && c.rect.min.x > 10.0).expect("the file's tab");
+    let panel = all.iter().find(|c| c.role == Role::Pane && c.label == "Layers").expect("the left panel");
+    assert!((tab.rect.min.x - panel.rect.min.x).abs() < 0.6, "tab at {}, panel at {}", tab.rect.min.x, panel.rect.min.x);
+    assert!((panel.rect.min.x - crate::RAIL_W).abs() < 0.6, "{}", panel.rect.min.x);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Layout invariants, driven through egui headless with the AccessKit tree on.
 
