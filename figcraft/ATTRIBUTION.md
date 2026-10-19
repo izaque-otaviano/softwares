@@ -68,6 +68,7 @@ logo and the document mark, are rendered from the SVG files listed below
 | `assets/ui/lucide/image.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `image`, unchanged; used by `Icon::Image` |
 | `assets/ui/lucide/lasso.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `lasso`, unchanged; used by `Icon::Lasso` |
 | `assets/ui/lucide/layers.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layers`, unchanged; used by `Icon::Layers` |
+| `assets/ui/lucide/line-squiggle.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `line-squiggle`, unchanged; used by `Icon::DrawMode` |
 | `assets/ui/lucide/layout-grid.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layout-grid`, unchanged; used by `Icon::LayoutGrid`, `Icon::ViewGrid` |
 | `assets/ui/lucide/layout-list.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layout-list`, unchanged; used by `Icon::AutoLayout` |
 | `assets/ui/lucide/layout-panel-left.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layout-panel-left`, unchanged; used by `Icon::Screens` |
@@ -108,6 +109,7 @@ logo and the document mark, are rendered from the SVG files listed below
 | `assets/ui/lucide/panel-left.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `panel-left`, unchanged; used by `Icon::Panels` |
 | `assets/ui/lucide/pen-tool.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `pen-tool`, unchanged; used by `Icon::Pen` |
 | `assets/ui/lucide/pencil.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `pencil`, unchanged; used by `Icon::Pencil` |
+| `assets/ui/lucide/pencil-ruler.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `pencil-ruler`, unchanged; used by `Icon::DesignMode` |
 | `assets/ui/lucide/pipette.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `pipette`, unchanged; used by `Icon::Eyedropper` |
 | `assets/ui/lucide/play.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `play`, unchanged; used by `Icon::Play` |
 | `assets/ui/lucide/plus.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `plus`, unchanged; used by `Icon::Plus` |

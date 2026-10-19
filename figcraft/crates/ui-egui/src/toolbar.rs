@@ -163,7 +163,7 @@ pub fn show(app: &mut FigApp, ui: &mut Ui) {
     divider(ui, &t, x, cy);
     x += 8.0;
     // Mode switcher: Draw · Design · Prototype · Inspect (code).
-    let modes = [(Icon::Pencil, tr("Draw")), (Icon::Frame, tr("Design")), (Icon::Prototype, tr("Prototype")), (Icon::Code, tr("Inspect"))];
+    let modes = [(Icon::DrawMode, tr("Draw")), (Icon::DesignMode, tr("Design")), (Icon::Prototype, tr("Prototype")), (Icon::Code, tr("Inspect"))];
     let active = match app.ui.right_tab {
         crate::RightTab::Design if app.session.tool.tool == ToolId::Pencil => 0,
         crate::RightTab::Design => 1,
@@ -336,13 +336,29 @@ fn pill(ui: &Ui, nav: &mut Nav, canvas: Rect, width: f32, t: &Tokens) -> Rect {
     a11y::area(nav, Region::Toolbar, rect);
     a11y::container_bounds(ui, rect);
     let painter = ui.painter();
-    for (i, a) in [(6.0, 10u8), (3.0, 16), (1.0, 24)] {
-        painter.rect_filled(rect.expand(i).translate(vec2(0.0, i * 0.5)), CornerRadius::same((15.0 + i) as u8), Color32::from_black_alpha(a));
-    }
+    shadow(painter, rect);
     painter.rect_filled(rect, CornerRadius::same(15), t.panel);
     painter.rect_stroke(rect, CornerRadius::same(15), Stroke::new(1.0, t.border), StrokeKind::Inside);
     rect
 }
+
+/// The dock's shadow: `0 3px 8px rgba(0,0,0,.10)`, `0 1px 3px rgba(0,0,0,.10)` and a half-point
+/// `rgba(0,0,0,.18)` edge, as [`SHADOW`] lays them out. A box shadow blurs smoothly outwards; egui
+/// has no blur, so each is a stack of faint rounded rectangles growing by a point, which together
+/// fade out instead of leaving a dark ring at the edge.
+fn shadow(painter: &egui::Painter, rect: Rect) {
+    for &(spread, dy, alpha) in SHADOW {
+        let r = rect.expand(spread).translate(vec2(0.0, dy));
+        painter.rect_filled(r, CornerRadius::same((15.0 + spread).clamp(0.0, 255.0) as u8), Color32::from_black_alpha(alpha));
+    }
+}
+
+/// The dock shadow's layers, outermost first: (points past the pill's edge, vertical offset,
+/// black alpha). The wide blur: five layers 8 to 1 points out, 3 down; the tight one: two layers
+/// 3 and 1 points out, 1 down; the edge: a half point all round. Where they overlap, the alphas
+/// add up to the shadow's darkness just outside the pill (about 14%) and nowhere to a hard edge.
+const SHADOW: &[(f32, f32, u8)] =
+    &[(8.0, 3.0, 3), (6.0, 3.0, 3), (4.0, 3.0, 4), (2.0, 3.0, 4), (1.0, 3.0, 4), (3.0, 1.0, 5), (1.0, 1.0, 5), (0.5, 0.0, 5)];
 
 /// A square tool button: accent when active, tinted on hover; `tip` is its tooltip and name.
 fn tool_cell(ui: &mut Ui, t: &Tokens, r: Rect, id: impl egui::AsIdSalt, icon: Icon, active: bool, tip: &str) -> egui::Response {

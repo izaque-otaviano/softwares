@@ -201,6 +201,10 @@ icons! {
     Resources,
     /// Full screen: four corners pointing outwards.
     Fullscreen,
+    /// The dock's Draw mode: a squiggled line.
+    DrawMode,
+    /// The dock's Design mode: a pencil and a ruler.
+    DesignMode,
 }
 
 /// The SVG file behind `icon`, as its key under `assets/ui/lucide/` (without `.svg`): a Lucide
@@ -229,6 +233,8 @@ pub(crate) fn source(icon: Icon) -> Option<&'static str> {
         Comment => "message-circle",
         Resources => "blocks",
         Fullscreen => "maximize",
+        DrawMode => "line-squiggle",
+        DesignMode => "pencil-ruler",
         Actions => "zap",
         // Interface.
         Chevron => "chevron-down",
