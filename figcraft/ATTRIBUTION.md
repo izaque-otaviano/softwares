@@ -72,7 +72,9 @@ logo and the document mark, are rendered from the SVG files listed below
 | `assets/ui/lucide/layout-grid.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layout-grid`, unchanged; used by `Icon::LayoutGrid`, `Icon::ViewGrid` |
 | `assets/ui/lucide/layout-list.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layout-list`, unchanged; used by `Icon::AutoLayout` |
 | `assets/ui/lucide/layout-panel-left.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `layout-panel-left`, unchanged; used by `Icon::Screens` |
-| `assets/ui/lucide/link.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `link`, unchanged; used by `Icon::LinkOn`, `Icon::Link` |
+| `assets/ui/lucide/link.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `link`, unchanged; used by `Icon::Link` |
+| `assets/ui/lucide/link-2.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `link-2`, unchanged; used by `Icon::LinkOn` (proportions kept) |
+| `assets/ui/lucide/link-2-off.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `link-2-off`, unchanged; used by `Icon::LinkOff` (proportions free) |
 | `assets/ui/lucide/list.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `list`, unchanged; used by `Icon::ViewList` |
 | `assets/ui/lucide/lock.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `lock`, unchanged; used by `Icon::Lock` |
 | `assets/ui/lucide/lock-open.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `lock-open`, unchanged; used by `Icon::Unlock` |
@@ -145,7 +147,6 @@ logo and the document mark, are rendered from the SVG files listed below
 | `assets/ui/lucide/triangle-alert.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `triangle-alert`, unchanged; used by `Icon::GamutWarning` |
 | `assets/ui/lucide/type.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `type`, unchanged; used by `Icon::Text` |
 | `assets/ui/lucide/undo-2.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `undo-2`, unchanged; used by `Icon::Undo` |
-| `assets/ui/lucide/unlink.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `unlink`, unchanged; used by `Icon::LinkOff` |
 | `assets/ui/lucide/upload.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `upload`, unchanged; used by `Icon::Export` |
 | `assets/ui/lucide/vector-square.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC | Lucide `vector-square`, unchanged; used by `Icon::Vector` |
 | `assets/ui/lucide/x.svg` | Lucide Icons and Contributors | https://lucide.dev (lucide-static 1.58.0 via npm) | ISC, and MIT (derived from Feather, Cole Bemis; see `LICENSE`) | Lucide `x`, unchanged; used by `Icon::Close` |
