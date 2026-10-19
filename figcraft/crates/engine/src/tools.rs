@@ -321,23 +321,6 @@ pub(crate) struct ResizeStart {
     handle: Handle,
 }
 
-/// A free move under way: the Move tool past its drag slop, moving layers that stay in their
-/// parent and aren't placed by an auto layout flow. The canvas keeps the page as it was when the
-/// gesture began with the moved layers left out, and draws those itself where they are now,
-/// instead of rendering a new document for every pointer move.
-#[derive(Clone)]
-pub struct DragSprite {
-    /// The layers as they were, in `start`.
-    pub ids: Vec<NodeId>,
-    /// The layers moving in the current document (their copies when Alt duplicates).
-    pub moving: Vec<NodeId>,
-    /// The document the gesture began on.
-    pub start: std::sync::Arc<Document>,
-    /// Whether `ids` are left out of the page render (false when Alt duplicates: the originals
-    /// stay where they are).
-    pub skip: bool,
-}
-
 #[derive(Clone, Debug, Default)]
 pub(crate) enum Gesture {
     #[default]
@@ -901,29 +884,6 @@ impl Session {
             }
             ds.revision += 1;
         }
-    }
-
-    /// The free move under way, for the canvas to draw itself (see [`DragSprite`]); `None` when
-    /// no layers are being moved, or the move is one a render of the page is needed for.
-    pub fn drag_sprite(&self) -> Option<DragSprite> {
-        let Gesture::Move { moved: true, ids, duplicate, .. } = &self.tool.gesture else { return None };
-        let ds = self.ds().ok()?;
-        let start = ds.interaction.as_ref()?.doc.clone();
-        // Placed by an auto layout flow: the frame's other layers move too.
-        if self.tool.overlay.insert_line.is_some() || self.tool.overlay.drop_cell.is_some() {
-            return None;
-        }
-        let moving = if *duplicate { ds.selection.clone() } else { ids.clone() };
-        if moving.is_empty() || moving.len() != ids.len() {
-            return None;
-        }
-        // Dragged into another parent (out of an auto layout flow, say): the page reflows.
-        for (from, to) in ids.iter().zip(&moving) {
-            if start.node(*from)?.parent != ds.doc.node(*to)?.parent {
-                return None;
-            }
-        }
-        Some(DragSprite { ids: ids.clone(), moving, start, skip: !*duplicate })
     }
 
     /// Feed one pointer event to the current tool.

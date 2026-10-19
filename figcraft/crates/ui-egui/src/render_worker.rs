@@ -8,6 +8,7 @@
 //! took (a page of big photos: a second or more), so the web [`Stepper`] draws a few bands of the
 //! view per frame, inside a time budget, and hands the image over when the last band is done.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use figcraft_color::ColorProfile;
@@ -31,11 +32,34 @@ pub struct Job {
     pub proof: bool,
     /// A draft while a zoom is under way: leaves out grain, background blur and glass.
     pub draft: bool,
+    /// The open file (its `uid`) the job renders: the renderer keeps one image for each of
+    /// several files, so going back to a tab patches its image instead of drawing it again.
+    pub uid: u64,
+    /// Not what the window shows but what it may show next (a neighbouring tab): it runs when
+    /// nothing else waits and is not counted by [`Worker::in_flight`].
+    pub background: bool,
+    /// Draw it whole, forgetting the kept image (the canvas lost track of what it shows).
+    pub fresh: bool,
 }
 
+/// The areas of an image that changed, with their pixels.
+pub type Patches = Vec<([usize; 2], egui::ColorImage)>;
+
 pub struct Done {
-    /// The image, ready for a texture (converted off the UI thread).
+    /// The whole image, ready for a texture (converted off the UI thread); empty when
+    /// [`Done::patches`] is there instead.
     pub image: egui::ColorImage,
+    /// Only the areas that changed since the last [`Done`] of this file (`serial - 1`), at their
+    /// top-left corners: a drag changes a few hundred pixels of a screen of millions, and the
+    /// texture upload sends just those.
+    pub patches: Option<Patches>,
+    /// The image's size in pixels (whole or patched).
+    pub size: [usize; 2],
+    /// Which render of its file this is (counting from 1) and the one the patches are against.
+    pub serial: u64,
+    pub base: u64,
+    pub uid: u64,
+    pub background: bool,
     /// The view the image shows (the requested one snapped outwards to whole device pixels).
     pub view: View,
     pub ms: f64,
@@ -82,24 +106,158 @@ fn options(job: &Job) -> figcraft_render::Options {
     }
 }
 
-/// The finished render of `job` as a texture image.
-fn done(job: &Job, view: View, pix: &Pixmap, work: Work, ms: f64) -> Done {
+/// What the renderer keeps of one open file.
+struct Kept {
+    retained: Retained,
+    /// When it was last used (the set's clock).
+    used: u64,
+    /// Renders of the file so far.
+    serial: u64,
+}
+
+/// One kept image for each of the last few open files, under a byte budget: coming back to a tab
+/// finds its image and re-renders only what changed since.
+pub struct RetainedSet {
+    map: HashMap<u64, Kept>,
+    clock: u64,
+    budget: usize,
+}
+
+/// The bytes of kept images: a 4K window's render with its margin is some 75 MB.
+#[cfg(not(target_arch = "wasm32"))]
+pub const KEPT_BUDGET: usize = 384 << 20;
+#[cfg(target_arch = "wasm32")]
+pub const KEPT_BUDGET: usize = 96 << 20;
+
+impl Default for RetainedSet {
+    fn default() -> Self {
+        Self::new(KEPT_BUDGET)
+    }
+}
+
+impl RetainedSet {
+    pub fn new(budget: usize) -> Self {
+        Self { map: HashMap::new(), clock: 0, budget }
+    }
+
+    fn get(&mut self, uid: u64) -> &mut Kept {
+        self.clock += 1;
+        let clock = self.clock;
+        let k = self.map.entry(uid).or_insert_with(|| Kept { retained: Retained::default(), used: clock, serial: 0 });
+        k.used = clock;
+        k
+    }
+
+    /// Drop the least recently used images while over the budget (never `keep`'s).
+    fn trim(&mut self, keep: u64) {
+        loop {
+            let total: usize = self.map.values().map(|k| k.retained.bytes()).sum();
+            if total <= self.budget {
+                return;
+            }
+            let Some(oldest) = self.map.iter().filter(|(u, _)| **u != keep).min_by_key(|(_, k)| k.used).map(|(u, _)| *u) else { return };
+            self.map.remove(&oldest);
+        }
+    }
+
+    /// Forget the images of files that are not open any more.
+    pub fn retain(&mut self, open: impl Fn(u64) -> bool) {
+        self.map.retain(|u, _| open(*u));
+    }
+
+    /// Files with a kept image.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub fn bytes(&self) -> usize {
+        self.map.values().map(|k| k.retained.bytes()).sum()
+    }
+}
+
+/// A patch of more than this share of the image is sent as the whole image.
+const MAX_PATCH_SHARE: f64 = 0.5;
+
+/// The pixels of `pix` in `r` (`[x, y, w, h]`) as a texture image.
+fn crop_image(pix: &Pixmap, r: [u32; 4], profile: ColorProfile) -> Option<egui::ColorImage> {
+    let rect = figcraft_render::IntRect::from_xywh(i32::try_from(r[0]).ok()?, i32::try_from(r[1]).ok()?, r[2], r[3])?;
+    Some(screen_image(&pix.clone_rect(rect)?, profile))
+}
+
+/// The finished render of `job`, held in `kept`, as what the canvas needs to show it.
+fn done(job: &Job, kept: &mut Kept, view: View, work: Work, ms: f64) -> Option<Done> {
+    let pix = kept.retained.image()?;
+    let size = [pix.width() as usize, pix.height() as usize];
+    kept.serial += 1;
+    let (serial, base) = (kept.serial, kept.serial - 1);
+    let meta = |image, patches| Done {
+        image,
+        patches,
+        size,
+        serial,
+        base,
+        uid: job.uid,
+        view: view.clone(),
+        ms,
+        work,
+        doc: job.doc.clone(),
+        skip: job.skip.clone(),
+        background: job.background,
+    };
+    // The grey stripes of a soft proof run across the whole image: no patches for it.
+    if !job.proof
+        && let Some(rects) = kept.retained.dirty()
+    {
+        let area: u64 = rects.iter().map(|r| u64::from(r[2]) * u64::from(r[3])).sum();
+        if area as f64 <= MAX_PATCH_SHARE * (size[0] * size[1]) as f64 {
+            let patches: Option<Patches> =
+                rects.iter().map(|r| Some(([r[0] as usize, r[1] as usize], crop_image(pix, *r, job.doc.color_profile)?))).collect();
+            if let Some(p) = patches {
+                return Some(meta(egui::ColorImage::default(), Some(p)));
+            }
+        }
+    }
     let mut image = screen_image(pix, job.doc.color_profile);
     if job.proof {
         mark_outside_srgb(&mut image, pix, job.doc.color_profile);
     }
-    Done { image, view, ms, work, doc: job.doc.clone(), skip: job.skip.clone() }
+    Some(meta(image, None))
 }
 
-fn run(job: &Job, retained: &mut Retained) -> Option<Done> {
+impl Done {
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Fold a newer render of the same file into this one: a client that missed this one gets the
+    /// changes of both.
+    fn absorb(mut self, newer: Done) -> Done {
+        match (self.patches.take(), newer.patches) {
+            (Some(mut mine), Some(theirs)) if self.size == newer.size && self.serial == newer.base => {
+                mine.extend(theirs);
+                Done { patches: Some(mine), base: self.base, ..newer }
+            }
+            (_, patches) => Done { patches, ..newer },
+        }
+    }
+}
+
+fn run(job: &Job, set: &mut RetainedSet) -> Option<Done> {
     #[cfg(not(target_arch = "wasm32"))]
     let t0 = std::time::Instant::now();
-    let (view, pix, work) = retained.render(&job.doc, job.page, &job.view, &options(job))?;
+    let kept = set.get(job.uid);
+    if job.fresh {
+        kept.retained.clear();
+    }
+    let (view, _, work) = kept.retained.render(&job.doc, job.page, &job.view, &options(job))?;
     #[cfg(not(target_arch = "wasm32"))]
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     #[cfg(target_arch = "wasm32")]
     let ms = 0.0;
-    Some(done(job, view, pix, work, ms))
+    let d = done(job, kept, view, work, ms);
+    set.trim(job.uid);
+    d
 }
 
 /// Time a frame may spend rendering in the browser (ms): what is left of a 60 Hz frame after the
@@ -119,7 +277,7 @@ struct Running {
 /// half-finished render leaves nothing for the next to patch, and the next would start over.
 /// Newer jobs wait (the newest only), and run when the one under way is done.
 pub struct Stepper {
-    retained: Retained,
+    set: RetainedSet,
     pending: Option<Job>,
     running: Option<Running>,
     /// Rows a piece of the next render covers (sized from how long rows took).
@@ -137,16 +295,20 @@ impl Default for Stepper {
 
 impl Stepper {
     pub fn new(budget_ms: f64) -> Self {
-        Self { retained: Retained::default(), pending: None, running: None, rows: 48, budget_ms, submitted: 0 }
+        Self { set: RetainedSet::default(), pending: None, running: None, rows: 48, budget_ms, submitted: 0 }
     }
 
     pub fn submit(&mut self, job: Job) {
+        // What the window shows comes before what it may show next.
+        if job.background && self.pending.as_ref().is_some_and(|p| !p.background) {
+            return;
+        }
         self.pending = Some(job);
         self.submitted += 1;
     }
 
     pub fn in_flight(&self) -> bool {
-        self.pending.is_some() || self.running.is_some()
+        self.pending.as_ref().is_some_and(|j| !j.background) || self.running.as_ref().is_some_and(|r| !r.job.background)
     }
 
     /// Rows a piece of the next render covers.
@@ -154,12 +316,21 @@ impl Stepper {
         self.rows
     }
 
+    /// The kept images.
+    pub fn kept(&self) -> &RetainedSet {
+        &self.set
+    }
+
     /// Run pieces of the render under way (starting the newest job when none is) for about the
     /// budget, `clock` giving milliseconds. The image when its last piece has run.
     pub fn poll(&mut self, clock: &mut dyn FnMut() -> f64) -> Option<Done> {
         if self.running.is_none() {
             let job = self.pending.take()?;
-            let sliced = self.retained.begin(&job.doc, job.page, &job.view, &options(&job), self.rows)?;
+            let kept = self.set.get(job.uid);
+            if job.fresh {
+                kept.retained.clear();
+            }
+            let sliced = kept.retained.begin(&job.doc, job.page, &job.view, &options(&job), self.rows)?;
             self.running = Some(Running { job, sliced, ms: 0.0 });
         }
         let run = self.running.as_mut()?;
@@ -179,44 +350,89 @@ impl Stepper {
                 .clamp(f64::from(figcraft_render::retained::MIN_ROWS), f64::from(figcraft_render::retained::MAX_ROWS));
             self.rows = (f64::from(self.rows) * 0.5 + fit * 0.5) as u32;
         }
-        let (view, pix, work) = self.retained.finish(sliced)?;
-        Some(done(&job, view, pix, work, ms))
+        let kept = self.set.get(job.uid);
+        let (view, _, work) = kept.retained.finish(sliced)?;
+        let d = done(&job, kept, view, work, ms);
+        self.set.trim(job.uid);
+        d
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+enum Msg {
+    Show(u64, Job),
+    Next(Job),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub struct Worker {
-    tx: std::sync::mpsc::Sender<(u64, Job)>,
+    tx: std::sync::mpsc::Sender<Msg>,
     rx: std::sync::mpsc::Receiver<Done>,
-    /// Jobs submitted so far.
+    /// Jobs for the window's own file submitted so far.
     submitted: u64,
-    /// The newest job the thread is done with: rendered (or skipped for a newer one) and the UI
-    /// woken for it.
+    /// The newest of them the thread is done with: rendered (or skipped for a newer one) and the
+    /// UI woken for it.
     finished: Arc<std::sync::atomic::AtomicU64>,
+    /// Background jobs sent and finished (or dropped).
+    next_sent: u64,
+    next_done: Arc<std::sync::atomic::AtomicU64>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Worker {
     pub fn new(ctx: egui::Context) -> Self {
-        let (tx, jobs) = std::sync::mpsc::channel::<(u64, Job)>();
+        use std::sync::atomic::Ordering;
+        let (tx, jobs) = std::sync::mpsc::channel::<Msg>();
         let (done_tx, rx) = std::sync::mpsc::channel::<Done>();
         let finished = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let done_with = finished.clone();
+        let next_done = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let next_with = next_done.clone();
         // The window that renders with it (each window has its own worker).
         let viewport = ctx.viewport_id();
         let spawned = std::thread::Builder::new().name("figcraft-render".into()).spawn(move || {
-            let mut retained = Retained::default();
-            while let Ok((mut seq, mut job)) = jobs.recv() {
-                // Skip to the newest queued job.
-                while let Ok(newer) = jobs.try_recv() {
-                    (seq, job) = newer;
+            let mut set = RetainedSet::default();
+            // Background jobs wait here, the newest for each file.
+            let mut later: Vec<Job> = Vec::new();
+            let mut skipped_later = 0u64;
+            'jobs: loop {
+                let mut show: Option<(u64, Job)> = None;
+                let mut take = |m: Msg, show: &mut Option<(u64, Job)>, later: &mut Vec<Job>| match m {
+                    Msg::Show(seq, job) => *show = Some((seq, job)),
+                    Msg::Next(job) => {
+                        if let Some(at) = later.iter().position(|j| j.uid == job.uid) {
+                            later.remove(at);
+                            skipped_later += 1;
+                        }
+                        later.push(job);
+                    }
+                };
+                // Wait for work (not while background jobs are waiting), then take everything queued.
+                if later.is_empty() {
+                    match jobs.recv() {
+                        Ok(m) => take(m, &mut show, &mut later),
+                        Err(_) => break 'jobs,
+                    }
                 }
-                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&job, &mut retained)));
+                while let Ok(m) = jobs.try_recv() {
+                    take(m, &mut show, &mut later);
+                }
+                if skipped_later > 0 {
+                    next_with.fetch_add(skipped_later, Ordering::AcqRel);
+                    skipped_later = 0;
+                }
+                // The window's own file first (skipping to the newest request), else a background job.
+                let (seq, job) = match show {
+                    Some(x) => x,
+                    None if !later.is_empty() => (0, later.remove(0)),
+                    None => continue,
+                };
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&job, &mut set)));
                 let done = match res {
                     Ok(d) => d,
                     Err(_) => {
                         // Don't build on an image a panic may have left half drawn.
-                        retained.clear();
+                        set.get(job.uid).retained.clear();
                         None
                     }
                 };
@@ -226,25 +442,38 @@ impl Worker {
                     break;
                 }
                 ctx.request_repaint_of(viewport);
-                done_with.store(seq, std::sync::atomic::Ordering::Release);
+                if job.background {
+                    next_with.fetch_add(1, Ordering::AcqRel);
+                } else {
+                    done_with.store(seq, Ordering::Release);
+                }
             }
         });
         if let Err(e) = spawned {
             log::error!("render thread: {e}");
         }
-        Self { tx, rx, submitted: 0, finished }
+        Self { tx, rx, submitted: 0, finished, next_sent: 0, next_done }
     }
 
     pub fn submit(&mut self, job: Job) {
-        if self.tx.send((self.submitted + 1, job)).is_ok() {
+        if job.background {
+            if self.tx.send(Msg::Next(job)).is_ok() {
+                self.next_sent += 1;
+            }
+        } else if self.tx.send(Msg::Show(self.submitted + 1, job)).is_ok() {
             self.submitted += 1;
         }
     }
 
     /// Whether a submitted job is still rendering or hasn't woken the UI yet (a finished image
-    /// may still wait for [`Self::poll`]).
+    /// may still wait for [`Self::poll`]). Background jobs don't count.
     pub fn in_flight(&self) -> bool {
         self.finished.load(std::sync::atomic::Ordering::Acquire) < self.submitted
+    }
+
+    /// Whether a background job is still waiting or rendering.
+    pub fn background_busy(&self) -> bool {
+        self.next_done.load(std::sync::atomic::Ordering::Acquire) < self.next_sent
     }
 
     /// Jobs submitted so far (tests count the renders a gesture asks for).
@@ -252,12 +481,24 @@ impl Worker {
         self.submitted
     }
 
-    pub fn poll(&mut self) -> Option<Done> {
-        let mut last = None;
+    /// The finished renders, one for each file (renders of a file that were not collected one by
+    /// one are folded into one).
+    pub fn poll_all(&mut self) -> Vec<Done> {
+        let mut out: Vec<Done> = Vec::new();
         while let Ok(d) = self.rx.try_recv() {
-            last = Some(d);
+            match out.iter().position(|o| o.uid == d.uid && o.background == d.background) {
+                Some(i) => {
+                    let older = out.remove(i);
+                    out.insert(i, older.absorb(d));
+                }
+                None => out.push(d),
+            }
         }
-        last
+        out
+    }
+
+    pub fn poll(&mut self) -> Option<Done> {
+        self.poll_all().pop()
     }
 }
 
@@ -281,21 +522,27 @@ impl Worker {
     pub fn in_flight(&self) -> bool {
         self.stepper.in_flight()
     }
+    pub fn background_busy(&self) -> bool {
+        self.stepper.pending.as_ref().is_some_and(|j| j.background) || self.stepper.running.as_ref().is_some_and(|r| r.job.background)
+    }
     pub fn submitted(&self) -> u64 {
         self.stepper.submitted
     }
-    pub fn poll(&mut self) -> Option<Done> {
+    pub fn poll_all(&mut self) -> Vec<Done> {
         let start = self.start;
         let done = self.stepper.poll(&mut || start.elapsed().as_secs_f64() * 1000.0);
         if done.is_none() && self.stepper.in_flight() {
             // More pieces to run: the next frame runs them.
             self.ctx.request_repaint();
         }
-        done
+        done.into_iter().collect()
+    }
+    pub fn poll(&mut self) -> Option<Done> {
+        self.poll_all().pop()
     }
 }
 
 /// Render synchronously from scratch (tests, screenshots).
 pub fn render_now(job: &Job) -> Option<Done> {
-    run(job, &mut Retained::default())
+    run(job, &mut RetainedSet::default())
 }

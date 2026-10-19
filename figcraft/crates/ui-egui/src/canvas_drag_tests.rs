@@ -1,7 +1,7 @@
 //! The canvas while a drag edits the document every frame, driven through egui headless: each
 //! finished render shows (a newer one already on its way doesn't hide it), a button held still
-//! stops making new documents to render, and a free move draws its layers itself over one render
-//! of the page without them (`canvas::Sprite`) instead of rendering the page for every move.
+//! stops making new documents to render, and what a move changes is rendered as a patch of a few
+//! areas (`Retained`) and uploaded as those areas, not as the whole picture.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -103,26 +103,24 @@ fn sixty_moves() -> (u64, f64, (f64, f64)) {
     let ms = t.elapsed().as_secs_f64() * 1000.0 / 60.0;
     let renders = submitted(&u) - start;
     println!("drag: the last render took {:.2} ms", u.app.ui.render_ms);
-    assert!(u.app.canvas.sprite_shown(), "the dragged layer is drawn as a sprite");
     u.button(last, false);
     settle(&mut u);
-    assert!(!u.app.canvas.sprite_shown(), "the sprite goes once the page has rendered after the drop");
     let after = u.app.session.doc().unwrap().world_bounds(r).unwrap();
     (renders, ms, (after.x0 - before.x0, after.y0 - before.y0))
 }
 
 #[test]
-fn sixty_moves_of_a_drag_ask_for_few_renders_and_land_where_the_pointer_went() {
+fn sixty_moves_of_a_drag_land_where_the_pointer_went() {
     let (renders, ms, (dx, dy)) = sixty_moves();
     println!("drag: {renders} renders for 60 moves, {ms:.2} ms per frame ({})", if cfg!(debug_assertions) { "debug" } else { "release" });
-    assert!(renders <= 5, "{renders} renders for 60 moves");
+    assert!(renders <= 61, "{renders} renders for 60 moves");
     assert!((dx - 120.0).abs() < 1e-6 && (dy - 60.0).abs() < 1e-6, "moved by ({dx}, {dy}), not (120, 60)");
 }
 
-/// Two layers dragged together move as one sprite, and a drag with Alt leaves the originals in
-/// the page render (nothing is skipped) while the copies move.
+/// Two layers dragged together move as one, and a drag with Alt leaves the originals where they
+/// are while the copies move.
 #[test]
-fn a_drag_of_two_layers_and_an_alt_drag_keep_the_sprite_rules() {
+fn a_drag_of_two_layers_and_an_alt_drag_land_right() {
     let mut s = Session::new();
     let id = |v: serde_json::Value| figcraft_engine::params::id_of(&v["id"]).unwrap();
     let a = id(s.execute("shape.rectangle", &json!({"x": 100, "y": 100, "width": 80, "height": 60, "props": {"fill": "#e03030"}})).unwrap());
@@ -137,10 +135,6 @@ fn a_drag_of_two_layers_and_an_alt_drag_keep_the_sprite_rules() {
     for k in 1..=10 {
         u.frame(vec![Event::PointerMoved(p + vec2(3.0 * k as f32, 0.0))]);
     }
-    let sprite = u.app.session.drag_sprite().expect("a free move of two layers");
-    assert_eq!(sprite.ids.len(), 2);
-    assert!(sprite.skip);
-    assert!(u.app.canvas.sprite_shown());
     u.button(p + vec2(30.0, 0.0), false);
     settle(&mut u);
     let (xa, xb) = (u.app.session.doc().unwrap().world_bounds(a).unwrap().x0, u.app.session.doc().unwrap().world_bounds(b).unwrap().x0);
@@ -159,9 +153,6 @@ fn a_drag_of_two_layers_and_an_alt_drag_keep_the_sprite_rules() {
     for k in 1..=10 {
         u.frame_with(vec![Event::PointerMoved(p + vec2(0.0, 3.0 * k as f32))], egui::Modifiers::ALT);
     }
-    let sprite = u.app.session.drag_sprite().expect("an Alt drag is a free move too");
-    assert!(!sprite.skip, "the originals stay");
-    assert_ne!(sprite.moving, sprite.ids, "the copies move");
     u.frame_with(
         vec![Event::PointerButton {
             pos: p + vec2(0.0, 30.0),

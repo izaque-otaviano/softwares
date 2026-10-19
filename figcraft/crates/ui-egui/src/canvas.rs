@@ -1,5 +1,6 @@
 //! The canvas: the rendered page plus selection, hover, guides, labels and text-editing overlays.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -40,11 +41,72 @@ pub struct CanvasState {
     /// The pen pressure last reported during the current press (pen and stylus touches; the
     /// winit backends and browsers that report it).
     pressure: Option<f32>,
-    /// The layers a drag moves, drawn by the canvas itself (see [`Sprite`]).
-    sprite: Option<Sprite>,
-    /// The document the texture shows, and whether layers were left out of it.
-    tex_doc: Option<(Arc<Document>, bool)>,
+    /// The document the texture shows.
+    tex_doc: Option<Arc<Document>>,
+    /// The open file (its `uid`) the texture shows, and which render of it that is (what the
+    /// next patch must be against).
+    tex_uid: Option<u64>,
+    tex_serial: u64,
+    /// What the other open files showed when they were left, so going back to a tab shows its
+    /// picture at once while a fresh render refines it.
+    shots: HashMap<u64, Shot>,
+    shot_clock: u64,
+    /// The tab the pointer is over: the next to be rendered ahead.
+    pub warm_hint: Option<u64>,
+    /// When the canvas last asked for a render (egui time): background renders wait for quiet.
+    last_job: f64,
+    /// The canvas lost track of what the renderer holds: the next render is whole.
+    fresh: bool,
+    /// What renders ahead of other tabs have been asked: the file, its document and the view.
+    warmed: HashMap<u64, (usize, figcraft_render::View)>,
+    /// Renders shown so far (tests count the pictures a gesture got on screen).
+    pub renders_shown: u64,
+    /// Texture bytes uploaded so far (tests compare a drag's uploads with the image's size).
+    pub uploaded_bytes: u64,
 }
+
+/// A tab's last picture: the texture, the view it was rendered for and what it was rendered from.
+struct Shot {
+    texture: egui::TextureHandle,
+    view: figcraft_render::View,
+    doc: Arc<Document>,
+    serial: u64,
+    used: u64,
+}
+
+impl Shot {
+    fn bytes(&self) -> usize {
+        let [w, h] = self.texture.size();
+        w * h * 4
+    }
+}
+
+/// Tests turn the tab handling off to measure what it replaced: one picture and one retained
+/// render for the window, whichever file it shows.
+#[cfg(test)]
+pub(crate) static LEGACY_TABS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn legacy_tabs() -> bool {
+    #[cfg(test)]
+    {
+        LEGACY_TABS.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
+
+/// The most texture bytes the other tabs' pictures may take, and how many tabs.
+#[cfg(not(target_arch = "wasm32"))]
+const SHOTS_BUDGET: usize = 256 << 20;
+#[cfg(target_arch = "wasm32")]
+const SHOTS_BUDGET: usize = 48 << 20;
+const SHOTS_MAX: usize = 8;
+/// How long the canvas is quiet before a neighbouring tab renders ahead (seconds); a tab under
+/// the pointer renders sooner.
+const WARM_AFTER: f64 = 0.35;
+const WARM_HOVER_AFTER: f64 = 0.05;
 
 impl Default for CanvasState {
     fn default() -> Self {
@@ -65,135 +127,44 @@ impl Default for CanvasState {
             hovering: false,
             preedit: None,
             pressure: None,
-            sprite: None,
             tex_doc: None,
+            tex_uid: None,
+            tex_serial: 0,
+            shots: HashMap::new(),
+            shot_clock: 0,
+            warm_hint: None,
+            last_job: 0.0,
+            fresh: false,
+            warmed: HashMap::new(),
+            renders_shown: 0,
+            uploaded_bytes: 0,
         }
     }
 }
 
 impl CanvasState {
-    /// Whether a drag's layers are being drawn by the canvas itself, and the page under them
-    /// comes from a render that leaves them out ([`Sprite`]).
-    pub fn sprite_shown(&self) -> bool {
-        self.sprite.is_some()
+    /// The textures the canvas draws the page with (tests rasterise just those, without the
+    /// selection and other overlays).
+    #[cfg(test)]
+    pub(crate) fn content_textures(&self) -> Vec<egui::TextureId> {
+        self.texture.iter().map(|t| t.id()).collect()
     }
-}
 
-/// The layers a free drag moves ([`figcraft_engine::tools::DragSprite`]), rendered once where
-/// they were when the drag began and drawn displaced to where they are now on every frame, over
-/// a render of the page without them. So a drag never waits for a render: the page stays as it
-/// is and the layers follow the pointer at once. The sprite stays after the drop until a render
-/// of the document as it now is has landed, so the layers never vanish in between.
-struct Sprite {
-    /// What it was rendered from: the document the gesture began on, the layers, the scale.
-    start: Arc<Document>,
-    ids: Vec<NodeId>,
-    scale: f64,
-    texture: egui::TextureHandle,
-    /// The page area the image covers, in `start`.
-    area: figcraft_geom::Rect,
-    /// Where the layers were: the top-left of their bounds in `start`.
-    from: Point,
-    /// The layers that move in the current document.
-    moving: Vec<NodeId>,
-    /// Whether the page render leaves `ids` out.
-    skip: bool,
-    /// Still being dragged (false: waiting for the render of the page as it is now).
-    live: bool,
-}
-
-/// The most device pixels a side a sprite is rendered at: beyond it the layers are clipped to
-/// the viewport and what surrounds it (a layer bigger than that is rare, and the UI thread
-/// renders the sprite).
-const SPRITE_MAX_PX: f64 = 3072.0;
-
-/// A finished drag's sprite goes once the canvas shows the document as it now is, with nothing
-/// left out: the dropped layers are in the page again.
-fn drop_landed_sprite(app: &mut FigApp) {
-    if app.canvas.sprite.as_ref().is_none_or(|s| s.live) {
-        return;
+    /// Whether the texture shows `doc` (the latest render is of it).
+    #[cfg(test)]
+    pub(crate) fn tex_doc_is(&self, doc: &Arc<Document>) -> bool {
+        self.tex_doc.as_ref().is_some_and(|d| Arc::ptr_eq(d, doc))
     }
-    let landed = app.canvas.tex_doc.as_ref().is_some_and(|(d, skipped)| !skipped && app.session.ds().is_ok_and(|ds| Arc::ptr_eq(d, &ds.doc)));
-    if landed {
-        app.canvas.sprite = None;
-    }
-}
 
-/// Build or refresh the drag sprite for the free move under way, drop a stale one, and mark a
-/// finished drag's sprite as waiting for the page to catch up.
-fn sync_sprite(app: &mut FigApp, ctx: &egui::Context) {
-    let Some(drag) = app.session.drag_sprite() else {
-        if let Some(s) = &mut app.canvas.sprite {
-            s.live = false;
-        }
-        drop_landed_sprite(app);
-        return;
-    };
-    let Ok(ds) = app.session.ds() else { return };
-    // Pixel preview renders the page at its own scale: no sprite there.
-    if ds.view.pixel_preview_scale().is_some() {
-        if let Some(s) = &mut app.canvas.sprite {
-            s.live = false;
-        }
-        return;
+    /// The size of the picture the canvas holds, in pixels.
+    pub fn picture_size(&self) -> [usize; 2] {
+        self.texture.as_ref().map_or([0, 0], |t| t.size())
     }
-    let scale = ds.view.zoom * f64::from(ctx.pixels_per_point());
-    if let Some(s) = &mut app.canvas.sprite
-        && Arc::ptr_eq(&s.start, &drag.start)
-        && s.ids == drag.ids
-        && (s.scale - scale).abs() <= scale * 1e-9
-    {
-        s.live = true;
-        s.moving = drag.moving;
-        return;
-    }
-    app.canvas.sprite = build_sprite(app, ctx, &drag, scale);
-}
 
-/// Render the drag's layers as they were, into a texture ([`Sprite`]); `None` when they have no
-/// bounds or the render fails.
-fn build_sprite(app: &FigApp, ctx: &egui::Context, drag: &figcraft_engine::tools::DragSprite, scale: f64) -> Option<Sprite> {
-    let doc = &drag.start;
-    // In z-order, as the page draws them.
-    let ids = figcraft_engine::cmd::edit::z_sorted(doc, &drag.ids);
-    let from = doc.bounds_of(&ids)?;
-    let mut area = ids.iter().filter_map(|i| figcraft_render::raster_bounds(doc, *i)).reduce(|a, b| a.union(b))?;
-    // Clipped to the viewport and a viewport around it, within the pixel cap.
-    let r = app.canvas.rect;
-    let (a, b) = (app.to_page(r.min - r.size()), app.to_page(r.max + r.size()));
-    area = area.intersect(figcraft_geom::Rect::new(a.x, a.y, b.x, b.y));
-    let cap = SPRITE_MAX_PX / scale.max(1e-9);
-    area = figcraft_geom::Rect::new(area.x0, area.y0, area.x1.min(area.x0 + cap), area.y1.min(area.y0 + cap));
-    if !(area.width() > 0.0 && area.height() > 0.0 && area.x0.is_finite() && area.y0.is_finite()) {
-        return None;
+    /// Open files whose last picture the canvas keeps (the one it shows not counted).
+    pub fn kept_shots(&self) -> Vec<u64> {
+        self.shots.keys().copied().collect()
     }
-    let pix = figcraft_render::render_area(doc, &ids, area, scale)?;
-    let image = crate::render_worker::screen_image(&pix, doc.color_profile);
-    let texture = ctx.load_texture("figcraft-drag-sprite", image, egui::TextureOptions::LINEAR);
-    Some(Sprite {
-        start: drag.start.clone(),
-        ids: drag.ids.clone(),
-        scale,
-        texture,
-        area,
-        from: Point::new(from.x0, from.y0),
-        moving: drag.moving.clone(),
-        skip: drag.skip,
-        live: true,
-    })
-}
-
-/// Draw the drag sprite where its layers are now.
-fn draw_sprite(app: &FigApp, painter: &egui::Painter) {
-    let Some(s) = &app.canvas.sprite else { return };
-    let Ok(ds) = app.session.ds() else { return };
-    let Some(now) = ds.doc.bounds_of(&s.moving) else { return };
-    let d = Point::new(now.x0, now.y0) - s.from;
-    let tl = app.to_screen(s.area.x0 + d.x, s.area.y0 + d.y);
-    let zoom = ds.view.zoom;
-    let [w, h] = s.texture.size();
-    let size = vec2((w as f64 / s.scale * zoom) as f32, (h as f64 / s.scale * zoom) as f32);
-    painter.image(s.texture.id(), Rect::from_min_size(tl, size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
 }
 
 /// What the canvas shows while an IME composition is in progress: the document with the
@@ -309,27 +280,14 @@ pub fn show(app: &mut FigApp, ui: &mut Ui, worker: &mut Worker) {
     let own_cursor = input(app, ui, &resp);
     crate::live::track_pointer(app, &ctx);
     app.sync_preedit();
-    sync_sprite(app, &ctx);
+    sync_tab(app);
     request_render(app, worker, &ctx);
     // Every finished render is shown, even when a newer one is already on its way: renders finish
     // in order, and an edit every frame (a drag) would otherwise never show until it stopped.
-    if let Some(done) = worker.poll() {
-        app.canvas.tex_doc = Some((done.doc, !done.skip.is_empty()));
-        drop_landed_sprite(app);
-        // A pixel preview render is magnified with hard pixel edges.
-        let filter = if app.session.ds().ok().and_then(|d| d.view.pixel_preview_scale()) == Some(done.view.scale) {
-            egui::TextureOptions::NEAREST
-        } else {
-            egui::TextureOptions::LINEAR
-        };
-        match &mut app.canvas.texture {
-            Some(t) => t.set(done.image, filter),
-            None => app.canvas.texture = Some(ctx.load_texture("figcraft-canvas", done.image, filter)),
-        }
-        app.canvas.tex_view = Some(done.view);
-        app.canvas.render_work = Some(done.work);
-        app.ui.render_ms = done.ms;
+    for done in worker.poll_all() {
+        apply_done(app, &ctx, done);
     }
+    prewarm(app, worker, &ctx);
     let painter = ui.painter_at(rect);
     let t = Tokens::get(&ctx);
     // Page background (also behind a stale/partial texture).
@@ -344,14 +302,16 @@ pub fn show(app: &mut FigApp, ui: &mut Ui, worker: &mut Worker) {
         .unwrap_or(t.canvas);
     painter.rect_filled(rect, CornerRadius::ZERO, bg);
     if let (Some(tex), Some(v)) = (&app.canvas.texture, &app.canvas.tex_view) {
-        // Re-project the last render onto the current view.
+        // Re-project the last render onto the current view, on whole device pixels: a render
+        // drawn half a pixel off is resampled, and the whole page goes soft.
+        let ppp = ctx.pixels_per_point();
         let tl = app.to_screen(v.origin.0, v.origin.1);
+        let tl = pos2((tl.x * ppp).round() / ppp, (tl.y * ppp).round() / ppp);
         let zoom = app.session.ds().map(|d| d.view.zoom).unwrap_or(1.0);
         let w = (f64::from(v.width) / v.scale * zoom) as f32;
         let h = (f64::from(v.height) / v.scale * zoom) as f32;
         painter.image(tex.id(), Rect::from_min_size(tl, vec2(w, h)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
-    draw_sprite(app, &painter);
     app.session.tool.labels = overlays(app, &painter, &t);
     // The zoom tool's area.
     if let (Some(start), Some(p)) = (app.canvas.zoom_drag, ctx.input(|i| i.pointer.hover_pos())) {
@@ -494,16 +454,8 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
     let cap = render_cap(ctx.input(|i| i.max_texture_side));
     let wanted = figcraft_render::View { origin: (ox, oy), scale, width: w.min(cap), height: h.min(cap) };
     // The edited text is drawn live (an IME composition included); the caret is an overlay.
-    let mut doc = app.preedit_view().map(|p| p.doc.clone()).unwrap_or_else(|| ds.doc.clone());
-    // A drag draws its layers itself ([`Sprite`]): the page is rendered as it was when the drag
-    // began, without them, once; not again for every pointer move.
-    let mut skip = vec![];
-    if let Some(s) = app.canvas.sprite.as_ref().filter(|s| s.live) {
-        doc = s.start.clone();
-        if s.skip {
-            skip = s.ids.clone();
-        }
-    }
+    let doc = app.preedit_view().map(|p| p.doc.clone()).unwrap_or_else(|| ds.doc.clone());
+    let skip: Vec<NodeId> = vec![];
     let outlined = if ds.view.outlines_selection { ds.selection.clone() } else { vec![] };
     let proof = ds.view.proof_srgb && !doc.color_profile.is_srgb();
     let outline_extras = figcraft_render::Outline { hidden: ds.view.outline_hidden, bounds: ds.view.outline_bounds, light: false };
@@ -551,9 +503,247 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
         solo: key.solo,
         proof,
         draft: zooming,
+        uid: if legacy_tabs() { 0 } else { ds.uid },
+        background: false,
+        fresh: std::mem::take(&mut app.canvas.fresh),
     };
     worker.submit(job);
+    app.canvas.last_job = now;
     app.canvas.submitted = Some((key, view));
+}
+
+impl JobKey {
+    /// A key no render has: the canvas holds a tab's picture it hasn't asked to render yet.
+    fn none() -> Self {
+        Self {
+            doc: 0,
+            page: NodeId(0),
+            outline: false,
+            outline_extras: figcraft_render::Outline::default(),
+            outlined: vec![],
+            skip: vec![],
+            solo: None,
+            fonts: 0,
+            proof: false,
+            draft: false,
+        }
+    }
+}
+
+/// The texture options for a render at `scale`: a pixel preview is magnified with hard pixel edges.
+fn filter_for(app: &FigApp, scale: f64) -> egui::TextureOptions {
+    if app.session.ds().ok().and_then(|d| d.view.pixel_preview_scale()) == Some(scale) {
+        egui::TextureOptions::NEAREST
+    } else {
+        egui::TextureOptions::LINEAR
+    }
+}
+
+/// Another file became the active one: its last picture (kept when it was left) is on screen again
+/// at once, a fresh render only refines it; the one left is kept the same way.
+fn sync_tab(app: &mut FigApp) {
+    let Ok(uid) = app.session.ds().map(|d| d.uid) else { return };
+    if app.canvas.tex_uid == Some(uid) {
+        return;
+    }
+    if legacy_tabs() {
+        app.canvas.tex_uid = Some(uid);
+        return;
+    }
+    let open: Vec<u64> = app.session.docs.iter().map(|d| d.uid).collect();
+    let c = &mut app.canvas;
+    c.shots.retain(|u, _| open.contains(u));
+    c.warmed.retain(|u, _| open.contains(u));
+    if let (Some(old), Some(texture), Some(view), Some(doc)) = (c.tex_uid, c.texture.take(), c.tex_view.take(), c.tex_doc.take())
+        && open.contains(&old)
+    {
+        c.shot_clock += 1;
+        c.shots.insert(old, Shot { texture, view, doc, serial: c.tex_serial, used: c.shot_clock });
+    }
+    c.texture = None;
+    c.tex_view = None;
+    c.tex_doc = None;
+    c.tex_serial = 0;
+    c.submitted = None;
+    c.fresh = false;
+    c.tex_uid = Some(uid);
+    if let Some(shot) = c.shots.remove(&uid) {
+        // The next render is planned around the view this picture has.
+        c.submitted = Some((JobKey::none(), shot.view.clone()));
+        c.texture = Some(shot.texture);
+        c.tex_view = Some(shot.view);
+        c.tex_doc = Some(shot.doc);
+        c.tex_serial = shot.serial;
+    }
+    trim_shots(c);
+}
+
+/// Drop the oldest pictures of other tabs while there are too many or they take too much.
+fn trim_shots(c: &mut CanvasState) {
+    while c.shots.len() > SHOTS_MAX || c.shots.values().map(Shot::bytes).sum::<usize>() > SHOTS_BUDGET {
+        let Some(oldest) = c.shots.iter().min_by_key(|(_, s)| s.used).map(|(u, _)| *u) else { return };
+        c.shots.remove(&oldest);
+        c.warmed.remove(&oldest);
+    }
+}
+
+/// Show a finished render: the whole image, or just the areas that changed since the last one.
+fn apply_done(app: &mut FigApp, ctx: &egui::Context, done: crate::render_worker::Done) {
+    let current = if legacy_tabs() { Some(0) } else { app.session.ds().ok().map(|d| d.uid) };
+    let filter = if current == Some(done.uid) { filter_for(app, done.view.scale) } else { egui::TextureOptions::LINEAR };
+    let c = &mut app.canvas;
+    if current != Some(done.uid) {
+        // A tab the window isn't showing (it was left while rendering, or rendered ahead).
+        let now_bytes = match done.patches {
+            Some(patches) => {
+                let Some(shot) = c.shots.get_mut(&done.uid).filter(|s| s.serial == done.base && s.texture.size() == done.size) else {
+                    c.shots.remove(&done.uid);
+                    c.warmed.remove(&done.uid);
+                    return;
+                };
+                let mut bytes = 0;
+                for (pos, img) in patches {
+                    bytes += img.pixels.len() * 4;
+                    shot.texture.set_partial(pos, img, filter);
+                }
+                shot.serial = done.serial;
+                shot.view = done.view;
+                shot.doc = done.doc;
+                bytes
+            }
+            None => {
+                let bytes = done.image.pixels.len() * 4;
+                c.shot_clock += 1;
+                match c.shots.get_mut(&done.uid) {
+                    Some(shot) => {
+                        shot.texture.set(done.image, filter);
+                        shot.serial = done.serial;
+                        shot.view = done.view;
+                        shot.doc = done.doc;
+                    }
+                    None => {
+                        let texture = ctx.load_texture(format!("figcraft-tab-{}", done.uid), done.image, filter);
+                        c.shots.insert(done.uid, Shot { texture, view: done.view, doc: done.doc, serial: done.serial, used: c.shot_clock });
+                    }
+                }
+                bytes
+            }
+        };
+        c.uploaded_bytes += now_bytes as u64;
+        trim_shots(c);
+        return;
+    }
+    match done.patches {
+        Some(patches) => {
+            let fits = c.tex_serial == done.base && c.texture.as_ref().is_some_and(|t| t.size() == done.size);
+            let Some(t) = c.texture.as_mut().filter(|_| fits) else {
+                // The picture shown isn't the one these changes are against: render it whole.
+                c.fresh = true;
+                c.submitted = None;
+                ctx.request_repaint();
+                return;
+            };
+            for (pos, img) in patches {
+                c.uploaded_bytes += img.pixels.len() as u64 * 4;
+                t.set_partial(pos, img, filter);
+            }
+        }
+        None => {
+            c.uploaded_bytes += done.image.pixels.len() as u64 * 4;
+            match &mut c.texture {
+                Some(t) => t.set(done.image, filter),
+                None => c.texture = Some(ctx.load_texture("figcraft-canvas", done.image, filter)),
+            }
+        }
+    }
+    c.tex_serial = done.serial;
+    c.tex_doc = Some(done.doc);
+    c.tex_view = Some(done.view);
+    c.renders_shown += 1;
+    c.render_work = Some(done.work);
+    app.ui.render_ms = done.ms;
+}
+
+/// When the canvas has been quiet a moment, render the tab the pointer is over (or the ones
+/// beside the active one) in the background, so switching to it shows its picture at once.
+/// Not in the browser, which has one thread: there the window's own render comes first.
+fn prewarm(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
+    let hint = app.canvas.warm_hint.take();
+    if cfg!(target_arch = "wasm32") || legacy_tabs() {
+        return;
+    }
+    let now = ctx.input(|i| i.time);
+    let Ok(active) = app.session.ds().map(|d| d.uid) else { return };
+    let wait = if hint.is_some() { WARM_HOVER_AFTER } else { WARM_AFTER };
+    let quiet = now - app.canvas.last_job;
+    let rect = app.canvas.rect;
+    let ppp = ctx.pixels_per_point();
+    let cap = render_cap(ctx.input(|i| i.max_texture_side));
+    // The file under the pointer, then the ones either side of the active one.
+    let at = app.session.active;
+    let mut order: Vec<u64> = hint.into_iter().collect();
+    for i in [at + 1, at.wrapping_sub(1)] {
+        if let Some(d) = app.session.docs.get(i) {
+            order.push(d.uid);
+        }
+    }
+    for uid in order {
+        if uid == active || !app.shows(uid) {
+            continue;
+        }
+        // A file never shown has no view of its own yet: the one it will open with.
+        if let Some(ds) = app.session.docs.iter_mut().find(|d| d.uid == uid)
+            && ((ds.view.vw - f64::from(rect.width())).abs() > 0.5 || (ds.view.vh - f64::from(rect.height())).abs() > 0.5)
+        {
+            let first = ds.view.vw == 1200.0 && ds.view.vh == 800.0;
+            ds.view.vw = f64::from(rect.width());
+            ds.view.vh = f64::from(rect.height());
+            ds.view.pixels_per_point = f64::from(ppp);
+            if first {
+                ds.zoom_to_fit();
+            }
+        }
+        let Some(ds) = app.session.docs.iter().find(|d| d.uid == uid) else { continue };
+        if ds.view.pixel_preview_scale().is_some() {
+            continue;
+        }
+        let (ox, oy) = ds.view.origin();
+        let wanted = figcraft_render::View {
+            origin: (ox, oy),
+            scale: ds.view.zoom * f64::from(ppp),
+            width: ((rect.width() * ppp).ceil().max(1.0) as u32).min(cap),
+            height: ((rect.height() * ppp).ceil().max(1.0) as u32).min(cap),
+        };
+        let view = plan_view(&wanted, app.canvas.shots.get(&uid).map(|s| &s.view), cap);
+        let doc_ptr = Arc::as_ptr(&ds.doc) as usize;
+        let held = app.canvas.shots.get(&uid).is_some_and(|s| Arc::ptr_eq(&s.doc, &ds.doc) && s.view == view);
+        if held || app.canvas.warmed.get(&uid) == Some(&(doc_ptr, view.clone())) {
+            continue;
+        }
+        if quiet < wait || worker.in_flight() || worker.background_busy() {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64((wait - quiet).max(0.02)));
+            return;
+        }
+        let proof = ds.view.proof_srgb && !ds.doc.color_profile.is_srgb();
+        let job = Job {
+            doc: ds.doc.clone(),
+            page: ds.page,
+            view: view.clone(),
+            outline: ds.view.outlines,
+            outline_extras: figcraft_render::Outline { hidden: ds.view.outline_hidden, bounds: ds.view.outline_bounds, light: false },
+            outlined: if ds.view.outlines_selection { ds.selection.clone() } else { vec![] },
+            skip: vec![],
+            solo: ds.focused(),
+            proof,
+            draft: false,
+            uid,
+            background: true,
+            fresh: false,
+        };
+        worker.submit(job);
+        app.canvas.warmed.insert(uid, (doc_ptr, view));
+        return;
+    }
 }
 
 /// The zoom tool while Z is held (Alt: zoom out): a click zooms a step about the pointer, a drag

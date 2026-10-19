@@ -12,7 +12,7 @@ use figcraft_doc::{Document, EffectKind, NodeId, NodeKind};
 use figcraft_geom::Rect;
 use tiny_skia::{IntRect, Pixmap, PixmapPaint, Transform};
 
-use crate::{Options, View, draw, render_view};
+use crate::{Options, View, draw, moved, render_view};
 
 /// What a render had to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,11 +106,11 @@ pub fn snap(view: &View) -> Option<(View, (i64, i64))> {
 
 /// Device-pixel rectangle `[x0, x1) × [y0, y1)` in the frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Px {
-    x0: i64,
-    y0: i64,
-    x1: i64,
-    y1: i64,
+pub(crate) struct Px {
+    pub x0: i64,
+    pub y0: i64,
+    pub x1: i64,
+    pub y1: i64,
 }
 
 impl Px {
@@ -150,6 +150,27 @@ struct Patched {
     pixels: u64,
     /// Device pixels drawn past each area, for effects that read around (discarded).
     margin: i64,
+    /// The kept image was moved (a pan): every pixel of it is different from what was shown.
+    shifted: bool,
+    /// Areas that were copied from elsewhere in the image (a layer that only moved): they differ
+    /// from what was shown too, but cost nothing to draw.
+    copied: Vec<Px>,
+}
+
+/// The areas of the image that differ from the previous one, `[x, y, width, height]` in device
+/// pixels: what a texture upload has to send. `None`: all of it (another zoom, a pan, a whole
+/// render).
+pub type Dirty = Option<Vec<[u32; 4]>>;
+
+fn dirty_of(p: &Patched) -> Dirty {
+    if p.shifted {
+        return None;
+    }
+    p.damage
+        .iter()
+        .chain(&p.copied)
+        .map(|d| Some([u32::try_from(d.x0).ok()?, u32::try_from(d.y0).ok()?, u32::try_from(d.x1 - d.x0).ok()?, u32::try_from(d.y1 - d.y0).ok()?]))
+        .collect()
 }
 
 impl Patched {
@@ -189,6 +210,7 @@ pub struct Sliced {
     next: usize,
     margin: i64,
     work: Work,
+    dirty: Dirty,
 }
 
 impl Sliced {
@@ -239,12 +261,30 @@ fn new_pixmap_for(v: &View) -> Option<Pixmap> {
 #[derive(Default)]
 pub struct Retained {
     last: Option<Frame>,
+    /// What the last render changed against the one before.
+    dirty: Dirty,
 }
 
 impl Retained {
     /// Forget the kept image (the next render is full).
     pub fn clear(&mut self) {
         self.last = None;
+        self.dirty = None;
+    }
+
+    /// The kept image.
+    pub fn image(&self) -> Option<&Pixmap> {
+        self.last.as_ref().map(|f| &f.pix)
+    }
+
+    /// The bytes of the kept image.
+    pub fn bytes(&self) -> usize {
+        self.last.as_ref().map_or(0, |f| f.pix.data().len())
+    }
+
+    /// What the last render changed in the image against the one before it ([`Dirty`]).
+    pub fn dirty(&self) -> Option<&[[u32; 4]]> {
+        self.dirty.as_deref()
     }
 
     /// Decide what rendering `view` takes against the kept image: patch it (the previous image
@@ -267,7 +307,6 @@ impl Retained {
             && last.outlined == opts.outlined
             && last.lod == opts.lod
             && last.draft == opts.draft
-            && last.skip == opts.skip
             && last.solo == opts.solo
             && last.background == opts.background
             && last.scale == snapped.scale.to_bits()
@@ -279,7 +318,9 @@ impl Retained {
         {
             let same_doc = Arc::ptr_eq(&last.doc, doc);
             let s = if same_doc { last.sensitive.clone() } else { Arc::new(sensitive(doc)) };
-            if let Some(patched) = plan_patch(last, doc, page, &snapped, px, &s) {
+            if let Some(patched) =
+                plan_patch(last, doc, page, &snapped, px, &s, &opts.skip, !opts.outline_mode && opts.outlined.is_empty() && opts.solo.is_none())
+            {
                 return Some(Start { snapped, px, fonts, outcome: Outcome::Patch(patched, s) });
             }
             sens = Some(s);
@@ -292,14 +333,19 @@ impl Retained {
     /// view actually drawn (snapped to device pixels, see [`snap`]), the image and what it took.
     pub fn render(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options) -> Option<(View, &Pixmap, Work)> {
         let Start { snapped, px, fonts, outcome } = self.start(doc, page, view, opts)?;
+        let mut dirty = None;
         let (pix, s, work) = match outcome {
             Outcome::Patch(mut p, s) => match p.draw(doc, page, &snapped, px, opts) {
-                Some(()) => (p.pix, s, if p.pixels == 0 { Work::Reused } else { Work::Partial { pixels: p.pixels } }),
+                Some(()) => {
+                    dirty = dirty_of(&p);
+                    (p.pix, s, if p.pixels == 0 && p.copied.is_empty() { Work::Reused } else { Work::Partial { pixels: p.pixels } })
+                }
                 // A patch that can't be drawn: the whole view.
                 None => (render_view(doc, page, &snapped, opts)?, s, Work::Full),
             },
             Outcome::Full(s) => (render_view(doc, page, &snapped, opts)?, s, Work::Full),
         };
+        self.dirty = dirty;
         let frame = self.keep(doc, page, (&snapped, px, fonts), opts, pix, s);
         Some((snapped, &frame.pix, work))
     }
@@ -314,9 +360,11 @@ impl Retained {
         let Start { snapped, px, fonts, outcome } = self.start(doc, page, view, opts)?;
         let rows = i64::from(rows.clamp(MIN_ROWS, MAX_ROWS));
         let (w, h) = (i64::from(snapped.width), i64::from(snapped.height));
+        let mut dirty = None;
         let (pix, damage, margin, work, sens) = match outcome {
             Outcome::Patch(p, s) => {
-                let work = if p.pixels == 0 { Work::Reused } else { Work::Partial { pixels: p.pixels } };
+                let work = if p.pixels == 0 && p.copied.is_empty() { Work::Reused } else { Work::Partial { pixels: p.pixels } };
+                dirty = dirty_of(&p);
                 (p.pix, p.damage, p.margin, work, s)
             }
             Outcome::Full(s) => {
@@ -348,15 +396,16 @@ impl Retained {
             }
         }
         let image = pix;
-        Some(Sliced { doc: doc.clone(), page, view: snapped, px, fonts, opts: opts.clone(), sens, pix: image, pieces, next: 0, margin, work })
+        Some(Sliced { doc: doc.clone(), page, view: snapped, px, fonts, opts: opts.clone(), sens, pix: image, pieces, next: 0, margin, work, dirty })
     }
 
     /// Keep a finished [`Sliced`] render as the last image; returns it like [`Retained::render`].
     pub fn finish(&mut self, done: Sliced) -> Option<(View, &Pixmap, Work)> {
-        let Sliced { doc, page, view, px, fonts, opts, sens, pix, work, next, pieces, .. } = done;
+        let Sliced { doc, page, view, px, fonts, opts, sens, pix, work, next, pieces, dirty, .. } = done;
         if next < pieces.len() {
             return None;
         }
+        self.dirty = dirty;
         let frame = self.keep(&doc, page, (&view, px, fonts), &opts, pix, sens);
         Some((view, &frame.pix, work))
     }
@@ -442,7 +491,16 @@ fn changed_areas(doc: &Document, page: NodeId, id: NodeId, out: &mut Vec<Rect>) 
 
 /// The previous frame brought to `px` for `doc`, with the areas to render; `None` when a full
 /// render is the better (or only correct) choice.
-fn plan_patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (i64, i64), s: &Sensitive) -> Option<Patched> {
+fn plan_patch(
+    last: Frame,
+    doc: &Arc<Document>,
+    page: NodeId,
+    view: &View,
+    px: (i64, i64),
+    s: &Sensitive,
+    skip: &[NodeId],
+    allow_copies: bool,
+) -> Option<Patched> {
     let (w, h) = (i64::from(view.width), i64::from(view.height));
     let (dx, dy) = (px.0.checked_sub(last.px.0)?, px.1.checked_sub(last.px.1)?);
     if dx.abs() >= w || dy.abs() >= h {
@@ -467,16 +525,40 @@ fn plan_patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (
     } else if dy < 0 {
         damage.push(Px { x0: 0, y0: 0, x1: w, y1: reach - dy });
     }
-    // Layers that changed, where they were and where they are now.
-    if !Arc::ptr_eq(&last.doc, doc) {
+    // Layers that changed, where they were and where they are now; layers that began or stopped
+    // being left out of the render (a drag draws the moved layers itself) count as changed.
+    let skipped: Vec<NodeId> = skip.iter().chain(&last.skip).filter(|id| skip.contains(id) != last.skip.contains(id)).copied().collect();
+    let mut copies: Vec<moved::Copy> = Vec::new();
+    let mut repair: Vec<Px> = Vec::new();
+    if !Arc::ptr_eq(&last.doc, doc) || !skipped.is_empty() {
         let mut areas = Vec::new();
-        for id in doc.changed_ids(&last.doc, MAX_CHANGED)? {
+        for id in skipped.iter() {
+            changed_areas(&last.doc, page, *id, &mut areas)?;
+            changed_areas(doc, page, *id, &mut areas)?;
+        }
+        let changed = if Arc::ptr_eq(&last.doc, doc) { Vec::new() } else { doc.changed_ids(&last.doc, MAX_CHANGED)? };
+        for id in &changed {
             // shortcut: an edited pattern source redraws the whole view; patch the patterned layers' areas when that shows up in profiles.
-            if in_pattern_source(doc, s, id) || in_pattern_source(&last.doc, &last.sensitive, id) {
+            if in_pattern_source(doc, s, *id) || in_pattern_source(&last.doc, &last.sensitive, *id) {
                 return None;
             }
-            changed_areas(&last.doc, page, id, &mut areas)?;
-            changed_areas(doc, page, id, &mut areas)?;
+        }
+        // Layers that only moved (a drag): the pixels they covered are copied, not drawn.
+        let plain_view =
+            dx == 0 && dy == 0 && reach == 0 && skipped.is_empty() && allow_copies && s.areas.is_empty() && last.sensitive.areas.is_empty();
+        let plan = if plain_view { moved::plan(&last.doc, doc, page, &changed, view.scale, px, (w, h)) } else { None };
+        match plan {
+            Some(plan) => {
+                copies = plan.copies;
+                repair = plan.repair;
+                areas.extend(plan.areas);
+            }
+            None => {
+                for id in &changed {
+                    changed_areas(&last.doc, page, *id, &mut areas)?;
+                    changed_areas(doc, page, *id, &mut areas)?;
+                }
+            }
         }
         for r in areas {
             if let Some(p) = to_px(r, view.scale, px) {
@@ -485,8 +567,13 @@ fn plan_patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (
         }
     }
     let mut damage: Vec<Px> = damage.iter().filter_map(|d| d.clamp(w, h)).collect();
-    if damage.is_empty() && dx == 0 && dy == 0 {
-        return Some(Patched { pix: last.pix, damage: Vec::new(), pixels: 0, margin: 0 });
+    // What is copied needs no drawing.
+    for c in &copies {
+        damage = damage.iter().flat_map(|d| subtract(*d, c.dst)).collect();
+    }
+    damage.extend(repair.iter().filter_map(|d| d.clamp(w, h)));
+    if damage.is_empty() && dx == 0 && dy == 0 && copies.is_empty() {
+        return Some(Patched { pix: last.pix, damage: Vec::new(), pixels: 0, margin: 0, shifted: false, copied: Vec::new() });
     }
     // Layers whose look depends on where they are cut are redrawn whole.
     let sensitive: Vec<Px> = s.areas.iter().chain(last.sensitive.areas.iter()).filter_map(|r| to_px(*r, view.scale, px)).collect();
@@ -506,9 +593,22 @@ fn plan_patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (
         }
     }
     let mut damage = merge(damage.iter().filter_map(|d| d.clamp(w, h)).collect());
-    if damage.len() > MAX_RECTS {
-        let all = damage.iter().skip(1).fold(*damage.first()?, |a, b| a.union(b));
-        damage = vec![all];
+    // Too many areas: join the pair that costs the fewest pixels to draw as one, until few are left.
+    while damage.len() > MAX_RECTS {
+        let mut best: Option<(u64, usize, usize)> = None;
+        for i in 0..damage.len() {
+            for j in i + 1..damage.len() {
+                let (Some(a), Some(b)) = (damage.get(i), damage.get(j)) else { continue };
+                let extra = a.union(b).area().saturating_sub(a.area() + b.area());
+                if best.is_none_or(|(e, _, _)| extra < e) {
+                    best = Some((extra, i, j));
+                }
+            }
+        }
+        let (_, i, j) = best?;
+        let (a, b) = (*damage.get(i)?, *damage.get(j)?);
+        damage.swap_remove(j);
+        *damage.get_mut(i)? = a.union(&b);
     }
     let pixels: u64 = damage.iter().map(Px::area).sum();
     if pixels as f64 > MAX_PARTIAL_SHARE * (w * h) as f64 {
@@ -517,7 +617,47 @@ fn plan_patch(last: Frame, doc: &Arc<Document>, page: NodeId, view: &View, px: (
     // Rendered with the backdrop reach as a margin (so blurs see their whole backdrop), keeping the inside.
     let mut pix = last.pix;
     shift(&mut pix, dx, dy)?;
-    Some(Patched { pix, damage, pixels, margin: reach + 1 })
+    let copied = copy_areas(&mut pix, &copies)?;
+    Some(Patched { pix, damage, pixels, margin: reach + 1, shifted: dx != 0 || dy != 0, copied })
+}
+
+/// `a` without `b`: up to four rectangles.
+fn subtract(a: Px, b: Px) -> Vec<Px> {
+    let hit = Px { x0: a.x0.max(b.x0), y0: a.y0.max(b.y0), x1: a.x1.min(b.x1), y1: a.y1.min(b.y1) };
+    if hit.x1 <= hit.x0 || hit.y1 <= hit.y0 {
+        return vec![a];
+    }
+    let mut out = Vec::with_capacity(4);
+    let mut add = |r: Px| {
+        if r.x1 > r.x0 && r.y1 > r.y0 {
+            out.push(r);
+        }
+    };
+    add(Px { x0: a.x0, y0: a.y0, x1: a.x1, y1: hit.y0 });
+    add(Px { x0: a.x0, y0: hit.y1, x1: a.x1, y1: a.y1 });
+    add(Px { x0: a.x0, y0: hit.y0, x1: hit.x0, y1: hit.y1 });
+    add(Px { x0: hit.x1, y0: hit.y0, x1: a.x1, y1: hit.y1 });
+    out
+}
+
+/// Copy each plan's source area of `pix` to its destination (all sources are read before any
+/// destination is written). The destinations.
+fn copy_areas(pix: &mut Pixmap, copies: &[moved::Copy]) -> Option<Vec<Px>> {
+    let mut parts = Vec::with_capacity(copies.len());
+    for c in copies {
+        let r = IntRect::from_xywh(
+            i32::try_from(c.src.x0).ok()?,
+            i32::try_from(c.src.y0).ok()?,
+            u32::try_from(c.src.x1 - c.src.x0).ok()?,
+            u32::try_from(c.src.y1 - c.src.y0).ok()?,
+        )?;
+        parts.push(pix.clone_rect(r)?);
+    }
+    let copy = PixmapPaint { blend_mode: tiny_skia::BlendMode::Source, ..Default::default() };
+    for (c, part) in copies.iter().zip(&parts) {
+        pix.draw_pixmap(i32::try_from(c.dst.x0).ok()?, i32::try_from(c.dst.y0).ok()?, part.as_ref(), &copy, Transform::identity(), None);
+    }
+    Some(copies.iter().map(|c| c.dst).collect())
 }
 
 /// Move the image's content by `(-dx, -dy)` pixels in place (what was at `(x, y)` goes to
@@ -543,6 +683,9 @@ fn shift(pix: &mut Pixmap, dx: i64, dy: i64) -> Option<()> {
     Some(())
 }
 
+/// The pixels a separate area costs beyond its own, for [`merge`].
+const MERGE_SLACK: u64 = 6000;
+
 /// Merge rectangles that overlap so much that their bounding box is no bigger than the two
 /// (where a layer was and where it is now, a frame and its child…): no pixel renders twice.
 fn merge(mut rects: Vec<Px>) -> Vec<Px> {
@@ -553,7 +696,9 @@ fn merge(mut rects: Vec<Px>) -> Vec<Px> {
         while j < rects.len() {
             let (Some(a), Some(b)) = (rects.get(i).copied(), rects.get(j).copied()) else { break };
             let u = a.union(&b);
-            if u.area() <= a.area() + b.area() {
+            // Each area drawn separately pays for finding what lies in it (the layers, their text):
+            // a few thousand pixels' worth, which is more than a thin strip's own.
+            if u.area() <= a.area() + b.area() + MERGE_SLACK {
                 if let Some(slot) = rects.get_mut(i) {
                     *slot = u;
                 }

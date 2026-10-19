@@ -213,6 +213,9 @@ fn a_finished_background_render_wakes_the_ui() {
         solo: None,
         proof: false,
         draft: false,
+        uid: 0,
+        background: false,
+        fresh: false,
     });
     let start = Instant::now();
     while wakes.load(Ordering::SeqCst) == 0 {

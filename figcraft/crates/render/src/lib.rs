@@ -17,6 +17,7 @@ pub mod image_profile;
 pub mod images;
 pub mod lod;
 pub mod mips;
+mod moved;
 pub mod paint;
 pub mod pattern;
 pub mod prefetch;
@@ -26,7 +27,7 @@ pub mod shadow;
 pub use draw::{node_outline, paint_bounds, stroke_fill, subtree_outline, ts_path};
 pub use export_depth::{ExportDepthError, MAX_EXPORT_DEPTH, check_export_depth};
 pub use retained::{Retained, Sliced, Work};
-pub use tiny_skia::{FillRule, Pixmap};
+pub use tiny_skia::{FillRule, IntRect, Pixmap};
 
 use figcraft_color::{Color, ColorProfile};
 use figcraft_doc::{Document, ExportFormat, NodeId, NodeKind};
@@ -508,6 +509,8 @@ mod image_profile_tests;
 mod lod_tests;
 #[cfg(test)]
 mod mips_tests;
+#[cfg(test)]
+mod moved_tests;
 #[cfg(test)]
 mod paint_behaviour_tests;
 #[cfg(test)]
