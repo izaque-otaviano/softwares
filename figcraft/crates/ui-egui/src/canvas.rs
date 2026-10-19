@@ -40,6 +40,10 @@ pub struct CanvasState {
     /// The pen pressure last reported during the current press (pen and stylus touches; the
     /// winit backends and browsers that report it).
     pressure: Option<f32>,
+    /// The layers a drag moves, drawn by the canvas itself (see [`Sprite`]).
+    sprite: Option<Sprite>,
+    /// The document the texture shows, and whether layers were left out of it.
+    tex_doc: Option<(Arc<Document>, bool)>,
 }
 
 impl Default for CanvasState {
@@ -61,8 +65,135 @@ impl Default for CanvasState {
             hovering: false,
             preedit: None,
             pressure: None,
+            sprite: None,
+            tex_doc: None,
         }
     }
+}
+
+impl CanvasState {
+    /// Whether a drag's layers are being drawn by the canvas itself, and the page under them
+    /// comes from a render that leaves them out ([`Sprite`]).
+    pub fn sprite_shown(&self) -> bool {
+        self.sprite.is_some()
+    }
+}
+
+/// The layers a free drag moves ([`figcraft_engine::tools::DragSprite`]), rendered once where
+/// they were when the drag began and drawn displaced to where they are now on every frame, over
+/// a render of the page without them. So a drag never waits for a render: the page stays as it
+/// is and the layers follow the pointer at once. The sprite stays after the drop until a render
+/// of the document as it now is has landed, so the layers never vanish in between.
+struct Sprite {
+    /// What it was rendered from: the document the gesture began on, the layers, the scale.
+    start: Arc<Document>,
+    ids: Vec<NodeId>,
+    scale: f64,
+    texture: egui::TextureHandle,
+    /// The page area the image covers, in `start`.
+    area: figcraft_geom::Rect,
+    /// Where the layers were: the top-left of their bounds in `start`.
+    from: Point,
+    /// The layers that move in the current document.
+    moving: Vec<NodeId>,
+    /// Whether the page render leaves `ids` out.
+    skip: bool,
+    /// Still being dragged (false: waiting for the render of the page as it is now).
+    live: bool,
+}
+
+/// The most device pixels a side a sprite is rendered at: beyond it the layers are clipped to
+/// the viewport and what surrounds it (a layer bigger than that is rare, and the UI thread
+/// renders the sprite).
+const SPRITE_MAX_PX: f64 = 3072.0;
+
+/// A finished drag's sprite goes once the canvas shows the document as it now is, with nothing
+/// left out: the dropped layers are in the page again.
+fn drop_landed_sprite(app: &mut FigApp) {
+    if app.canvas.sprite.as_ref().is_none_or(|s| s.live) {
+        return;
+    }
+    let landed = app.canvas.tex_doc.as_ref().is_some_and(|(d, skipped)| !skipped && app.session.ds().is_ok_and(|ds| Arc::ptr_eq(d, &ds.doc)));
+    if landed {
+        app.canvas.sprite = None;
+    }
+}
+
+/// Build or refresh the drag sprite for the free move under way, drop a stale one, and mark a
+/// finished drag's sprite as waiting for the page to catch up.
+fn sync_sprite(app: &mut FigApp, ctx: &egui::Context) {
+    let Some(drag) = app.session.drag_sprite() else {
+        if let Some(s) = &mut app.canvas.sprite {
+            s.live = false;
+        }
+        drop_landed_sprite(app);
+        return;
+    };
+    let Ok(ds) = app.session.ds() else { return };
+    // Pixel preview renders the page at its own scale: no sprite there.
+    if ds.view.pixel_preview_scale().is_some() {
+        if let Some(s) = &mut app.canvas.sprite {
+            s.live = false;
+        }
+        return;
+    }
+    let scale = ds.view.zoom * f64::from(ctx.pixels_per_point());
+    if let Some(s) = &mut app.canvas.sprite
+        && Arc::ptr_eq(&s.start, &drag.start)
+        && s.ids == drag.ids
+        && (s.scale - scale).abs() <= scale * 1e-9
+    {
+        s.live = true;
+        s.moving = drag.moving;
+        return;
+    }
+    app.canvas.sprite = build_sprite(app, ctx, &drag, scale);
+}
+
+/// Render the drag's layers as they were, into a texture ([`Sprite`]); `None` when they have no
+/// bounds or the render fails.
+fn build_sprite(app: &FigApp, ctx: &egui::Context, drag: &figcraft_engine::tools::DragSprite, scale: f64) -> Option<Sprite> {
+    let doc = &drag.start;
+    // In z-order, as the page draws them.
+    let ids = figcraft_engine::cmd::edit::z_sorted(doc, &drag.ids);
+    let from = doc.bounds_of(&ids)?;
+    let mut area = ids.iter().filter_map(|i| figcraft_render::raster_bounds(doc, *i)).reduce(|a, b| a.union(b))?;
+    // Clipped to the viewport and a viewport around it, within the pixel cap.
+    let r = app.canvas.rect;
+    let (a, b) = (app.to_page(r.min - r.size()), app.to_page(r.max + r.size()));
+    area = area.intersect(figcraft_geom::Rect::new(a.x, a.y, b.x, b.y));
+    let cap = SPRITE_MAX_PX / scale.max(1e-9);
+    area = figcraft_geom::Rect::new(area.x0, area.y0, area.x1.min(area.x0 + cap), area.y1.min(area.y0 + cap));
+    if !(area.width() > 0.0 && area.height() > 0.0 && area.x0.is_finite() && area.y0.is_finite()) {
+        return None;
+    }
+    let pix = figcraft_render::render_area(doc, &ids, area, scale)?;
+    let image = crate::render_worker::screen_image(&pix, doc.color_profile);
+    let texture = ctx.load_texture("figcraft-drag-sprite", image, egui::TextureOptions::LINEAR);
+    Some(Sprite {
+        start: drag.start.clone(),
+        ids: drag.ids.clone(),
+        scale,
+        texture,
+        area,
+        from: Point::new(from.x0, from.y0),
+        moving: drag.moving.clone(),
+        skip: drag.skip,
+        live: true,
+    })
+}
+
+/// Draw the drag sprite where its layers are now.
+fn draw_sprite(app: &FigApp, painter: &egui::Painter) {
+    let Some(s) = &app.canvas.sprite else { return };
+    let Ok(ds) = app.session.ds() else { return };
+    let Some(now) = ds.doc.bounds_of(&s.moving) else { return };
+    let d = Point::new(now.x0, now.y0) - s.from;
+    let tl = app.to_screen(s.area.x0 + d.x, s.area.y0 + d.y);
+    let zoom = ds.view.zoom;
+    let [w, h] = s.texture.size();
+    let size = vec2((w as f64 / s.scale * zoom) as f32, (h as f64 / s.scale * zoom) as f32);
+    painter.image(s.texture.id(), Rect::from_min_size(tl, size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
 }
 
 /// What the canvas shows while an IME composition is in progress: the document with the
@@ -178,10 +309,13 @@ pub fn show(app: &mut FigApp, ui: &mut Ui, worker: &mut Worker) {
     let own_cursor = input(app, ui, &resp);
     crate::live::track_pointer(app, &ctx);
     app.sync_preedit();
+    sync_sprite(app, &ctx);
     request_render(app, worker, &ctx);
     // Every finished render is shown, even when a newer one is already on its way: renders finish
     // in order, and an edit every frame (a drag) would otherwise never show until it stopped.
     if let Some(done) = worker.poll() {
+        app.canvas.tex_doc = Some((done.doc, !done.skip.is_empty()));
+        drop_landed_sprite(app);
         // A pixel preview render is magnified with hard pixel edges.
         let filter = if app.session.ds().ok().and_then(|d| d.view.pixel_preview_scale()) == Some(done.view.scale) {
             egui::TextureOptions::NEAREST
@@ -217,6 +351,7 @@ pub fn show(app: &mut FigApp, ui: &mut Ui, worker: &mut Worker) {
         let h = (f64::from(v.height) / v.scale * zoom) as f32;
         painter.image(tex.id(), Rect::from_min_size(tl, vec2(w, h)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
+    draw_sprite(app, &painter);
     app.session.tool.labels = overlays(app, &painter, &t);
     // The zoom tool's area.
     if let (Some(start), Some(p)) = (app.canvas.zoom_drag, ctx.input(|i| i.pointer.hover_pos())) {
@@ -359,7 +494,16 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
     let cap = render_cap(ctx.input(|i| i.max_texture_side));
     let wanted = figcraft_render::View { origin: (ox, oy), scale, width: w.min(cap), height: h.min(cap) };
     // The edited text is drawn live (an IME composition included); the caret is an overlay.
-    let doc = app.preedit_view().map(|p| p.doc.clone()).unwrap_or_else(|| ds.doc.clone());
+    let mut doc = app.preedit_view().map(|p| p.doc.clone()).unwrap_or_else(|| ds.doc.clone());
+    // A drag draws its layers itself ([`Sprite`]): the page is rendered as it was when the drag
+    // began, without them, once; not again for every pointer move.
+    let mut skip = vec![];
+    if let Some(s) = app.canvas.sprite.as_ref().filter(|s| s.live) {
+        doc = s.start.clone();
+        if s.skip {
+            skip = s.ids.clone();
+        }
+    }
     let outlined = if ds.view.outlines_selection { ds.selection.clone() } else { vec![] };
     let proof = ds.view.proof_srgb && !doc.color_profile.is_srgb();
     let outline_extras = figcraft_render::Outline { hidden: ds.view.outline_hidden, bounds: ds.view.outline_bounds, light: false };
@@ -369,7 +513,7 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
         outline: ds.view.outlines,
         outline_extras,
         outlined: outlined.clone(),
-        skip: vec![],
+        skip: skip.clone(),
         solo: ds.focused(),
         fonts: figcraft_text::layout_generation(),
         proof,
@@ -391,7 +535,9 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
     }
     // A zoom steps on every frame, and each draft is out of date by the next. One at a time: the
     // render under way shows (re-projected) and the next draft is of where the zoom has got to.
-    if zooming && worker.in_flight() {
+    // So does a gesture that edits the document on every pointer move (a resize, a rotation, a
+    // drag that reflows an auto layout): one render in flight, then the latest document.
+    if (zooming || ds.interaction.is_some()) && worker.in_flight() {
         return;
     }
     let job = Job {
@@ -401,7 +547,7 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
         outline: ds.view.outlines,
         outline_extras,
         outlined,
-        skip: vec![],
+        skip,
         solo: key.solo,
         proof,
         draft: zooming,
@@ -583,6 +729,10 @@ fn input(app: &mut FigApp, ui: &mut Ui, resp: &egui::Response) -> bool {
             app.toast(e.to_string());
         }
         app.handle_ui_requests();
+        // A drag draws the next frame at once: what it moved shows without waiting for anything.
+        if k == PointerKind::Move && app.canvas.dragging {
+            ctx.request_repaint();
+        }
     }
     true
 }

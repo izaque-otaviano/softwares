@@ -40,6 +40,9 @@ pub struct Done {
     pub view: View,
     pub ms: f64,
     pub work: Work,
+    /// The document the image shows, and the layers left out of it.
+    pub doc: Arc<Document>,
+    pub skip: Vec<NodeId>,
 }
 
 /// A render of a document in `profile` as a texture image for the screen (sRGB).
@@ -85,7 +88,7 @@ fn done(job: &Job, view: View, pix: &Pixmap, work: Work, ms: f64) -> Done {
     if job.proof {
         mark_outside_srgb(&mut image, pix, job.doc.color_profile);
     }
-    Done { image, view, ms, work }
+    Done { image, view, ms, work, doc: job.doc.clone(), skip: job.skip.clone() }
 }
 
 fn run(job: &Job, retained: &mut Retained) -> Option<Done> {
@@ -122,6 +125,8 @@ pub struct Stepper {
     /// Rows a piece of the next render covers (sized from how long rows took).
     rows: u32,
     budget_ms: f64,
+    /// Jobs submitted so far.
+    submitted: u64,
 }
 
 impl Default for Stepper {
@@ -132,11 +137,12 @@ impl Default for Stepper {
 
 impl Stepper {
     pub fn new(budget_ms: f64) -> Self {
-        Self { retained: Retained::default(), pending: None, running: None, rows: 48, budget_ms }
+        Self { retained: Retained::default(), pending: None, running: None, rows: 48, budget_ms, submitted: 0 }
     }
 
     pub fn submit(&mut self, job: Job) {
         self.pending = Some(job);
+        self.submitted += 1;
     }
 
     pub fn in_flight(&self) -> bool {
@@ -241,6 +247,11 @@ impl Worker {
         self.finished.load(std::sync::atomic::Ordering::Acquire) < self.submitted
     }
 
+    /// Jobs submitted so far (tests count the renders a gesture asks for).
+    pub fn submitted(&self) -> u64 {
+        self.submitted
+    }
+
     pub fn poll(&mut self) -> Option<Done> {
         let mut last = None;
         while let Ok(d) = self.rx.try_recv() {
@@ -269,6 +280,9 @@ impl Worker {
     }
     pub fn in_flight(&self) -> bool {
         self.stepper.in_flight()
+    }
+    pub fn submitted(&self) -> u64 {
+        self.stepper.submitted
     }
     pub fn poll(&mut self) -> Option<Done> {
         let start = self.start;
