@@ -25,6 +25,9 @@ pub struct CanvasState {
     last_zoom: Option<f64>,
     /// What the last canvas render had to do (shown by `ui.inspect`).
     pub render_work: Option<figcraft_render::Work>,
+    /// What the renderer counted for the renders shown so far (copies, patches, timings; see
+    /// [`figcraft_render::perf`]).
+    pub render_stats: figcraft_render::perf::Snapshot,
     dragging: bool,
     space_pan: bool,
     middle_pan: Option<(Pos2, f64, f64)>,
@@ -117,6 +120,7 @@ impl Default for CanvasState {
             submitted: None,
             last_zoom: None,
             render_work: None,
+            render_stats: Default::default(),
             dragging: false,
             space_pan: false,
             middle_pan: None,
@@ -660,6 +664,7 @@ fn apply_done(app: &mut FigApp, ctx: &egui::Context, done: crate::render_worker:
     c.tex_doc = Some(done.doc);
     c.tex_view = Some(done.view);
     c.renders_shown += 1;
+    c.render_stats = c.render_stats.plus(&done.stats);
     c.render_work = Some(done.work);
     app.ui.render_ms = done.ms;
 }

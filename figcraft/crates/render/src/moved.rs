@@ -20,6 +20,7 @@ use figcraft_color::{BlendMode, ImageScaleMode, PaintKind};
 use figcraft_doc::{Document, EffectKind, Node, NodeId, NodeKind};
 use figcraft_geom::Rect;
 
+pub use crate::perf::NoCopy;
 use crate::retained::Px;
 
 /// Deepest nesting looked into.
@@ -55,25 +56,11 @@ fn opaque_fill(doc: &Document, n: &Node) -> bool {
     match &p.kind {
         PaintKind::Solid { color } => color.a >= 0.999,
         PaintKind::Image(ip) => {
-            matches!(ip.scale_mode, ImageScaleMode::Fill | ImageScaleMode::Tile) && doc.images.get(&ip.image).is_some_and(|d| image_opaque(&d.bytes))
+            matches!(ip.scale_mode, ImageScaleMode::Fill | ImageScaleMode::Tile)
+                && doc.images.get(&ip.image).is_some_and(|d| crate::images::opaque_bytes(&d.bytes))
         }
         _ => false,
     }
-}
-
-/// Whether encoded image bytes have no alpha: a JPEG, or a PNG of a colour type without it (and no
-/// transparent colour).
-fn image_opaque(bytes: &[u8]) -> bool {
-    if bytes.starts_with(&[0xFF, 0xD8]) {
-        return true;
-    }
-    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        let color_type = bytes.get(25).copied();
-        let head = bytes.get(..bytes.len().min(4096)).unwrap_or(bytes);
-        let transparent = head.windows(4).any(|w| w == b"tRNS");
-        return matches!(color_type, Some(0 | 2)) && !transparent;
-    }
-    false
 }
 
 fn plain_blend(n: &Node) -> bool {
@@ -172,44 +159,67 @@ fn cores(c: &Ctx, id: NodeId, clip: Px, out: &mut Vec<Px>, depth: usize) -> Opti
     Some(())
 }
 
-/// Plan the copies for a move of `changed` (see the module docs); `None` when the pixels have to
-/// be drawn.
-pub fn plan(old: &Document, new: &Document, page: NodeId, changed: &[NodeId], scale: f64, px: (i64, i64), size: (i64, i64)) -> Option<Plan> {
+/// Plan the copies for a move of `changed` (see the module docs), or why the pixels have to be
+/// drawn.
+pub fn plan_or_why(
+    old: &Document,
+    new: &Document,
+    page: NodeId,
+    changed: &[NodeId],
+    scale: f64,
+    px: (i64, i64),
+    size: (i64, i64),
+) -> Result<Plan, NoCopy> {
     if changed.is_empty() || changed.len() > MAX_CHANGED || !(scale.is_finite() && scale > 0.0) {
-        return None;
+        return Err(NoCopy::Count);
     }
     // A move by the same whole number of device pixels, of layers that changed in nothing else.
     let mut delta: Option<(f64, f64)> = None;
     for id in changed {
-        let (a, b) = (old.node(*id)?, new.node(*id)?);
+        let (Some(a), Some(b)) = (old.node(*id), new.node(*id)) else { return Err(NoCopy::NotAMove) };
         if a.parent != b.parent || !a.visible || !b.visible || old.page_of(*id) != Some(page) || new.page_of(*id) != Some(page) {
-            return None;
+            return Err(NoCopy::NotAMove);
         }
         let mut same = a.clone();
         same.transform = b.transform;
         if same != *b || new.ancestors(*id).iter().any(|a| changed.contains(a)) {
-            return None;
+            return Err(NoCopy::NotAMove);
         }
         let (wa, wb) = (old.world_transform(*id).as_coeffs(), new.world_transform(*id).as_coeffs());
         if (0..4).any(|k| (wa[k] - wb[k]).abs() > 1e-9) {
-            return None;
+            return Err(NoCopy::NotAMove);
         }
         let d = (wb[4] - wa[4], wb[5] - wa[5]);
         match delta {
             None => delta = Some(d),
             Some(e) if (e.0 - d.0).abs() < 1e-7 && (e.1 - d.1).abs() < 1e-7 => {}
-            Some(_) => return None,
+            Some(_) => return Err(NoCopy::DifferentDeltas),
         }
     }
-    let (dx, dy) = delta?;
+    let (dx, dy) = delta.ok_or(NoCopy::Count)?;
     let (ddx, ddy) = (dx * scale, dy * scale);
     if !(ddx.abs() < 4096.0 && ddy.abs() < 4096.0) || (ddx - ddx.round()).abs() > 1e-4 || (ddy - ddy.round()).abs() > 1e-4 {
-        return None;
+        return Err(NoCopy::FractionalDelta);
     }
     let (ddx, ddy) = (ddx.round() as i64, ddy.round() as i64);
     if ddx == 0 && ddy == 0 {
-        return None;
+        return Err(NoCopy::ZeroDelta);
     }
+    plan_copies(old, new, changed, scale, px, size, (ddx, ddy))
+}
+
+/// The copies of a move by whole device pixels `(ddx, ddy)`; `None` when something in the
+/// layers or their ancestors makes a copy untrustworthy (see the module docs).
+#[allow(clippy::too_many_arguments)]
+fn plan_copies(
+    old: &Document,
+    new: &Document,
+    changed: &[NodeId],
+    scale: f64,
+    px: (i64, i64),
+    size: (i64, i64),
+    (ddx, ddy): (i64, i64),
+) -> Result<Plan, NoCopy> {
     let frame = Px { x0: 0, y0: 0, x1: size.0, y1: size.1 };
     let c = Ctx { doc: old, scale, px };
     let mut copies: Vec<Copy> = Vec::new();
@@ -217,31 +227,36 @@ pub fn plan(old: &Document, new: &Document, page: NodeId, changed: &[NodeId], sc
     let mut areas: Vec<Rect> = Vec::new();
     let mut footprint: Option<Rect> = None;
     for id in changed {
-        let n = old.node(*id)?;
-        // Everything the layer paints, where it was and where it is.
-        for doc in [old, new] {
-            let b = crate::draw::paint_bounds(doc, *id)?;
+        // Everything the layer paints, where it was and where it is (the footprint); what shows
+        // of it is within the clipping ancestors (worked out below).
+        let (old_bounds, new_bounds) =
+            (crate::draw::paint_bounds(old, *id).ok_or(NoCopy::NotAMove)?, crate::draw::paint_bounds(new, *id).ok_or(NoCopy::NotAMove)?);
+        for b in [old_bounds, new_bounds] {
             footprint = Some(footprint.map_or(b, |f| f.union(b)));
-            areas.push(b);
         }
-        let _ = n;
         // The places it is opaque, kept to what its ancestors show of it.
         let mut allowed = frame;
+        // The page area the clipping ancestors show (their boxes); outside it nothing of the
+        // layer is drawn, so nothing there changed.
+        let mut shown: Option<Rect> = None;
+        // The corners of rounded clipping ancestors: the clip cuts them, so pixels there are
+        // not the layer's and are drawn after the copy.
+        let mut corners: Vec<Px> = Vec::new();
         let mut cur = *id;
         let mut occluders: Vec<NodeId> = Vec::new();
         let mut guard = 0;
         while let Some(parent) = old.node(cur).and_then(|n| n.parent) {
             guard += 1;
-            let p = old.node(parent)?;
+            let p = old.node(parent).ok_or(NoCopy::Ancestor)?;
             if guard > MAX_DEPTH {
-                return None;
+                return Err(NoCopy::Ancestor);
             }
             if p.is_page() {
-                let pos = p.paint_order().position(|k| k == cur)?;
+                let pos = p.paint_order().position(|k| k == cur).ok_or(NoCopy::Ancestor)?;
                 occluders.extend(p.paint_order().skip(pos + 1));
                 let masks_before = p.paint_order().take(pos).any(|k| old.node(k).is_some_and(|s| s.is_mask && s.visible));
                 if masks_before {
-                    return None;
+                    return Err(NoCopy::Ancestor);
                 }
                 break;
             }
@@ -253,32 +268,53 @@ pub fn plan(old: &Document, new: &Document, page: NodeId, changed: &[NodeId], sc
                 || visible_effect(p, |k| reads_around(k) || matches!(k, EffectKind::LayerBlur(_)))
                 || (matches!(p.kind, NodeKind::Group) && p.effects.iter().any(|e| e.visible))
             {
-                return None;
+                return Err(NoCopy::Ancestor);
             }
-            let pos = p.paint_order().position(|k| k == cur)?;
+            let pos = p.paint_order().position(|k| k == cur).ok_or(NoCopy::Ancestor)?;
             occluders.extend(p.paint_order().skip(pos + 1));
             if p.paint_order().take(pos).any(|k| old.node(k).is_some_and(|s| s.is_mask && s.visible)) {
-                return None;
+                return Err(NoCopy::Ancestor);
             }
             let world = old.world_transform(parent).as_coeffs();
             if p.clip && p.kind.is_frame_like() {
                 if !axis_aligned(world) {
-                    return None;
+                    return Err(NoCopy::Ancestor);
                 }
-                allowed = intersect(allowed, inner_px(old.world_bounds(parent)?, scale, px, corner_inset(p, scale))?);
+                let wb = old.world_bounds(parent).ok_or(NoCopy::Ancestor)?;
+                shown = Some(shown.map_or(wb, |s| s.intersect(wb)));
+                // Inside the clip's straight edges (a pixel in for anti-aliasing); its rounded
+                // corners are drawn after the copy, not kept out of it along the whole edge.
+                let b = inner_px(wb, scale, px, 1.0).ok_or(NoCopy::Ancestor)?;
+                allowed = intersect(allowed, b);
+                let r = corner_inset(p, scale).ceil() as i64;
+                if r > 1 {
+                    corners.extend([
+                        Px { x0: b.x0, y0: b.y0, x1: b.x0 + r, y1: b.y0 + r },
+                        Px { x0: b.x1 - r, y0: b.y0, x1: b.x1, y1: b.y0 + r },
+                        Px { x0: b.x0, y0: b.y1 - r, x1: b.x0 + r, y1: b.y1 },
+                        Px { x0: b.x1 - r, y0: b.y1 - r, x1: b.x1, y1: b.y1 },
+                    ]);
+                }
             }
             // Strokes are drawn over the children.
             if p.has_visible_stroke() {
                 if !axis_aligned(world) {
-                    return None;
+                    return Err(NoCopy::Ancestor);
                 }
                 let w = p.stroke.max_weight().max(p.stroke.weight) * scale + 1.0;
-                allowed = intersect(allowed, inner_px(old.world_bounds(parent)?, scale, px, w)?);
+                let b = old.world_bounds(parent).and_then(|b| inner_px(b, scale, px, w)).ok_or(NoCopy::Ancestor)?;
+                allowed = intersect(allowed, b);
             }
             cur = parent;
         }
+        for b in [old_bounds, new_bounds] {
+            let b = shown.map_or(b, |s| s.intersect(b));
+            if b.x1 > b.x0 && b.y1 > b.y0 {
+                areas.push(b);
+            }
+        }
         let mut found = Vec::new();
-        cores(&c, *id, allowed, &mut found, 0)?;
+        cores(&c, *id, allowed, &mut found, 0).ok_or(NoCopy::NothingOpaque)?;
         let shift = |r: Px| Px { x0: r.x0 + ddx, y0: r.y0 + ddy, x1: r.x1 + ddx, y1: r.y1 + ddy };
         for core in found {
             // The source must stay inside what the ancestors show at both places.
@@ -292,11 +328,11 @@ pub fn plan(old: &Document, new: &Document, page: NodeId, changed: &[NodeId], sc
             // what was above it, or what should be), so they are drawn after the copy.
             let dst = shift(src);
             for o in &occluders {
-                let on = old.node(*o)?;
+                let on = old.node(*o).ok_or(NoCopy::Ancestor)?;
                 if !on.visible {
                     continue;
                 }
-                let b = crate::draw::paint_bounds(old, *o)?;
+                let b = crate::draw::paint_bounds(old, *o).ok_or(NoCopy::Ancestor)?;
                 if let Some(r) = inner_px(b, scale, px, -2.0) {
                     for at in [r, Px { x0: r.x0 + ddx, y0: r.y0 + ddy, x1: r.x1 + ddx, y1: r.y1 + ddy }] {
                         let hit = intersect(at, dst);
@@ -306,22 +342,30 @@ pub fn plan(old: &Document, new: &Document, page: NodeId, changed: &[NodeId], sc
                     }
                 }
             }
+            for q in &corners {
+                for at in [*q, shift(*q)] {
+                    let hit = intersect(at, dst);
+                    if !is_empty(&hit) {
+                        repair.push(hit);
+                    }
+                }
+            }
             copies.push(Copy { src, dst });
         }
     }
     if copies.is_empty() {
-        return None;
+        return Err(NoCopy::NothingOpaque);
     }
     // Two layers' places that overlap would have to be copied in paint order: leave those.
     for (i, a) in copies.iter().enumerate() {
         if copies.iter().skip(i + 1).any(|b| !is_empty(&intersect(a.src, b.src)) || !is_empty(&intersect(a.dst, b.dst))) {
-            return None;
+            return Err(NoCopy::Overlap);
         }
     }
     // The ancestors whose own pixels depend on what their children cover (a shadow cast from
     // the whole): a frame that is opaque through and through, or that the layers stay inside of,
     // looks the same.
-    let footprint = footprint?;
+    let footprint = footprint.ok_or(NoCopy::NothingOpaque)?;
     let mut seen: Vec<NodeId> = Vec::new();
     for id in changed {
         for a in old.ancestors(*id) {
@@ -342,10 +386,10 @@ pub fn plan(old: &Document, new: &Document, page: NodeId, changed: &[NodeId], sc
                     .world_bounds(a)
                     .is_some_and(|b| b.x0 + r <= footprint.x0 && b.y0 + r <= footprint.y0 && b.x1 - r >= footprint.x1 && b.y1 - r >= footprint.y1);
             if !(covered && (an.clip || inside)) {
-                areas.push(crate::draw::paint_bounds(old, a)?);
-                areas.push(crate::draw::paint_bounds(new, a)?);
+                areas.push(crate::draw::paint_bounds(old, a).ok_or(NoCopy::Ancestor)?);
+                areas.push(crate::draw::paint_bounds(new, a).ok_or(NoCopy::Ancestor)?);
             }
         }
     }
-    Some(Plan { copies, repair, areas })
+    Ok(Plan { copies, repair, areas })
 }

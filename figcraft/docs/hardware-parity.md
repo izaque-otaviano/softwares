@@ -84,6 +84,41 @@ spread morphology of shadows with a spread on groups.
 
 Nothing has been timed against Figma on the same document (needs `.fig` import). 
 
+### Dragging layers (2026-10-19)
+
+The owner reported jank dragging layers. Measured with `drag_jank_tests` (60 pointer moves at 60 Hz through the real UI
+frame, container, dev profile with optimised deps; `cargo test -p figcraft-ui-egui --lib drag_jank_report -- --ignored
+--nocapture`, add `--release` on a quiet machine). The five hypotheses:
+
+| # | Hypothesis | Verdict (measured) |
+|---|---|---|
+| 1 | Move logic runs per raw event, not per frame | Ruled out: `Session::pointer` ran once per frame (egui hands the canvas one position a frame; the same-position check and the one-render-in-flight rule hold); 3 events a frame = 3 `pointer` calls, 0.06 ms each, ~0.2 ms a frame |
+| 2 | Snap candidates re-gathered every Move | Ruled out: `Targets::gather` 0 times during 60 moves (once in `move_down`); `snap_move` 0.007 ms a move |
+| 3 | Auto layout solved every Move | Partly: a move inside a list solves its frame (10 `layout_frame` calls in 60 moves, only when the slot changes), 0.02 ms in `normalize`; a free move solves none |
+| 4 | `preview` rebuilds derived state | Ruled out: clone + closure 0.03 ms (persistent maps), `normalize` 0.01-0.02 ms, comparison 0.01 ms; the whole engine side of a frame is under 0.15 ms (5,000 layers: 0.2 ms) |
+| 5 | Copy plan falls back to redrawing | Partly. Opaque moves at ppp 1 and 2 use the copy on 60 of 60 renders; at zoom 1.37 (and any zoom where the snapped move is not whole device pixels) 0 of 60 are copied ("fractional delta") and each redraws ~64 kpx (render 10 ms vs 1 ms). Left out (see below). The real cost was elsewhere: |
+
+Dominant cause (not in the list): the **areas the copy path still draws** were far bigger than the strips. A photo in a
+rounded clipping card with a shadow redrew ~71,000 px a move: the card's clip was inset along its whole edge for the
+corners, the layer's paint bounds counted the shadow reach twice and ignored the card's clip, and the card's drop shadow
+(blur of a 560 px layer) and photo fill were redrawn for every strip. Now: the clip insets only its corners (repaired
+after the copy), a layer's changed area stops at its clipping ancestors, a drop shadow that cannot show in the drawn rows
+(inside an opaque card, clear of its corners) is not cast and the layer keeps no margin for it, shadows of opaque
+one-outline layers are cast from the outline over their reach instead of from the layer's pixels, and copies move rows
+with `copy_from_slice` instead of cloning each source. Pixels are the same as before (`shadow_shortcut_tests` compares
+every shortcut with the long way round; `moved_tests` and `retained_tests` compare patches with full renders).
+
+| Scenario (p50 / p95 ms) | UI frame before | after | Render before | after |
+|---|---|---|---|---|
+| Photo in a clipping card, zoom 1 | 1.04 / 1.45 | 0.77 / 1.00 | 41.5 / 58.9 | 11.1 / 16.3 |
+| Rectangle with a shadow, zoom 1 | 0.98 / 1.22 | 0.70 / 0.95 | 6.2 / 8.7 | 3.4 / 5.3 |
+| Rectangle, ppp 2 | 1.13 / 1.72 | 0.73 / 1.02 | 5.0 / 6.3 | 2.3 / 2.5 |
+| Inside an auto layout frame (1 render in 60 moves) | 1.01 / 1.33 | 0.83 / 1.22 | 38.6 | ~51 (noise; same path) |
+
+Left out: moves that are not whole device pixels (zoom 1.37, snapping off) still redraw their area; a layer inside an
+auto layout frame still re-solves and redraws the frame when the slot changes; a photo's strips are drawn from the
+mip level at full cost per strip; release numbers were not taken (build time).
+
 ## Platforms
 
 | Platform | Figma | FigCraft | Notes |
@@ -99,6 +134,7 @@ Nothing has been timed against Figma on the same document (needs `.fig` import).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-19 | minor | Dragging layers: measured the five suspected causes (per-event handling, snap candidates, auto layout solves, preview rebuilds, copy fallbacks) and found the cost in the areas the copy path still drew: a photo in a rounded clipping card with a shadow redrew ~71 kpx a move. Render per move 41.5 → 11.1 ms (p50) for that case, 6.2 → 3.4 with a shadow, 5.0 → 2.3 at ppp 2; UI frame ~1.0 → ~0.8 ms. Counters in `figcraft_engine::perf` / `figcraft_render::perf`, tests `drag_jank_tests`, `shadow_shortcut_tests`. Percentages unchanged |
 | 2026-10-19 | minor | Canvas: dragging layers and switching tabs (see the gaps page for the drag numbers). Tabs: each open file keeps its own render (the render thread holds one retained image per file under a 384 MB budget, least recently used first) and its own picture on the canvas (a texture per tab, 256 MB), so going back to a tab shows its picture in the first frame (0.6–0.9 ms, 0.000% of the pixels different from when it was left) instead of the other file's picture for the whole render (30.7% of the pixels wrong for 31 ms at 1× and 149 ms at 2× on a small shop page; seconds on a big one) and the render that refines it patches the kept image (the picture doesn't change: 0.000%); after the canvas is quiet for 0.35 s (0.05 s over a tab) the render thread draws the tab beside the active one or under the pointer in the background (not in the browser, where the window's own render comes first: the picture and the kept render per tab still apply there); the decoded picture cache (mip pyramids) holds 640 MB on the desktop (256 MB) so the photos of several open files stay decoded. Tests: `canvas_tabs_tests`. Left: a never-opened file's first render still takes the time it takes (it is rendered ahead only after the canvas has been quiet); the web build keeps one render at a time |
 | 2026-10-16 | minor | Canvas speed on photo-heavy pages (owner's report: lag scrolling and zooming a big e-commerce file, on the Mac and in the browser). Measured first on a synthetic sale page (12 screens, 72 photo fills of 1.6–4 k pixel pictures, shadows, rounded clipping cards): drop shadows were 77% of a one-thread render, pictures about a fifth. The box blur is a running sum in rows (alpha only for shadows, bit-identical to the old one), pictures at under half size draw from a mip pyramid in a byte-budgeted LRU cache decoded ahead in parallel (exports and 1:1 canvases unchanged), zoom drafts skip grain, background blur and glass, and the browser renders in pieces of about 8 ms a frame. Full render at zoom 1: 94.5 → 39.6 ms (4 threads), 231 → 92.5 ms (one thread); zoom gesture drafts 21 → 8.4 ms; first render 1,372 → ~700 ms; decoded pictures held: unbounded → 256 MB (96 MB in the browser). Performance 60% unchanged (nothing timed against Figma) |
 | 2026-10-16 | minor | macOS system menu bar (owner's report: it showed only "FigCraft"): FigCraft's menus in it, from the main menu's tree (`menu_model`), with the Mac app, Window and Help menus; Quit asks about unsaved changes. Cross-checked from Linux with `cargo check/clippy --target aarch64-apple-darwin` / `x86_64-apple-darwin` (ring's C build script skipped for the check: `--config 'target.<triple>.ring_core_0_17_14_.rustc-link-search=[]'`); the look and the key handling still need a Mac. Platforms ~75% unchanged |

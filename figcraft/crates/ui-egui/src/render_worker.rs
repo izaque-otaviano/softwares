@@ -67,6 +67,8 @@ pub struct Done {
     /// The document the image shows, and the layers left out of it.
     pub doc: Arc<Document>,
     pub skip: Vec<NodeId>,
+    /// What the renderer counted doing it (copies, patches and why not, timings).
+    pub stats: figcraft_render::perf::Snapshot,
 }
 
 /// A render of a document in `profile` as a texture image for the screen (sRGB).
@@ -189,7 +191,7 @@ fn crop_image(pix: &Pixmap, r: [u32; 4], profile: ColorProfile) -> Option<egui::
 }
 
 /// The finished render of `job`, held in `kept`, as what the canvas needs to show it.
-fn done(job: &Job, kept: &mut Kept, view: View, work: Work, ms: f64) -> Option<Done> {
+fn done(job: &Job, kept: &mut Kept, view: View, work: Work, ms: f64, stats: figcraft_render::perf::Snapshot) -> Option<Done> {
     let pix = kept.retained.image()?;
     let size = [pix.width() as usize, pix.height() as usize];
     kept.serial += 1;
@@ -207,6 +209,7 @@ fn done(job: &Job, kept: &mut Kept, view: View, work: Work, ms: f64) -> Option<D
         doc: job.doc.clone(),
         skip: job.skip.clone(),
         background: job.background,
+        stats,
     };
     // The grey stripes of a soft proof run across the whole image: no patches for it.
     if !job.proof
@@ -236,9 +239,10 @@ impl Done {
         match (self.patches.take(), newer.patches) {
             (Some(mut mine), Some(theirs)) if self.size == newer.size && self.serial == newer.base => {
                 mine.extend(theirs);
-                Done { patches: Some(mine), base: self.base, ..newer }
+                let stats = self.stats.plus(&newer.stats);
+                Done { patches: Some(mine), base: self.base, stats, ..newer }
             }
-            (_, patches) => Done { patches, ..newer },
+            (_, patches) => Done { patches, stats: self.stats.plus(&newer.stats), ..newer },
         }
     }
 }
@@ -246,6 +250,7 @@ impl Done {
 fn run(job: &Job, set: &mut RetainedSet) -> Option<Done> {
     #[cfg(not(target_arch = "wasm32"))]
     let t0 = std::time::Instant::now();
+    let counted = figcraft_render::perf::Snapshot::now();
     let kept = set.get(job.uid);
     if job.fresh {
         kept.retained.clear();
@@ -255,7 +260,8 @@ fn run(job: &Job, set: &mut RetainedSet) -> Option<Done> {
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     #[cfg(target_arch = "wasm32")]
     let ms = 0.0;
-    let d = done(job, kept, view, work, ms);
+    let stats = figcraft_render::perf::Snapshot::now().since(&counted);
+    let d = done(job, kept, view, work, ms, stats);
     set.trim(job.uid);
     d
 }
@@ -270,6 +276,8 @@ struct Running {
     sliced: Sliced,
     /// Milliseconds spent on it so far.
     ms: f64,
+    /// What the renderer counted for it so far.
+    stats: figcraft_render::perf::Snapshot,
 }
 
 /// Renders jobs in pieces, a few milliseconds a call: the browser's worker (it is the same code on
@@ -324,6 +332,7 @@ impl Stepper {
     /// Run pieces of the render under way (starting the newest job when none is) for about the
     /// budget, `clock` giving milliseconds. The image when its last piece has run.
     pub fn poll(&mut self, clock: &mut dyn FnMut() -> f64) -> Option<Done> {
+        let counted = figcraft_render::perf::Snapshot::now();
         if self.running.is_none() {
             let job = self.pending.take()?;
             let kept = self.set.get(job.uid);
@@ -331,17 +340,19 @@ impl Stepper {
                 kept.retained.clear();
             }
             let sliced = kept.retained.begin(&job.doc, job.page, &job.view, &options(&job), self.rows)?;
-            self.running = Some(Running { job, sliced, ms: 0.0 });
+            self.running = Some(Running { job, sliced, ms: 0.0, stats: figcraft_render::perf::Snapshot::now().since(&counted) });
         }
         let run = self.running.as_mut()?;
         let start = clock();
         let deadline = start + self.budget_ms;
+        let stepping = figcraft_render::perf::Snapshot::now();
         let finished = run.sliced.step(&mut || clock() < deadline);
+        run.stats = run.stats.plus(&figcraft_render::perf::Snapshot::now().since(&stepping));
         run.ms += (clock() - start).max(0.0);
         if !finished {
             return None;
         }
-        let Running { job, sliced, ms } = self.running.take()?;
+        let Running { job, sliced, ms, stats } = self.running.take()?;
         // The next render's pieces: about three quarters of a budget each.
         let rows = sliced.rows();
         if rows > 0 && ms > 0.0 && ms.is_finite() {
@@ -351,8 +362,10 @@ impl Stepper {
             self.rows = (f64::from(self.rows) * 0.5 + fit * 0.5) as u32;
         }
         let kept = self.set.get(job.uid);
+        let finishing = figcraft_render::perf::Snapshot::now();
         let (view, _, work) = kept.retained.finish(sliced)?;
-        let d = done(&job, kept, view, work, ms);
+        let stats = stats.plus(&figcraft_render::perf::Snapshot::now().since(&finishing));
+        let d = done(&job, kept, view, work, ms, stats);
         self.set.trim(job.uid);
         d
     }

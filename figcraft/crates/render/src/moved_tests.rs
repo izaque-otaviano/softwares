@@ -153,9 +153,11 @@ fn a_photo_in_a_clipping_rounded_card_with_a_shadow_moves_exactly() {
     for lod in [false, true] {
         let work = drag(&s, &[s.photo], &[(3.0, 1.0), (2.0, 2.0), (-4.0, 3.0), (7.0, -2.0)], 1.0, lod);
         // 240 x 160 = 38400 pixels; the badge above it blocks copying where they meet, nothing
-        // else does, so the layer is drawn only where the badge is and where it uncovered.
+        // else does, so the layer is drawn only where the badge is, where it uncovered and at the
+        // card's rounded corners (17-18k pixels a move before the card's clip cut the areas and
+        // its corners stopped insetting whole edges; 9.5-13k after).
         println!("photo in a card: {work:?}");
-        assert!(work.iter().all(|w| pixels(w) < 24_000), "{work:?}");
+        assert!(work.iter().all(|w| pixels(w) < 15_000), "{work:?}");
     }
 }
 

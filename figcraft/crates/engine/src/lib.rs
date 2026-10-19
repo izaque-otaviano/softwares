@@ -38,6 +38,7 @@ pub mod live;
 pub mod measure;
 pub mod online;
 pub mod params;
+pub mod perf;
 pub mod playground;
 pub mod plugin_directory;
 pub mod plugins;
@@ -994,16 +995,31 @@ impl Session {
 
     /// Replace the document with `f(snapshot)` for a live preview during a gesture.
     pub fn preview(&mut self, f: impl FnOnce(&mut Document, &mut Vec<NodeId>) -> Result<()>) -> Result<()> {
+        let t = web_time::Instant::now();
+        perf::bump(&perf::PREVIEWS);
+        let res = self.preview_inner(f);
+        perf::add(&perf::PREVIEW_NS, perf::ns_since(t));
+        res
+    }
+
+    fn preview_inner(&mut self, f: impl FnOnce(&mut Document, &mut Vec<NodeId>) -> Result<()>) -> Result<()> {
         let ds = self.ds_mut()?;
         let Some(it) = ds.interaction.clone() else { return Err(EngineError::Other("no gesture in progress".into())) };
+        let t = web_time::Instant::now();
         let mut doc = (*it.doc).clone();
         let mut sel = it.selection.clone();
         let res = f(&mut doc, &mut sel);
+        perf::add(&perf::PREVIEW_EDIT_NS, perf::ns_since(t));
         if res.is_ok() {
+            let t = web_time::Instant::now();
             normalize(&mut doc, &it.doc);
+            perf::add(&perf::NORMALIZE_NS, perf::ns_since(t));
             // The same preview again (a handle held still) keeps the document: a new one would
             // re-render the canvas for nothing.
-            if doc == *ds.doc && sel == ds.selection {
+            let t = web_time::Instant::now();
+            let same = doc == *ds.doc && sel == ds.selection;
+            perf::add(&perf::PREVIEW_COMPARE_NS, perf::ns_since(t));
+            if same {
                 return res;
             }
             ds.doc = Arc::new(doc);
@@ -1297,6 +1313,7 @@ pub fn normalize(doc: &mut Document, before: &Document) {
     let mut frames: Vec<NodeId> = frames.into_iter().collect();
     frames.sort_by_key(|id| std::cmp::Reverse(doc.ancestors(*id).len()));
     for f in frames {
+        perf::bump(&perf::LAYOUT_FRAMES);
         // Layers the layout leaves where they were stay untouched.
         let kept: Vec<(Arc<Node>, bool)> = doc
             .node(f)

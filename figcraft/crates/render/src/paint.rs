@@ -152,6 +152,7 @@ pub fn prepare_with(paint: &Paint, w: f64, h: f64, scale: f64, doc: &Document, t
             shader.map(Prepared::Shader)
         }
         PaintKind::Image(img) => {
+            let _timed = crate::perf::Timed::start(|s| &mut s.image_ns);
             let data = doc.images.get(&img.image);
             let moving = crate::images::frame_at(&img.image, data, &img.filters, doc.color_profile, time);
             let shown = crate::images::Shown { w, h, scale, mip: detail.mip };

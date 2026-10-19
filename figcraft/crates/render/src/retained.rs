@@ -177,6 +177,10 @@ impl Patched {
     /// Draw the damaged areas.
     fn draw(&mut self, doc: &Document, page: NodeId, view: &View, px: (i64, i64), opts: &Options) -> Option<()> {
         for d in &self.damage {
+            crate::perf::count(|s| {
+                s.patch_rects += 1;
+                s.patch_pixels += d.area();
+            });
             render_into(doc, page, view, px, d, self.margin, opts, &mut self.pix)?;
         }
         Some(())
@@ -318,9 +322,12 @@ impl Retained {
         {
             let same_doc = Arc::ptr_eq(&last.doc, doc);
             let s = if same_doc { last.sensitive.clone() } else { Arc::new(sensitive(doc)) };
-            if let Some(patched) =
-                plan_patch(last, doc, page, &snapped, px, &s, &opts.skip, !opts.outline_mode && opts.outlined.is_empty() && opts.solo.is_none())
-            {
+            let t = web_time::Instant::now();
+            let patched =
+                plan_patch(last, doc, page, &snapped, px, &s, &opts.skip, !opts.outline_mode && opts.outlined.is_empty() && opts.solo.is_none());
+            let ns = crate::perf::ns_since(t);
+            crate::perf::count(|s| s.patch_plan_ns += ns);
+            if let Some(patched) = patched {
                 return Some(Start { snapped, px, fonts, outcome: Outcome::Patch(patched, s) });
             }
             sens = Some(s);
@@ -334,17 +341,30 @@ impl Retained {
     pub fn render(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options) -> Option<(View, &Pixmap, Work)> {
         let Start { snapped, px, fonts, outcome } = self.start(doc, page, view, opts)?;
         let mut dirty = None;
+        let t = web_time::Instant::now();
         let (pix, s, work) = match outcome {
             Outcome::Patch(mut p, s) => match p.draw(doc, page, &snapped, px, opts) {
                 Some(()) => {
+                    let ns = crate::perf::ns_since(t);
+                    crate::perf::count(|s| s.patch_draw_ns += ns);
                     dirty = dirty_of(&p);
                     (p.pix, s, if p.pixels == 0 && p.copied.is_empty() { Work::Reused } else { Work::Partial { pixels: p.pixels } })
                 }
                 // A patch that can't be drawn: the whole view.
                 None => (render_view(doc, page, &snapped, opts)?, s, Work::Full),
             },
-            Outcome::Full(s) => (render_view(doc, page, &snapped, opts)?, s, Work::Full),
+            Outcome::Full(s) => {
+                let pix = render_view(doc, page, &snapped, opts)?;
+                let ns = crate::perf::ns_since(t);
+                crate::perf::count(|s| s.full_ns += ns);
+                (pix, s, Work::Full)
+            }
         };
+        crate::perf::count(|s| match work {
+            Work::Reused => s.reused += 1,
+            Work::Partial { .. } => s.partial += 1,
+            Work::Full => s.full += 1,
+        });
         self.dirty = dirty;
         let frame = self.keep(doc, page, (&snapped, px, fonts), opts, pix, s);
         Some((snapped, &frame.pix, work))
@@ -406,6 +426,11 @@ impl Retained {
             return None;
         }
         self.dirty = dirty;
+        crate::perf::count(|s| match work {
+            Work::Reused => s.reused += 1,
+            Work::Partial { .. } => s.partial += 1,
+            Work::Full => s.full += 1,
+        });
         let frame = self.keep(&doc, page, (&view, px, fonts), &opts, pix, sens);
         Some((view, &frame.pix, work))
     }
@@ -467,7 +492,7 @@ fn changed_areas(doc: &Document, page: NodeId, id: NodeId, out: &mut Vec<Rect>) 
     if doc.page_of(id) != Some(page) {
         return Some(());
     }
-    out.push(draw::paint_bounds(doc, id)?);
+    out.push(draw::shown_paint_bounds(doc, id)?);
     // A mask clips the layers above it.
     if n.is_mask {
         let parent = n.parent?;
@@ -546,14 +571,19 @@ fn plan_patch(
         // Layers that only moved (a drag): the pixels they covered are copied, not drawn.
         let plain_view =
             dx == 0 && dy == 0 && reach == 0 && skipped.is_empty() && allow_copies && s.areas.is_empty() && last.sensitive.areas.is_empty();
-        let plan = if plain_view { moved::plan(&last.doc, doc, page, &changed, view.scale, px, (w, h)) } else { None };
+        let t = web_time::Instant::now();
+        let plan = if plain_view { moved::plan_or_why(&last.doc, doc, page, &changed, view.scale, px, (w, h)) } else { Err(moved::NoCopy::NotTried) };
+        let ns = crate::perf::ns_since(t);
+        crate::perf::count(|s| s.plan_ns += ns);
         match plan {
-            Some(plan) => {
+            Ok(plan) => {
+                crate::perf::count(|s| s.copied += 1);
                 copies = plan.copies;
                 repair = plan.repair;
                 areas.extend(plan.areas);
             }
-            None => {
+            Err(why) => {
+                crate::perf::not_copied(why);
                 for id in &changed {
                     changed_areas(&last.doc, page, *id, &mut areas)?;
                     changed_areas(doc, page, *id, &mut areas)?;
@@ -643,19 +673,32 @@ fn subtract(a: Px, b: Px) -> Vec<Px> {
 /// Copy each plan's source area of `pix` to its destination (all sources are read before any
 /// destination is written). The destinations.
 fn copy_areas(pix: &mut Pixmap, copies: &[moved::Copy]) -> Option<Vec<Px>> {
-    let mut parts = Vec::with_capacity(copies.len());
+    let (w, h) = (i64::from(pix.width()), i64::from(pix.height()));
+    let row = usize::try_from(w * 4).ok()?;
+    // The rows of each source, read before any destination is written (a destination may
+    // overlap another copy's source).
+    let mut parts: Vec<Vec<u8>> = Vec::with_capacity(copies.len());
     for c in copies {
-        let r = IntRect::from_xywh(
-            i32::try_from(c.src.x0).ok()?,
-            i32::try_from(c.src.y0).ok()?,
-            u32::try_from(c.src.x1 - c.src.x0).ok()?,
-            u32::try_from(c.src.y1 - c.src.y0).ok()?,
-        )?;
-        parts.push(pix.clone_rect(r)?);
+        let (src, dst) = (c.src.clamp(w, h)?, c.dst.clamp(w, h)?);
+        if (src.x1 - src.x0, src.y1 - src.y0) != (dst.x1 - dst.x0, dst.y1 - dst.y0) || src != c.src || dst != c.dst {
+            return None;
+        }
+        let n = usize::try_from((src.x1 - src.x0) * 4).ok()?;
+        let mut part = Vec::with_capacity(n * usize::try_from(src.y1 - src.y0).ok()?);
+        let data = pix.data();
+        for y in src.y0..src.y1 {
+            let at = usize::try_from(y).ok()? * row + usize::try_from(src.x0 * 4).ok()?;
+            part.extend_from_slice(data.get(at..at + n)?);
+        }
+        parts.push(part);
     }
-    let copy = PixmapPaint { blend_mode: tiny_skia::BlendMode::Source, ..Default::default() };
+    let data = pix.data_mut();
     for (c, part) in copies.iter().zip(&parts) {
-        pix.draw_pixmap(i32::try_from(c.dst.x0).ok()?, i32::try_from(c.dst.y0).ok()?, part.as_ref(), &copy, Transform::identity(), None);
+        let n = usize::try_from((c.dst.x1 - c.dst.x0) * 4).ok()?;
+        for (k, y) in (c.dst.y0..c.dst.y1).enumerate() {
+            let at = usize::try_from(y).ok()? * row + usize::try_from(c.dst.x0 * 4).ok()?;
+            data.get_mut(at..at + n)?.copy_from_slice(part.get(k * n..(k + 1) * n)?);
+        }
     }
     Some(copies.iter().map(|c| c.dst).collect())
 }

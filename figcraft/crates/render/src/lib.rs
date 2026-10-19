@@ -20,6 +20,7 @@ pub mod mips;
 mod moved;
 pub mod paint;
 pub mod pattern;
+pub mod perf;
 pub mod prefetch;
 pub mod retained;
 pub mod shadow;
@@ -110,10 +111,12 @@ pub(crate) fn backdrop_reach(radius: f64, scale: f64) -> f64 {
 pub fn render_view(doc: &Document, page: NodeId, view: &View, opts: &Options) -> Option<Pixmap> {
     // Decode the pictures in view first, in parallel, one thread for each (not in the order the
     // render meets them, nor once per band).
+    let timed = perf::Timed::start(|s| &mut s.prefetch_ns);
     let needs = prefetch::needs(doc, page, view, opts);
     if !needs.is_empty() {
         prefetch::run(doc, doc.color_profile, &needs);
     }
+    drop(timed);
     #[cfg(not(target_arch = "wasm32"))]
     {
         let threads = rayon::current_num_threads().clamp(1, 16) as u32;
@@ -521,6 +524,8 @@ mod retained_edit_tests;
 mod retained_tests;
 #[cfg(test)]
 mod rtl_list_tests;
+#[cfg(test)]
+mod shadow_shortcut_tests;
 #[cfg(test)]
 mod sliced_tests;
 #[cfg(test)]

@@ -119,6 +119,21 @@ pub fn get(hash: &str, data: Option<&ImageData>, filters: &ImageFilters, profile
     mips::global().picture(&Source { hash, data, filters, profile }, 0, false).map(|p| p.pixmap)
 }
 
+/// Whether encoded image bytes have no alpha: a JPEG, or a PNG of a colour type without it (and no
+/// transparent colour).
+pub fn opaque_bytes(bytes: &[u8]) -> bool {
+    if bytes.starts_with(&[0xFF, 0xD8]) {
+        return true;
+    }
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        let color_type = bytes.get(25).copied();
+        let head = bytes.get(..bytes.len().min(4096)).unwrap_or(bytes);
+        let transparent = head.windows(4).any(|w| w == b"tRNS");
+        return matches!(color_type, Some(0 | 2)) && !transparent;
+    }
+    false
+}
+
 /// The mip level a canvas preview draws image paint `img` from, on a `w` × `h` box shown at `scale`
 /// device pixels per unit: 0 (the picture as it is) unless the picture shows at under half its
 /// size. Tiles repeat every picture width, so they take only levels that divide it exactly.

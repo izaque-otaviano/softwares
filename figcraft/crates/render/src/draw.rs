@@ -65,6 +65,7 @@ pub fn ts_path(p: &BezPath) -> Option<tiny_skia::Path> {
 fn fill_with(pix: &mut Pixmap, path: &tiny_skia::Path, paints: &[Paint], w: f64, h: f64, xf: Affine, rule: FillRule, ctx: &Ctx, mask: Option<&Mask>) {
     let scale = xf.determinant().abs().sqrt();
     for p in paints {
+        let _timed = matches!(p.kind, figcraft_color::PaintKind::Image(_)).then(|| crate::perf::Timed::start(|s| &mut s.image_fill_ns)).flatten();
         let Some(prep) = prepare_with(p, w, h, scale, ctx.doc, ctx.time, Detail { mip: ctx.mip, draft: ctx.draft }) else { continue };
         let paint = tiny_skia::Paint { shader: prep.shader(), anti_alias: true, blend_mode: ts_blend(p.blend), ..Default::default() };
         if p.blend == BlendMode::PlusDarker {
@@ -316,12 +317,19 @@ fn local_paint_bounds(doc: &Document, n: &Node, depth: usize, greek_scale: Optio
 /// How far (document units) effects that read outside a node's paint bounds reach: blurs, glass,
 /// drop shadows and texture. Culling and partial renders keep this much margin.
 pub fn effect_margin(n: &Node) -> f64 {
+    effect_margin_of(n, true)
+}
+
+/// [`effect_margin`], with or without the drop shadows (`shadows`): a layer whose shadows can't
+/// show in a render needs no margin for them.
+fn effect_margin_of(n: &Node, shadows: bool) -> f64 {
     n.effects
         .iter()
         .filter(|e| e.visible)
         .map(|e| match &e.kind {
             EffectKind::LayerBlur(b) => b.max_radius() * 2.0,
             EffectKind::BackgroundBlur { .. } | EffectKind::Glass(_) => e.backdrop_radius() * 2.0,
+            EffectKind::DropShadow(_) if !shadows => 0.0,
             EffectKind::DropShadow(s) => s.radius * 2.0 + s.spread.abs() * figcraft_doc::SPREAD_MITER_LIMIT + s.offset.0.abs() + s.offset.1.abs(),
             EffectKind::Texture(t) => t.radius.abs(),
             // A group's inner shadows are cast from around its pixels: a layer cut off at the
@@ -334,12 +342,152 @@ pub fn effect_margin(n: &Node) -> f64 {
 }
 
 /// Everything node `id` can paint, in page coordinates: its paint bounds (glyphs of overflowing
-/// text included) grown by its effects' margin. What a change to the node can affect on screen.
+/// text included) grown to its effects' margin ([`effect_margin`], the reach the renderer keeps
+/// around a layer; the local bounds hold the document's own estimate of it, [`Node::paint_reach`],
+/// counted once, not on top). What a change to the node can affect on screen.
 pub fn paint_bounds(doc: &Document, id: NodeId) -> Option<Rect> {
     let n = doc.node(id)?;
-    let m = effect_margin(n).abs();
+    let counted = n.effects.iter().map(figcraft_doc::Effect::reach).filter(|r| r.is_finite()).fold(0.0, f64::max);
+    let m = (effect_margin(n).abs() - counted).max(0.0);
     let local = local_paint_bounds(doc, n, 0, None);
     Some(figcraft_geom::transform_rect_bbox(doc.world_transform(id), local).inflate(m, m))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests turn the shadow shortcuts off to compare with the long way round.
+    pub(crate) static NO_SHADOW_SHORTCUTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether drop shadows may be skipped where hidden and cast from outlines (always, outside the
+/// tests that compare those with the long way round).
+fn shadow_shortcuts() -> bool {
+    #[cfg(test)]
+    if NO_SHADOW_SHORTCUTS.with(std::cell::Cell::get) {
+        return false;
+    }
+    true
+}
+
+/// Node `n`'s drop shadows cast from its outline over `reach` (device pixels: its paint bounds
+/// within the view grown by the shadows' margin), composited onto `pix` at `op`.
+fn shadows_from_shape(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, reach: Rect, op: f32) {
+    let (sx0, sy0) = (reach.x0.floor(), reach.y0.floor());
+    let (sw, sh) = (reach.x1.ceil() - sx0, reach.y1.ceil() - sy0);
+    if !(sx0.is_finite() && sy0.is_finite() && sw >= 1.0 && sh >= 1.0) {
+        return;
+    }
+    let (sx, sy) = (sx0 as i32, sy0 as i32);
+    let sxf = Affine::translate((-f64::from(sx), -f64::from(sy))) * xf;
+    let Some(outline) = shadow::silhouette(ctx.doc, n) else { return };
+    let Some(alpha) = shadow::spread_alpha(&outline, 0.0, sxf, sw.min(16_384.0) as u32, sh.min(16_384.0) as u32) else { return };
+    crate::perf::count(|s| s.shadows += 1);
+    let caster = shadow::Caster::new(ctx.doc, n, &alpha, sxf, ctx.scale);
+    for e in n.effects.iter().filter(|e| e.visible) {
+        if let EffectKind::DropShadow(s) = &e.kind
+            && let Some(shadow) = shadow::drop_shadow(&caster, s)
+        {
+            composite(pix, (sx, sy), &shadow, op, s.blend);
+        }
+    }
+}
+
+/// Whether the drop shadows of node `n` can be cast from its outline instead of its pixels: its
+/// pixels are its outline ([`shadow::silhouette`]), filled opaque, with no stroke and nothing
+/// that moves or thins its pixels (a layer blur, a texture). A patch inside such a layer then
+/// draws only its own pixels, not the layer out to the shadow's reach.
+fn casts_from_shape(ctx: &Ctx, n: &Node) -> bool {
+    if !n.effects.iter().any(|e| e.visible && matches!(e.kind, EffectKind::DropShadow(_))) {
+        return false;
+    }
+    if n.has_visible_stroke()
+        || matches!(n.kind, NodeKind::Text(_) | NodeKind::Group | NodeKind::BooleanOp { .. })
+        || n.effects.iter().any(|e| e.visible && matches!(e.kind, EffectKind::LayerBlur(_) | EffectKind::Texture(_) | EffectKind::Noise(_)))
+    {
+        return false;
+    }
+    opaque_fill(ctx, n) && shadow::silhouette(ctx.doc, n).is_some()
+}
+
+/// Whether node `n`'s last visible fill is opaque everywhere in its box: a solid colour without
+/// transparency, or a picture without alpha that fills the box.
+fn opaque_fill(ctx: &Ctx, n: &Node) -> bool {
+    let Some(fill) = n.fills.iter().rev().find(|p| p.visible) else { return false };
+    matches!(fill.blend, BlendMode::Normal | BlendMode::PassThrough)
+        && fill.opacity >= 0.999
+        && match &fill.kind {
+            figcraft_color::PaintKind::Solid { color } => color.a >= 0.999,
+            figcraft_color::PaintKind::Image(ip) => {
+                matches!(ip.scale_mode, figcraft_color::ImageScaleMode::Fill | figcraft_color::ImageScaleMode::Tile)
+                    && ctx.doc.images.get(&ip.image).is_some_and(|d| crate::images::opaque_bytes(&d.bytes))
+            }
+            _ => false,
+        }
+}
+
+/// Whether node `n`'s drop shadows can show nothing in `vis` (device pixels, the part of its
+/// layer this render draws): they hide behind the layer's own paints, and `vis` lies inside an
+/// opaque box fill, clear of the rounded corners. A patch of a few rows inside a card with a
+/// shadow then costs the rows, not the shadow's blur.
+fn shadows_hidden(ctx: &Ctx, n: &Node, xf: Affine, vis: Rect) -> bool {
+    let mut shadows = n.effects.iter().filter(|e| e.visible).filter_map(|e| if let EffectKind::DropShadow(s) = &e.kind { Some(s) } else { None });
+    if !shadows.any(|_| true) {
+        return true;
+    }
+    let shadows = n.effects.iter().filter(|e| e.visible).filter_map(|e| if let EffectKind::DropShadow(s) = &e.kind { Some(s) } else { None });
+    let boxed = matches!(n.kind, NodeKind::Rectangle) || n.kind.is_frame_like() && !n.kind.bounds_follow_children();
+    if !boxed || !is_axis_aligned(xf) || shadows.clone().any(|s| s.show_behind) || shadow::cover(ctx.doc, n).is_none() {
+        return false;
+    }
+    if !opaque_fill(ctx, n) {
+        return false;
+    }
+    // The box in device pixels, less its rounded corners and a pixel of anti-aliasing.
+    let r = n.corners.radii.iter().copied().fold(0.0, f64::max).abs() * (1.0 + n.corners.smoothing.max(0.0)) * ctx.scale + 1.0;
+    let b = device_rect(xf, n.local_rect());
+    if !(r.is_finite() && b.width() > 2.0 * r && b.height() > 2.0 * r) {
+        return false;
+    }
+    // Inside the straight edges (a pixel in), and at the corners inside the arc the radius rounds
+    // (a smoothed corner bulges out past the circle, so the circle is the smaller region): the
+    // rounded box is convex, so a rectangle whose corners are inside it is inside it.
+    let inner = Rect::new(b.x0 + 1.0, b.y0 + 1.0, b.x1 - 1.0, b.y1 - 1.0);
+    // A layer outside what is drawn can still cast a shadow into it.
+    if vis.is_zero_area() {
+        return false;
+    }
+    if !(vis.x0 >= inner.x0 && vis.y0 >= inner.y0 && vis.x1 <= inner.x1 && vis.y1 <= inner.y1) {
+        return false;
+    }
+    let centres = [(b.x0 + r, b.y0 + r), (b.x1 - r, b.y0 + r), (b.x0 + r, b.y1 - r), (b.x1 - r, b.y1 - r)];
+    let inside = |x: f64, y: f64| {
+        centres.iter().all(|(cx, cy)| {
+            // Past the centre on both axes: in the corner's quadrant, where the arc is the edge.
+            let (dx, dy) = ((x - cx) * (cx - b.center().x).signum(), (y - cy) * (cy - b.center().y).signum());
+            dx <= 0.0 || dy <= 0.0 || dx * dx + dy * dy <= (r - 1.0) * (r - 1.0)
+        })
+    };
+    inside(vis.x0, vis.y0) && inside(vis.x1, vis.y0) && inside(vis.x0, vis.y1) && inside(vis.x1, vis.y1)
+}
+
+/// [`paint_bounds`] kept to what the clipping ancestors show of node `id` (their boxes; a
+/// rotated one's bounding box): a photo pushed past its card's edge changes nothing there.
+pub fn shown_paint_bounds(doc: &Document, id: NodeId) -> Option<Rect> {
+    let mut r = paint_bounds(doc, id)?;
+    for a in doc.ancestors(id) {
+        let Some(an) = doc.node(a) else { break };
+        if an.is_page() {
+            break;
+        }
+        if an.clip && an.kind.is_frame_like() && !an.kind.bounds_follow_children() {
+            let Some(b) = doc.world_bounds(a) else { break };
+            r = r.intersect(b);
+            if r.x1 <= r.x0 || r.y1 <= r.y0 {
+                return Some(Rect::new(r.x0, r.y0, r.x0, r.y0));
+            }
+        }
+    }
+    Some(r)
 }
 
 fn needs_layer(n: &Node) -> bool {
@@ -395,11 +543,20 @@ pub fn draw_node(ctx: &Ctx, pix: &mut Pixmap, id: NodeId, parent_xf: Affine, dep
     let dev = device_rect(xf, local);
     // Effects that read outside (blur) need a margin when culling. Absurd effects (a spread or
     // blur of millions of pixels) keep a sane layer: what lies further off reads as empty.
-    let blur_margin = (effect_margin(n) * ctx.scale).min(MAX_EFFECT_MARGIN_PX);
-    let view = Rect::new(0.0, 0.0, f64::from(pw), f64::from(ph)).inflate(blur_margin, blur_margin);
-    if dev.intersect(view).is_zero_area() && !(dev.width() == 0.0 || dev.height() == 0.0) {
+    let frame = Rect::new(0.0, 0.0, f64::from(pw), f64::from(ph));
+    let full_margin = (effect_margin(n) * ctx.scale).min(MAX_EFFECT_MARGIN_PX);
+    let blur_margin = full_margin;
+    if dev.intersect(frame.inflate(blur_margin, blur_margin)).is_zero_area() && !(dev.width() == 0.0 || dev.height() == 0.0) {
         return;
     }
+    // Drop shadows that can show nothing in the pixels drawn (a patch of rows inside an opaque
+    // card) are not cast, and the layer keeps no margin for them: a strip costs the strip. Nor
+    // does it when the shadows are cast from the node's outline instead of its pixels.
+    let fast = shadow_shortcuts();
+    let shadows_hidden = fast && shadows_hidden(ctx, n, xf, dev.intersect(frame));
+    let shape_cast = fast && !shadows_hidden && casts_from_shape(ctx, n);
+    let blur_margin = if shadows_hidden || shape_cast { (effect_margin_of(n, false) * ctx.scale).min(MAX_EFFECT_MARGIN_PX) } else { blur_margin };
+    let view = frame.inflate(blur_margin, blur_margin);
     if outline {
         draw_outline(&Ctx { outline_mode: true, ..*ctx }, pix, n, xf, depth);
         return;
@@ -419,6 +576,10 @@ pub fn draw_node(ctx: &Ctx, pix: &mut Pixmap, id: NodeId, parent_xf: Affine, dep
     let (x0, y0) = (vis.x0.floor(), vis.y0.floor());
     let (w, h) = (vis.x1.ceil() - x0, vis.y1.ceil() - y0);
     if !(x0.is_finite() && y0.is_finite() && w >= 1.0 && h >= 1.0) {
+        // Nothing of the layer itself shows; its shadows still may.
+        if shape_cast {
+            shadows_from_shape(ctx, pix, n, xf, dev.intersect(frame.inflate(full_margin, full_margin)), n.opacity.clamp(0.0, 1.0));
+        }
         return;
     }
     let (lx, ly) = (x0 as i32, y0 as i32);
@@ -481,12 +642,18 @@ pub fn draw_node(ctx: &Ctx, pix: &mut Pixmap, id: NodeId, parent_xf: Affine, dep
         }
     }
     // Drop shadows go under the layer, in effect-list order.
-    let caster = shadow::Caster::new(ctx.doc, n, &layer, lxf, ctx.scale);
-    for e in n.effects.iter().filter(|e| e.visible) {
-        if let EffectKind::DropShadow(s) = &e.kind
-            && let Some(sh) = shadow::drop_shadow(&caster, s)
-        {
-            composite(pix, (lx, ly), &sh, op, s.blend);
+    let _timed = crate::perf::Timed::start(|s| &mut s.shadow_ns);
+    if shape_cast {
+        shadows_from_shape(ctx, pix, n, xf, dev.intersect(frame.inflate(full_margin, full_margin)), op);
+    } else if !shadows_hidden {
+        crate::perf::count(|s| s.shadows += 1);
+        let caster = shadow::Caster::new(ctx.doc, n, &layer, lxf, ctx.scale);
+        for e in n.effects.iter().filter(|e| e.visible) {
+            if let EffectKind::DropShadow(s) = &e.kind
+                && let Some(sh) = shadow::drop_shadow(&caster, s)
+            {
+                composite(pix, (lx, ly), &sh, op, s.blend);
+            }
         }
     }
     composite(pix, (lx, ly), &layer, op, n.blend);
@@ -536,6 +703,7 @@ fn draw_content(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, depth: usize,
             }
         }
         NodeKind::Text(t) => {
+            let _timed = crate::perf::Timed::start(|s| &mut s.text_ns);
             let Some((layout, dy)) = figcraft_text::layout_node(n) else { return };
             let gxf = xf * Affine::translate((0.0, dy));
             // Group glyphs by style so runs with their own fills paint with them.
@@ -663,6 +831,7 @@ fn draw_masked(ctx: &Ctx, pix: &mut Pixmap, mask_id: NodeId, content: &[NodeId],
 }
 
 fn draw_children_clipped(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, depth: usize, clip: Option<&BezPath>) {
+    let _timed = crate::perf::Timed::start(|s| &mut s.clip_ns);
     let (pw, ph) = (pix.width(), pix.height());
     let dev = device_rect(xf, n.local_rect());
     let Some(ir) = int_rect(dev, (pw, ph)) else { return };

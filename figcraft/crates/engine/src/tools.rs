@@ -888,6 +888,14 @@ impl Session {
 
     /// Feed one pointer event to the current tool.
     pub fn pointer(&mut self, ev: &PointerEvent) -> Result<()> {
+        let t = web_time::Instant::now();
+        crate::perf::bump(&crate::perf::POINTER_CALLS);
+        let res = self.pointer_inner(ev);
+        crate::perf::add(&crate::perf::POINTER_NS, crate::perf::ns_since(t));
+        res
+    }
+
+    fn pointer_inner(&mut self, ev: &PointerEvent) -> Result<()> {
         // A held button sends the same move every frame: running the gesture again would only
         // rebuild the same preview (a new document, and a canvas render, every frame).
         if ev.kind != PointerKind::Move {
@@ -1194,6 +1202,8 @@ impl Session {
             }
             Gesture::Move { start, moved: false, .. } | Gesture::Resize { start, moved: false, .. } if within_slop(ev, *start) => Ok(()),
             Gesture::Move { start, ids, targets, duplicate, .. } => {
+                let t_move = web_time::Instant::now();
+                crate::perf::bump(&crate::perf::MOVES);
                 let mut d = ev.p() - *start;
                 if ev.shift {
                     if d.x.abs() > d.y.abs() {
@@ -1206,7 +1216,9 @@ impl Session {
                 let snap_on = self.ds().map(|ds| ds.view.snap_objects).unwrap_or(true) && !ev.cmd && !ev.ctrl;
                 let mut guides = Vec::new();
                 if snap_on {
+                    let t_snap = web_time::Instant::now();
                     let (c, g2) = targets.snap_move(d, SNAP_PX / ev.zoom.max(1e-6));
+                    crate::perf::add(&crate::perf::SNAP_NS, crate::perf::ns_since(t_snap));
                     d += c;
                     guides = g2;
                 }
@@ -1222,6 +1234,7 @@ impl Session {
                 let mut in_flow = false;
                 // Placed in a row or column: (is it a column, its gap) for the insertion line.
                 let mut slot_axis: Option<(bool, f64)> = None;
+                crate::perf::add(&crate::perf::MOVE_NS, crate::perf::ns_since(t_move));
                 self.preview(|doc, sel| {
                     let mut moving = ids.clone();
                     if dup {

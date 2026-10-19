@@ -1657,6 +1657,7 @@ dependencies = [
  "png",
  "rayon",
  "tiny-skia",
+ "web-time",
 ]
 
 [[package]]

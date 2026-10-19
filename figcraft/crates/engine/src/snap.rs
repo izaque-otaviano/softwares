@@ -61,6 +61,7 @@ impl Targets {
     /// layout grids, excluding the moving nodes and their descendants. Inside a rotated frame they
     /// are gathered in its space.
     pub fn gather(doc: &Document, page: NodeId, moving: &[NodeId]) -> Targets {
+        crate::perf::bump(&crate::perf::GATHERS);
         let parent = parent_of(doc, page, moving);
         let xf = doc.world_transform(parent);
         let space = if parent != page && !guides::axis_aligned(xf) { xf } else { Affine::IDENTITY };
