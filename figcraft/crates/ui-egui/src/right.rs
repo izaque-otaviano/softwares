@@ -714,12 +714,12 @@ fn position_fields(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]
         ui.add_enabled_ui(sel.len() > 2, |ui| {
             let more = icons::button(ui, Icon::DistributeH, widgets::button_size(), false, tr("Distribute and tidy"));
             menu_popup(&more).show(|ui| {
-                for (l, c) in [
-                    (tr("Distribute horizontal spacing"), "distribute.horizontal"),
-                    (tr("Distribute vertical spacing"), "distribute.vertical"),
-                    (tr("Tidy up"), "arrange.tidy"),
+                for (l, c, icon) in [
+                    (tr("Distribute horizontal spacing"), "distribute.horizontal", Icon::DistributeH),
+                    (tr("Distribute vertical spacing"), "distribute.vertical", Icon::DistributeV),
+                    (tr("Tidy up"), "arrange.tidy", Icon::LayoutGrid),
                 ] {
-                    if menu_item(ui, l, crate::shortcuts::shortcut(c).unwrap_or("")) {
+                    if icon_row(ui, icon, None, l, crate::shortcuts::shortcut(c).unwrap_or("")) {
                         app.run(c, json!({"ids": ids}));
                         ui.close();
                     }
