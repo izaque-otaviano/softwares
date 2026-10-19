@@ -114,10 +114,20 @@ jobs:
         run: |
           instaladores/figcraft/macos/criar-dmg.sh figcraft/target/macos-package/FigCraft.app \
             "saida/FigCraft-$VERSION-macOS-Universal.dmg"
+      # O figcraft-cli (exportar, converter e o servidor MCP para ligar o Claude ao app) vem do mesmo
+      # package.sh, num zip à parte; sobe na Release ao lado do .dmg.
+      - name: Copiar o figcraft-cli
+        run: |
+          zip="$(ls figcraft/dist/release/figcraft-cli-*-macos-universal.zip | head -1)"
+          [ -f "$zip" ] || { echo "o package.sh não gerou o zip do figcraft-cli" >&2; exit 1; }
+          cp "$zip" "saida/figcraft-cli-$VERSION-macOS-Universal.zip"
+          ls -la saida
       - uses: actions/upload-artifact@v4
         with:
           name: FigCraft-macOS
-          path: saida/*.dmg
+          path: |
+            saida/*.dmg
+            saida/figcraft-cli-*.zip
           if-no-files-found: error
       - name: Remover keychain temporário
         if: always()
@@ -242,7 +252,7 @@ jobs:
           [ -n "$v" ] || { echo "nenhum instalador encontrado" >&2; exit 1; }
           tag="figcraft-v$v"
           commit="$(git rev-parse HEAD)"
-          (cd saida && sha256sum FigCraft-* >SHA256SUMS.txt)
+          (cd saida && sha256sum FigCraft-* figcraft-cli-* >SHA256SUMS.txt)
           sed -e "s/{VERSAO}/$v/g" -e "s|{REF}|$REF|g" -e "s|{COMMIT}|$commit|g" instaladores/figcraft/notas-release.md >notas.md
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" saida/* --clobber
