@@ -312,12 +312,24 @@ pub(crate) fn menu_row_width(label_w: f32, trail: f32) -> f32 {
 /// A menu row (see [`menu_item_with`]); its response tells hovering too. It spans the menu and
 /// is at least as wide as its label, shortcut and art.
 pub fn menu_row(ui: &mut Ui, label: &str, shortcut: &str, art_w: f32, art: impl FnOnce(&egui::Painter, Rect, Color32)) -> egui::Response {
+    menu_row_indented(ui, label, shortcut, 0.0, art_w, art)
+}
+
+/// [`menu_row`] whose label starts `lead` points further in (room for art drawn before it).
+pub fn menu_row_indented(
+    ui: &mut Ui,
+    label: &str,
+    shortcut: &str,
+    lead: f32,
+    art_w: f32,
+    art: impl FnOnce(&egui::Painter, Rect, Color32),
+) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let text = ui.painter().layout_no_wrap(label.to_owned(), regular(11.5), Color32::PLACEHOLDER);
     let keys =
         (!shortcut.is_empty()).then(|| ui.painter().layout_no_wrap(crate::toolbar::pretty_shortcut(shortcut), regular(11.0), Color32::PLACEHOLDER));
     let trail = keys.as_ref().map_or(0.0, |k| k.size().x + MENU_PAD).max(art_w);
-    let w = ui.available_width().max(menu_row_width(text.size().x, trail).ceil());
+    let w = ui.available_width().max((menu_row_width(text.size().x, trail) + lead).ceil());
     let (r, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
     a11y::menu_item(&resp, label, shortcut, None);
     // The keyboard's item is highlighted like the hovered one.
@@ -327,7 +339,7 @@ pub fn menu_row(ui: &mut Ui, label: &str, shortcut: &str, art_w: f32, art: impl 
         ui.painter().rect_filled(r, CornerRadius::same(5), ACCENT);
     }
     let col = if hovered { Color32::WHITE } else { t.text };
-    ui.painter().galley(pos2(r.min.x + MENU_PAD, r.center().y - text.size().y / 2.0), text, col);
+    ui.painter().galley(pos2(r.min.x + MENU_PAD + lead, r.center().y - text.size().y / 2.0), text, col);
     if let Some(k) = keys {
         let at = pos2(r.max.x - MENU_PAD - k.size().x, r.center().y - k.size().y / 2.0);
         ui.painter().galley(at, k, if hovered { Color32::WHITE } else { t.text_secondary });
@@ -625,25 +637,37 @@ fn is_shape(kind: &NodeKind) -> bool {
 /// The boolean operations and Flatten as menu rows (`current`: the operation the selection uses,
 /// checked).
 fn boolean_items(app: &mut FigApp, ui: &mut Ui, current: Option<BoolOp>) {
-    for (op, c) in
-        [(BoolOp::Union, "bool.union"), (BoolOp::Subtract, "bool.subtract"), (BoolOp::Intersect, "bool.intersect"), (BoolOp::Exclude, "bool.exclude")]
-    {
+    for (op, c, icon) in [
+        (BoolOp::Union, "bool.union", Icon::Union),
+        (BoolOp::Subtract, "bool.subtract", Icon::Subtract),
+        (BoolOp::Intersect, "bool.intersect", Icon::Intersect),
+        (BoolOp::Exclude, "bool.exclude", Icon::Exclude),
+    ] {
         let key = crate::shortcuts::shortcut(c).unwrap_or("");
-        let picked = match current {
-            Some(cur) => menu_check(ui, cur == op, tr(op.label()), key),
-            None => menu_item(ui, tr(op.label()), key),
-        };
-        if picked {
+        if icon_row(ui, icon, current.map(|cur| cur == op), tr(op.label()), key) {
             app.run(c, json!({}));
             ui.close();
         }
     }
     let key = crate::shortcuts::shortcut("vector.flatten").unwrap_or("");
-    let flatten = if current.is_some() { menu_item_beside_checks(ui, tr("Flatten"), key) } else { menu_item(ui, tr("Flatten"), key) };
-    if flatten {
+    // (Beside the checks, when there are any: the group's own operation is ticked.)
+    if icon_row(ui, Icon::Flatten, current.map(|_| false), tr("Flatten"), key) {
         app.run("vector.flatten", json!({}));
         ui.close();
     }
+}
+
+/// A menu row with a small icon before its label; `mark` leaves room for (and draws) a check.
+fn icon_row(ui: &mut Ui, icon: Icon, mark: Option<bool>, label: &str, shortcut: &str) -> bool {
+    let check_w = if mark.is_some() { 16.0 } else { 0.0 };
+    let resp = menu_row_indented(ui, label, shortcut, check_w + 22.0, 0.0, |painter, r, col| {
+        if mark == Some(true) {
+            icons::paint(painter, Rect::from_center_size(pos2(r.min.x + MENU_PAD + 6.0, r.center().y), vec2(12.0, 12.0)), Icon::Check, col);
+        }
+        icons::paint(painter, Rect::from_center_size(pos2(r.min.x + MENU_PAD + check_w + 7.0, r.center().y), vec2(14.0, 14.0)), icon, col);
+    });
+    a11y::menu_item(&resp, label, shortcut, mark);
+    resp.clicked()
 }
 
 fn position(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
