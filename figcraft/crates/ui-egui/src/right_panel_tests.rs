@@ -67,9 +67,16 @@ fn gallery_dir() -> Option<std::path::PathBuf> {
 fn right_panel_gallery() {
     let Some(dir) = gallery_dir() else { return };
     let (mut r, [frame, rect, text, auto]) = rec();
-    for (name, ids) in
-        [("frame", vec![frame]), ("rectangle", vec![rect]), ("text", vec![text]), ("autolayout", vec![auto]), ("multi", vec![rect, text])]
-    {
+    // The circle in the frame: with the rectangle, two shapes (the boolean button shows).
+    let circle = r.u.app.session.doc().unwrap().node(frame).unwrap().children.last().copied().unwrap();
+    for (name, ids) in [
+        ("frame", vec![frame]),
+        ("rectangle", vec![rect]),
+        ("text", vec![text]),
+        ("autolayout", vec![auto]),
+        ("multi", vec![rect, text]),
+        ("shapes", vec![rect, circle]),
+    ] {
         select(&mut r, &ids);
         let area = panel(&r);
         r.save_region(&dir.join(format!("{name}.png")), area, 2);
@@ -241,6 +248,16 @@ fn control(u: &mut Ui, role: Role, label: &str) -> Control {
     controls(u).into_iter().find(|c| c.role == role && c.label == label).unwrap_or_else(|| panic!("no {role:?} named {label:?}"))
 }
 
+/// The topmost button named `label` (the typography section has alignment buttons of its own,
+/// further down than the position section's).
+fn top_button(u: &mut Ui, label: &str) -> Control {
+    controls(u)
+        .into_iter()
+        .filter(|c| c.role == Role::Button && c.label == label)
+        .min_by(|a, b| a.rect.min.y.total_cmp(&b.rect.min.y))
+        .unwrap_or_else(|| panic!("no button named {label:?}"))
+}
+
 fn click(u: &mut Ui, p: Pos2) {
     u.button(p, true);
     u.button(p, false);
@@ -330,14 +347,103 @@ fn the_more_menu_keeps_mask_boolean_and_swap_orientation() {
     assert_eq!((n.width, n.height), (h, w), "Swap orientation swapped the frame's size");
 }
 
+/// Two shapes selected: the header has a Boolean groups button whose menu runs the operations;
+/// one layer has none (only the More menu's "Use as mask").
+#[test]
+fn two_shapes_get_a_boolean_button_in_the_header_and_one_layer_does_not() {
+    let (mut u, ids) = ui_with(&[1]);
+    assert!(!controls(&mut u).iter().any(|c| c.label == "Boolean groups"), "one layer: no boolean button");
+    // The rectangle and the circle inside the frame.
+    let circle = u
+        .app
+        .session
+        .doc()
+        .unwrap()
+        .node(ids[0])
+        .unwrap()
+        .children
+        .iter()
+        .copied()
+        .find(|c| matches!(u.app.session.doc().unwrap().node(*c).map(|n| &n.kind), Some(figcraft_doc::NodeKind::Ellipse { .. })));
+    let circle = circle.expect("the circle in the frame");
+    u.app.run("select.set", json!({"ids": [ids[1], circle]}));
+    u.frame(vec![]);
+    let b = control(&mut u, Role::Button, "Boolean groups");
+    let more = control(&mut u, Role::Button, "More");
+    assert!(b.rect.min.x < more.rect.min.x && (b.rect.center().y - more.rect.center().y).abs() < 1.0, "beside More in the header row");
+    click(&mut u, b.center());
+    let t = drawn(&mut u);
+    for s in ["Union", "Subtract", "Intersect", "Exclude", "Flatten"] {
+        assert!(t.iter().any(|(x, _)| x == s), "the boolean menu lacks {s:?}");
+    }
+    let p = t.iter().find(|(x, _)| x == "Union").unwrap().1;
+    click(&mut u, p + vec2(10.0, 6.0));
+    let doc = u.app.session.doc().unwrap();
+    let group = doc.node(ids[1]).unwrap().parent.unwrap();
+    assert!(
+        matches!(doc.node(group).map(|n| &n.kind), Some(figcraft_doc::NodeKind::BooleanOp { op: figcraft_doc::BoolOp::Union })),
+        "Union made a boolean group"
+    );
+    // A text and a rectangle: no boolean button, but the More menu keeps the operations.
+    let (mut u, _) = ui_with(&[1, 2]);
+    assert!(!controls(&mut u).iter().any(|c| c.label == "Boolean groups"));
+    click_control(&mut u, Role::Button, "More");
+    assert!(drawn(&mut u).iter().any(|(x, _)| x == "Union"));
+}
+
+/// The alignment buttons are live (full icon colour, enabled) with two layers, which align to
+/// each other, and with one layer in a frame, which aligns to the frame; a lone layer on the page
+/// has them greyed.
+#[test]
+fn alignment_buttons_are_enabled_for_two_layers_and_for_a_layer_in_a_frame() {
+    // Two rectangles on the page: Align left moves the right one over to the left one.
+    let mut s = Session::new();
+    let a = id(&ex(&mut s, "shape.rectangle", json!({"x": 10, "y": 10, "width": 50, "height": 50})));
+    let b = id(&ex(&mut s, "shape.rectangle", json!({"x": 200, "y": 10, "width": 50, "height": 50})));
+    ex(&mut s, "select.set", json!({"ids": [a, b]}));
+    let mut u = Ui::new(s);
+    u.ctx.enable_accesskit();
+    u.frame(vec![]);
+    let l = top_button(&mut u, "Align left");
+    assert!(!l.disabled, "two layers: enabled");
+    click(&mut u, l.center());
+    let x = |u: &Ui, i: NodeId| u.app.session.doc().unwrap().world_bounds(i).unwrap().x0;
+    assert_eq!((x(&u, a), x(&u, b)), (10.0, 10.0), "the right rectangle moved to the left one");
+    // One rectangle inside the frame: enabled, and Align right puts it at the frame's right edge.
+    let (mut u, ids) = ui_with(&[1]);
+    let r = top_button(&mut u, "Align right");
+    assert!(!r.disabled, "a layer in a frame: enabled");
+    click(&mut u, r.center());
+    let doc = u.app.session.doc().unwrap();
+    assert_eq!(doc.world_bounds(ids[1]).unwrap().x1, doc.world_bounds(ids[0]).unwrap().x1);
+    // A lone frame on the page: nothing to align to.
+    let (mut u, _) = ui_with(&[0]);
+    assert!(top_button(&mut u, "Align left").disabled, "a lone frame on the page: nothing to align to");
+    // The icons are drawn in the full icon colour, not the dimmed one, when enabled.
+    let (mut u, _) = ui_with(&[1]);
+    let t = crate::theme::Tokens::light();
+    let out = u.frame_output(vec![]);
+    let icon_meshes = out.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Mesh(_))).count();
+    assert!(icon_meshes > 0);
+    let full = out.shapes.iter().filter(|s| mesh_colour(&s.shape) == Some(t.icon)).count();
+    assert!(full > 6, "icons in the full colour: {full}");
+}
+
+/// The colour a tinted icon mesh was painted in.
+fn mesh_colour(s: &egui::Shape) -> Option<egui::Color32> {
+    match s {
+        egui::Shape::Mesh(m) => m.vertices.first().map(|v| v.color),
+        _ => None,
+    }
+}
+
 #[test]
 fn alignment_icons_come_in_two_groups_and_still_run_their_commands() {
     let (mut u, ids) = ui_with(&[1, 2]);
-    let l = control(&mut u, Role::Button, "Align left");
-    let r = control(&mut u, Role::Button, "Align right");
-    // (The typography section has an "Align top" of its own, further down.)
-    let top = controls(&mut u).into_iter().filter(|c| c.label == "Align top").min_by(|a, b| a.rect.min.y.total_cmp(&b.rect.min.y)).unwrap();
-    let ctr = control(&mut u, Role::Button, "Align horizontal centers");
+    let l = top_button(&mut u, "Align left");
+    let r = top_button(&mut u, "Align right");
+    let top = top_button(&mut u, "Align top");
+    let ctr = top_button(&mut u, "Align horizontal centers");
     // Horizontal alignment first, vertical second, side by side on one row.
     assert!(l.rect.max.x <= ctr.rect.min.x + 0.5 && ctr.rect.max.x <= r.rect.min.x + 0.5, "three touching icons in a group");
     assert!(r.rect.max.x < top.rect.min.x, "a gap between the groups");

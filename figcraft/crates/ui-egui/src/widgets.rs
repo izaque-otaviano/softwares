@@ -680,12 +680,15 @@ pub fn elide_font(ui: &Ui, s: &str, max_w: f32, font: egui::FontId) -> String {
         .unwrap_or_else(|| "…".into())
 }
 
-/// A row of icon buttons; returns the index clicked.
+/// A row of icon buttons; returns the index clicked. Without an active cell the row is a row of
+/// actions (align, flip), each in the full icon colour: only the unchosen options of a choice
+/// are dimmed.
 pub fn segmented(ui: &mut Ui, items: &[(Icon, &str)], active: Option<usize>, cell: f32) -> Option<usize> {
     let names: Vec<&str> = items.iter().map(|(_, tip)| *tip).collect();
     segments(ui, &names, active, cell, true, |ui, r, i, on, t| {
         if let Some((icon, _)) = items.get(i) {
-            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), *icon, if on { t.icon } else { t.icon_secondary });
+            let col = if on || active.is_none() { t.icon } else { t.icon_secondary };
+            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), *icon, col);
         }
     })
 }

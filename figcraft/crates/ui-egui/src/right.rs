@@ -562,6 +562,10 @@ fn header(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
         bresp
     };
     let more = quick(ui, "more", Icon::Dots, tr("More"), false);
+    // Two or more shapes or vectors: the boolean operations get a button of their own (one layer
+    // only has "Use as mask", in the More menu).
+    let boolean = (sel.len() > 1 && sel.iter().all(|i| doc.node(*i).is_some_and(|n| is_shape(&n.kind))))
+        .then(|| quick(ui, "boolean", Icon::Boolean, tr("Boolean groups"), false));
     let component = quick(ui, "component.create", Icon::Component, crate::shortcuts::tip(tr("Create component"), "component.create"), false);
     let dev = quick(ui, "view.devMode", Icon::Code, crate::shortcuts::tip(tr("Dev Mode"), "view.devMode"), false);
     if component.clicked() {
@@ -572,6 +576,9 @@ fn header(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
     }
     // Layers in boolean groups, or one boolean group: the operation they use (checked in the menu).
     let current = figcraft_engine::booleans::shown_op(doc, sel);
+    if let Some(b) = &boolean {
+        menu_popup(b).width(220.0).show(|ui| boolean_items(app, ui, current));
+    }
     menu_popup(&more).width(220.0).show(|ui| {
         if menu_item(ui, tr("Use as mask"), crate::shortcuts::shortcut("object.mask").unwrap_or("")) {
             app.run("object.mask", json!({}));
@@ -582,30 +589,47 @@ fn header(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
             ui.close();
         }
         ui.separator();
-        for (op, c) in [
-            (BoolOp::Union, "bool.union"),
-            (BoolOp::Subtract, "bool.subtract"),
-            (BoolOp::Intersect, "bool.intersect"),
-            (BoolOp::Exclude, "bool.exclude"),
-        ] {
-            let key = crate::shortcuts::shortcut(c).unwrap_or("");
-            let picked = match current {
-                Some(cur) => menu_check(ui, cur == op, tr(op.label()), key),
-                None => menu_item(ui, tr(op.label()), key),
-            };
-            if picked {
-                app.run(c, json!({}));
-                ui.close();
-            }
-        }
-        let key = crate::shortcuts::shortcut("vector.flatten").unwrap_or("");
-        let flatten = if current.is_some() { menu_item_beside_checks(ui, tr("Flatten"), key) } else { menu_item(ui, tr("Flatten"), key) };
-        if flatten {
-            app.run("vector.flatten", json!({}));
-            ui.close();
-        }
+        boolean_items(app, ui, current);
     });
     crate::component_panel::instance_section(app, ui, doc, sel);
+}
+
+/// A layer the boolean operations combine: a shape, a vector or a boolean group.
+fn is_shape(kind: &NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Rectangle
+            | NodeKind::Ellipse { .. }
+            | NodeKind::Polygon { .. }
+            | NodeKind::Star { .. }
+            | NodeKind::Line
+            | NodeKind::Vector { .. }
+            | NodeKind::BooleanOp { .. }
+    )
+}
+
+/// The boolean operations and Flatten as menu rows (`current`: the operation the selection uses,
+/// checked).
+fn boolean_items(app: &mut FigApp, ui: &mut Ui, current: Option<BoolOp>) {
+    for (op, c) in
+        [(BoolOp::Union, "bool.union"), (BoolOp::Subtract, "bool.subtract"), (BoolOp::Intersect, "bool.intersect"), (BoolOp::Exclude, "bool.exclude")]
+    {
+        let key = crate::shortcuts::shortcut(c).unwrap_or("");
+        let picked = match current {
+            Some(cur) => menu_check(ui, cur == op, tr(op.label()), key),
+            None => menu_item(ui, tr(op.label()), key),
+        };
+        if picked {
+            app.run(c, json!({}));
+            ui.close();
+        }
+    }
+    let key = crate::shortcuts::shortcut("vector.flatten").unwrap_or("");
+    let flatten = if current.is_some() { menu_item_beside_checks(ui, tr("Flatten"), key) } else { menu_item(ui, tr("Flatten"), key) };
+    if flatten {
+        app.run("vector.flatten", json!({}));
+        ui.close();
+    }
 }
 
 fn position(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
@@ -634,12 +658,20 @@ fn position_fields(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]
             (Icon::AlignBottom, tip(tr("Align bottom"), cmds[5])),
         ];
         let w = col / 3.0;
-        if let Some(i) = widgets::segmented(ui, &items[..3], None, w) {
-            app.run(cmds[i], json!({"ids": ids}));
-        }
-        if let Some(i) = widgets::segmented(ui, &items[3..], None, w) {
-            app.run(cmds[i + 3], json!({"ids": ids}));
-        }
+        // One layer aligns to its parent frame; several align to each other. A lone layer on the
+        // page has nothing to align to.
+        let can_align =
+            sel.len() > 1 || sel.iter().any(|i| doc.node(*i).and_then(|n| n.parent).and_then(|p| doc.node(p)).is_some_and(|p| !p.is_page()));
+        ui.add_enabled_ui(can_align, |ui| {
+            if let Some(i) = widgets::segmented(ui, &items[..3], None, w) {
+                app.run(cmds[i], json!({"ids": ids}));
+            }
+            if let Some(i) = widgets::segmented(ui, &items[3..], None, w) {
+                app.run(cmds[i + 3], json!({"ids": ids}));
+            }
+        })
+        .response
+        .on_disabled_hover_text(tr("A layer on the page has nothing to align to"));
         // The distribute button is always there; it works from three layers up.
         ui.add_enabled_ui(sel.len() > 2, |ui| {
             let more = icons::button(ui, Icon::DistributeH, widgets::button_size(), false, tr("Distribute and tidy"));
