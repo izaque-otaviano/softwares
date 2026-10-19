@@ -1,0 +1,302 @@
+From 31f45dbaa8fe8fc5bffbaa8d439003c60ae5885c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 19 Oct 2026 11:57:47 +0000
+Subject: [PATCH 3/3] =?UTF-8?q?Home:=20destaque=20e=20fileiras=20no=20esti?=
+ =?UTF-8?q?lo=20das=20refer=C3=AAncias?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Botão Reproduzir em cápsula; trailer, versões, info e favorito em
+  botões redondos
+- Indicador de páginas em pontos, centralizado no pé do destaque
+- Continuar assistindo: título e '▶ ━━ T1 · E2 · 31 min' sobre a imagem
+- Em alta: número do ranking no canto e título sobre o pôster
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01RrWU2gsMMU7RHpTw5ZcGtR
+---
+ .../tv/own/owntv/features/home/HomeScreen.kt  | 72 ++++++++-------
+ .../tv/own/owntv/ui/stage/StageComponents.kt  | 87 ++++++++++++++-----
+ 2 files changed, 110 insertions(+), 49 deletions(-)
+
+diff --git a/app/src/main/java/tv/own/owntv/features/home/HomeScreen.kt b/app/src/main/java/tv/own/owntv/features/home/HomeScreen.kt
+index 9e3a04c..65aebce 100644
+--- a/app/src/main/java/tv/own/owntv/features/home/HomeScreen.kt
++++ b/app/src/main/java/tv/own/owntv/features/home/HomeScreen.kt
+@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.LazyRow
+ import androidx.compose.foundation.lazy.itemsIndexed
++import androidx.compose.foundation.shape.CircleShape
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.CompositionLocalProvider
+@@ -839,7 +840,7 @@ private fun TrendingHero(
+                     url = extras.logoUrl,
+                     contentDescription = snapshot.localizedTitle,
+                     onFailed = { logoFailed = true },
+-                    modifier = Modifier.fillMaxWidth().height(170.mpx),
++                    modifier = Modifier.fillMaxWidth().height(140.mpx),
+                 )
+             } else {
+                 Text(
+@@ -859,11 +860,11 @@ private fun TrendingHero(
+                 val metaStyle = stageText(21, 600)
+                 val metaColor = stageTone(Color(0xFFD3DCD8), StageColors.Body)
+                 meta.forEachIndexed { i, part ->
+-                    if (i > 0) Text("•", style = metaStyle, color = metaColor.copy(alpha = 0.4f))
++                    if (i > 0) Text("·", style = metaStyle, color = metaColor.copy(alpha = 0.6f))
+                     Text(part, style = metaStyle, color = metaColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                 }
+                 snapshot.rating?.let { rating ->
+-                    if (meta.isNotEmpty()) Text("•", style = metaStyle, color = metaColor.copy(alpha = 0.4f))
++                    if (meta.isNotEmpty()) Text("·", style = metaStyle, color = metaColor.copy(alpha = 0.6f))
+                     Row(horizontalArrangement = Arrangement.spacedBy(8.mpx), verticalAlignment = Alignment.CenterVertically) {
+                         Text("★", style = metaStyle, color = StageColors.RatingStar)
+                         Text(ratingText(rating), style = metaStyle, color = metaColor)
+@@ -899,19 +900,21 @@ private fun TrendingHero(
+                         iconFilled = isMovie,
+                         modifier = Modifier.focusRequester(primaryFocusRequester).tracked(primaryFocusRequester, track),
+                     )
++                    // Personalização: one labelled capsule (Play), every other action a round button.
+                     if (!snapshot.trailerKey.isNullOrBlank()) {
+                         StageButton(
+-                            text = stringResource(R.string.home_trending_trailer),
++                            text = null,
+                             onClick = { onTrailer(item) },
+                             icon = OwnTVIcon.PLAY_CIRCLE,
++                            round = true,
+                             modifier = Modifier.focusRequester(trailerFocusRequester).tracked(trailerFocusRequester, track),
+                         )
+                     }
+                     StageButton(
+-                        text = stringResource(R.string.home_trending_all_versions),
++                        text = null,
+                         onClick = { onAllVersions(item) },
+                         icon = OwnTVIcon.LAYERS,
+-                        trailing = extras.versions.takeIf { it > 1 }?.toString(),
++                        round = true,
+                         modifier = Modifier.focusRequester(versionsFocusRequester).tracked(versionsFocusRequester, track),
+                     )
+                 }
+@@ -931,15 +934,15 @@ private fun TrendingHero(
+                     modifier = Modifier.tracked(track = track),
+                 )
+             }
+-            Spacer(Modifier.height(32.mpx))
+-            TrendingPager(
+-                count = items.size,
+-                activeIndex = activeIndex,
+-                progress = progress,
+-                onNavigate = ::navigate,
+-                modifier = Modifier.tracked(track = track),
+-            )
+         }
++        // Personalização: the page dots sit centred at the hero's foot.
++        TrendingPager(
++            count = items.size,
++            activeIndex = activeIndex,
++            progress = progress,
++            onNavigate = ::navigate,
++            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.mpx).tracked(track = track),
++        )
+     }
+ }
+ 
+@@ -975,7 +978,6 @@ private fun TrendingPager(count: Int, activeIndex: Int, progress: Float, onNavig
+         radius = 14.mpx,
+         focusStyle = StageFocus.FX,
+         modifier = modifier
+-            .offset(x = (-14).mpx)
+             .onPreviewKeyEvent { e ->
+                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                 val delta = when (e.key) {
+@@ -986,22 +988,31 @@ private fun TrendingPager(count: Int, activeIndex: Int, progress: Float, onNavig
+                 trendingPagerTarget(activeIndex, count, delta)?.let { onNavigate(it); true } ?: false
+             },
+     ) { focused ->
+-        Row(Modifier.padding(horizontal = 14.mpx, vertical = 12.mpx), horizontalArrangement = Arrangement.spacedBy(8.mpx)) {
++        // Personalização: page dots in a dark capsule; the current page is a longer pill that fills
++        // over the 10 s.
++        Row(
++            Modifier
++                .background(Color.Black.copy(alpha = if (focused) 0f else 0.32f), RoundedCornerShape(14.mpx))
++                .padding(horizontal = 12.mpx, vertical = 9.mpx),
++            horizontalArrangement = Arrangement.spacedBy(8.mpx),
++            verticalAlignment = Alignment.CenterVertically,
++        ) {
+             repeat(count) { i ->
+-                val fill = when {
+-                    i < activeIndex -> 1f
+-                    i == activeIndex -> progress
+-                    else -> 0f
+-                }
+-                Box(
+-                    Modifier
+-                        .size(if (i == activeIndex) 70.mpx else 34.mpx, 5.mpx)
+-                        .clip(RoundedCornerShape(3.mpx))
+-                        .background(StageColors.Ink.copy(alpha = if (focused) 0.28f else 0.18f)),
+-                ) {
++                if (i == activeIndex) {
++                    Box(
++                        Modifier
++                            .size(30.mpx, 10.mpx)
++                            .clip(RoundedCornerShape(5.mpx))
++                            .background(Color.White.copy(alpha = 0.4f)),
++                    ) {
++                        Box(Modifier.fillMaxWidth(progress).height(10.mpx).background(if (focused) a.focus else Color.White))
++                    }
++                } else {
+                     Box(
+-                        Modifier.fillMaxWidth(fill).height(5.mpx)
+-                            .background(if (focused && i == activeIndex) a.focus else a.accent),
++                        Modifier
++                            .size(if (i < activeIndex) 10.mpx else 8.mpx)
++                            .clip(CircleShape)
++                            .background(Color.White.copy(alpha = if (i < activeIndex) 0.75f else 0.45f)),
+                     )
+                 }
+             }
+@@ -1268,6 +1279,9 @@ private fun TrendingPosterRow(
+                     width = 196.mpx,
+                     height = 294.mpx,
+                     rating = item.snapshot.rating?.let(::ratingText),
++                    // Personalização: a chart — the position large in the corner, the title on the art.
++                    rank = (index + 1).takeIf { it <= 10 },
++                    titleOnArt = true,
+                     modifier = Modifier
+                         .then(if (index == 0 && firstItemFocusRequester != null) Modifier.focusRequester(firstItemFocusRequester) else Modifier)
+                         .tracked(track = track)
+diff --git a/app/src/main/java/tv/own/owntv/ui/stage/StageComponents.kt b/app/src/main/java/tv/own/owntv/ui/stage/StageComponents.kt
+index da14f2c..f32cb99 100644
+--- a/app/src/main/java/tv/own/owntv/ui/stage/StageComponents.kt
++++ b/app/src/main/java/tv/own/owntv/ui/stage/StageComponents.kt
+@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.FocusRequester
+ import androidx.compose.ui.focus.focusRequester
+ import androidx.compose.ui.focus.focusProperties
+ import androidx.compose.foundation.focusGroup
++import androidx.compose.ui.graphics.Brush
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.ColorFilter
+ import androidx.compose.ui.graphics.ColorMatrix
+@@ -765,6 +766,10 @@ fun StagePoster(
+     progress: Float? = null,
+     /** A finished title: the `.ep` ✓ badge in the top corner instead of a bar. */
+     watched: Boolean = false,
++    /** Personalização: a chart position drawn large in the top corner ("1", "2"…). */
++    rank: Int? = null,
++    /** Personalização: the title drawn on the artwork's bottom instead of under it. */
++    titleOnArt: Boolean = false,
+     artwork: @Composable BoxScope.() -> Unit,
+ ) {
+     val interaction = remember { MutableInteractionSource() }
+@@ -795,7 +800,32 @@ fun StagePoster(
+                 .clip(RoundedCornerShape(r)),
+         ) {
+             artwork()
+-            if (rating != null) StageRatingChip(rating, Modifier.padding(8.mpx), small = compact)
++            if (rank != null) {
++                Text(
++                    rank.toString(),
++                    style = stageText(if (compact) 52 else 64, 800).copy(
++                        shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.5f), blurRadius = 12f),
++                    ),
++                    color = Color.White,
++                    modifier = Modifier.align(Alignment.TopStart).padding(start = 12.mpx),
++                )
++            }
++            if (titleOnArt) {
++                Text(
++                    title,
++                    style = stageText(if (compact) 15 else 17, 700),
++                    color = Color.White,
++                    maxLines = 1,
++                    overflow = TextOverflow.Ellipsis,
++                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
++                    modifier = Modifier
++                        .align(Alignment.BottomCenter)
++                        .fillMaxWidth()
++                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))))
++                        .padding(start = 10.mpx, end = 10.mpx, top = 40.mpx, bottom = 12.mpx),
++                )
++            }
++            if (rating != null && rank == null) StageRatingChip(rating, Modifier.padding(8.mpx), small = compact)
+             if (watched) {
+                 Box(
+                     Modifier.align(Alignment.TopEnd).padding(8.mpx).size(if (compact) 26.mpx else 30.mpx)
+@@ -811,14 +841,16 @@ fun StagePoster(
+                 }
+             }
+         }
+-        Spacer(Modifier.height(12.mpx))
+-        Text(
+-            title,
+-            style = if (line != null) stageText(18, 700) else stageText(if (compact) 15.5f else 17f, if (focused) 700 else 600),
+-            color = if (focused || line != null) stageTone(Color.White, StageColors.Text) else StageColors.Muted,
+-            maxLines = 1,
+-            overflow = TextOverflow.Ellipsis,
+-        )
++        if (!titleOnArt) {
++            Spacer(Modifier.height(12.mpx))
++            Text(
++                title,
++                style = if (line != null) stageText(18, 700) else stageText(if (compact) 15.5f else 17f, if (focused) 700 else 600),
++                color = if (focused || line != null) stageTone(Color.White, StageColors.Text) else StageColors.Muted,
++                maxLines = 1,
++                overflow = TextOverflow.Ellipsis,
++            )
++        }
+         if (line != null) Text(line, style = stageText(15, 400), color = StageColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+     }
+ }
+@@ -869,20 +901,35 @@ fun StageStill(
+                 .clip(RoundedCornerShape(r)),
+         ) {
+             artwork()
++            // Personalização: the title and "▶ ━━ S1 · E2 · 31 min" sit on the still, over a bottom fade.
++            StillCaption(title, line, progress, titleSize, lineSize, Modifier.align(Alignment.BottomStart))
++        }
++    }
++}
++
++/** The caption a 16:9 card carries on its picture: the title, then ▶, a short progress bar and [line]. */
++@Composable
++fun StillCaption(title: String?, line: String?, progress: Float?, titleSize: Int, lineSize: Int, modifier: Modifier = Modifier) {
++    Column(
++        modifier
++            .fillMaxWidth()
++            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))))
++            .padding(start = 16.mpx, end = 16.mpx, top = 34.mpx, bottom = 12.mpx),
++    ) {
++        if (title != null) {
++            Text(title, style = stageText(titleSize, 700), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
++            Spacer(Modifier.height(4.mpx))
++        }
++        Row(horizontalArrangement = Arrangement.spacedBy(8.mpx), verticalAlignment = Alignment.CenterVertically) {
++            StageIcon(OwnTVIcon.PLAY, Color.White, (lineSize - 2).mpx, filled = true)
+             if (progress != null && progress > 0f) {
+-                Box(
+-                    Modifier.align(Alignment.BottomStart).fillMaxWidth().height(6.mpx)
+-                        .background(Color.Black.copy(alpha = 0.5f)),
+-                ) {
+-                    Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(6.mpx).background(accent.accent))
++                Box(Modifier.size(40.mpx, 5.mpx).clip(RoundedCornerShape(3.mpx)).background(Color.White.copy(alpha = 0.35f))) {
++                    Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(5.mpx).background(Color.White))
+                 }
+             }
+-        }
+-        Spacer(Modifier.height(12.mpx))
+-        Text(title, style = stageText(titleSize, 700), color = stageTone(Color(0xFFE6EEEA), StageColors.Text), maxLines = 1, overflow = TextOverflow.Ellipsis)
+-        if (line != null) {
+-            Spacer(Modifier.height((if (lineSize >= 16) 4 else 3).mpx))
+-            Text(line, style = stageText(lineSize, 400), color = StageColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
++            if (line != null) {
++                Text(line, style = stageText(lineSize, 600), color = Color.White.copy(alpha = 0.92f), maxLines = 1, overflow = TextOverflow.Ellipsis)
++            }
+         }
+     }
+ }
+-- 
+2.43.0
+
