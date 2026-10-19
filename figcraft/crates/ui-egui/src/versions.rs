@@ -189,7 +189,15 @@ pub fn panel(app: &mut FigApp, ui: &mut Ui) {
         let last = rows.len().saturating_sub(1);
         let mut i = 0;
         let mut group_end = 0;
+        let now = figcraft_engine::cmd::comment::now_secs();
+        let author = app.session.prefs.user_name.clone();
+        let mut day = None;
         while let Some(row) = rows.get(i) {
+            // The history is grouped by day: Today, Yesterday, then the date.
+            if i >= group_end && day != Some(day_number(row.time)) {
+                day = Some(day_number(row.time));
+                day_header(ui, &day_label(now, row.time));
+            }
             // Two or more autosaves in a row fold into one line (open while one of them is shown).
             if i >= group_end {
                 let run = rows.iter().skip(i).take_while(|r| r.auto).count();
@@ -211,7 +219,7 @@ pub fn panel(app: &mut FigApp, ui: &mut Ui) {
             } else if let Some(f) = app.ui.versions.form.as_mut().filter(|f| f.id.as_deref() == Some(row.id.as_str())) {
                 inline_row(ui, i == last, |ui| form(ui, f, tr("Save"), TEXT_X))
             } else {
-                version_row(ui, row, i == last, previewing.as_deref() == Some(row.id.as_str()))
+                version_row(ui, row, &author, i == last, previewing.as_deref() == Some(row.id.as_str()))
             };
             if a.is_some() {
                 action = a;
@@ -402,7 +410,7 @@ fn current_row(ui: &mut Ui, more: bool, active: bool) -> bool {
     !active && resp.on_hover_text(tr("Back to the current version")).clicked()
 }
 
-fn version_row(ui: &mut Ui, row: &Row, last: bool, previewing: bool) -> Option<Action> {
+fn version_row(ui: &mut Ui, row: &Row, author: &str, last: bool, previewing: bool) -> Option<Action> {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let text_w = (w - TEXT_X - 36.0).max(40.0);
@@ -425,11 +433,13 @@ fn version_row(ui: &mut Ui, row: &Row, last: bool, previewing: bool) -> Option<A
     let clip = Rect::from_min_max(pos2(r.min.x + TEXT_X, r.min.y), pos2(r.min.x + TEXT_X + text_w, r.max.y));
     let p = ui.painter().with_clip_rect(clip);
     p.text(pos2(clip.min.x, name_y), Align2::LEFT_CENTER, &row.name, semibold(11.0), t.text);
-    p.text(pos2(clip.min.x, name_y + 16.0), Align2::LEFT_CENTER, crate::comments::ago_long(row.time), regular(11.0), t.text_secondary);
+    let who = trf("{time} · {author}", &[("time", &clock(row.time)), ("author", &author)]);
+    p.text(pos2(clip.min.x, name_y + 16.0), Align2::LEFT_CENTER, who, regular(11.0), t.text_secondary);
     if let Some(g) = desc {
         p.galley(pos2(clip.min.x, name_y + 26.0), g, t.text);
     }
     let mut out = None;
+    let resp = resp.on_hover_text(crate::comments::ago_long(row.time));
     // More menu (on hover), also on right-click.
     let br = Rect::from_center_size(pos2(r.max.x - 22.0, name_y), vec2(24.0, 24.0));
     let more = ui.interact(br, Id::new(("version_more", &row.id)), Sense::click());
@@ -548,6 +558,35 @@ pub fn preview_banner(app: &mut FigApp, ctx: &egui::Context, canvas: Rect) {
         }
         None => {}
     }
+}
+
+/// The day `secs` (Unix seconds) falls on, counted from 1970 (UTC).
+fn day_number(secs: u64) -> u64 {
+    secs / 86_400
+}
+
+/// "Today", "Yesterday" or the date, for a version saved at `then` when it is `now`.
+pub(crate) fn day_label(now: u64, then: u64) -> String {
+    match day_number(now).saturating_sub(day_number(then)) {
+        0 => tr("Today").into(),
+        1 => tr("Yesterday").into(),
+        _ => crate::home_recents::date(then),
+    }
+}
+
+/// The time of day of `secs` as "14:05" (UTC).
+pub(crate) fn clock(secs: u64) -> String {
+    let m = secs % 86_400 / 60;
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+/// A day's heading in the history, with the timeline running past it.
+fn day_header(ui: &mut Ui, label: &str) {
+    let t = Tokens::get(ui.ctx());
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
+    // (The dots belong to the rows; the heading only keeps the line unbroken.)
+    ui.painter().line_segment([pos2(r.min.x + DOT_X, r.min.y), pos2(r.min.x + DOT_X, r.max.y)], Stroke::new(1.0, t.border_strong));
+    ui.painter().text(pos2(r.min.x + TEXT_X, r.center().y + 2.0), Align2::LEFT_CENTER, label, semibold(10.0), t.text_secondary);
 }
 
 /// The folded line for `n` autosaves in a row; true when clicked (fold / unfold).

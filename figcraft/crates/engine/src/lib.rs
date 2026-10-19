@@ -25,6 +25,7 @@ pub mod devcompare;
 pub mod devinspect;
 pub mod distance;
 pub mod drop;
+pub mod filesave;
 pub mod guard;
 pub mod guides;
 pub mod inspect;
@@ -510,6 +511,12 @@ impl DocState {
         self
     }
 
+    /// A write of the document as `doc` was is done: the document counts as saved only if it is
+    /// still `doc` (otherwise it stays unsaved, and `doc` is what the file has).
+    pub fn mark_saved_snapshot(&mut self, doc: Arc<Document>) {
+        self.saved_doc = doc;
+    }
+
     pub fn mark_saved(&mut self) {
         self.saved_doc = self.doc.clone();
         self.versions_changed = false;
@@ -617,6 +624,9 @@ pub struct Prefs {
     pub home_sort: String,
     /// Which way: `"desc"` (newest first, Z to A) or `"asc"`.
     pub home_order: String,
+    /// Files are saved as you work (a few seconds after the last change; files that were never
+    /// saved are kept as drafts). On by default.
+    pub autosave: bool,
 }
 
 impl Default for Prefs {
@@ -645,6 +655,7 @@ impl Default for Prefs {
             home_views: BTreeMap::new(),
             home_sort: "modified".into(),
             home_order: "desc".into(),
+            autosave: true,
         }
     }
 }
@@ -702,6 +713,8 @@ pub struct Session {
     pub live: live::Lives,
     /// Commands the UI runs without waiting on a server ([`Session::start_background`]).
     pub background: background::Background,
+    /// Saving as you work: files written back to themselves, drafts, closing checkpoints.
+    pub filesave: filesave::FileSave,
 }
 
 impl Default for Session {
@@ -736,6 +749,7 @@ impl Session {
             plugins: plugins::Runtime::default(),
             live: live::Lives::default(),
             background: background::Background::default(),
+            filesave: filesave::FileSave::default(),
         }
     }
 
@@ -1474,6 +1488,8 @@ mod fig_export_assets_tests;
 mod fig_export_tests;
 #[cfg(test)]
 mod fig_import_tests;
+#[cfg(test)]
+mod filesave_tests;
 #[cfg(test)]
 mod frame_guides_tests;
 #[cfg(test)]

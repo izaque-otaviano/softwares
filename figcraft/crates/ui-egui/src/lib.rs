@@ -10,6 +10,7 @@ pub mod assets_panel;
 pub mod bidi;
 pub mod branch_ui;
 pub mod brand;
+pub mod browser_files;
 pub mod canvas;
 pub mod cjk;
 pub mod colorpicker;
@@ -23,6 +24,7 @@ pub mod dev_mode;
 pub mod dialogs;
 pub mod export_panel;
 pub mod field_math;
+mod file_menu;
 pub mod font_preview;
 pub mod frame_labels;
 pub mod frame_presets;
@@ -158,6 +160,8 @@ mod render_worker_tests;
 #[cfg(test)]
 mod right_panel_tests;
 #[cfg(test)]
+mod save_ui_tests;
+#[cfg(test)]
 mod shortcut_keys_tests;
 #[cfg(test)]
 mod shortcuts_tests;
@@ -231,6 +235,27 @@ pub trait Services {
     fn gamepad_held(&mut self) -> u32 {
         0
     }
+    /// Files kept in the browser (the web version only): where work is saved there.
+    fn browser_files(&self) -> Vec<BrowserFile> {
+        Vec::new()
+    }
+    /// The bytes of a file kept in the browser.
+    fn browser_file_bytes(&mut self, _id: &str) -> Option<Vec<u8>> {
+        None
+    }
+    /// The open document `uid` is the browser file `id` from now on (it was opened from it).
+    fn browser_adopt(&mut self, _id: &str, _uid: u64) {}
+    /// Forget a file kept in the browser.
+    fn browser_delete(&mut self, _id: &str) {}
+    /// What the browser's storage last said went wrong (full, blocked in a private window).
+    fn browser_problem(&self) -> Option<String> {
+        None
+    }
+    /// Hand `bytes` to the user as a download named `name` (the web version; elsewhere files are
+    /// saved where the user picks). False: this platform has no downloads.
+    fn download(&mut self, _name: &str, _bytes: &[u8]) -> bool {
+        false
+    }
     /// The platform shows the app's menu bar itself (the macOS menu bar): [`menu_model`] keeps it
     /// in step with the in-window main menu and runs what is picked in it.
     fn native_menu(&self) -> bool {
@@ -242,6 +267,18 @@ pub trait Services {
     fn native_menu_events(&mut self) -> Vec<String> {
         Vec::new()
     }
+}
+
+/// A file kept in the browser.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BrowserFile {
+    pub id: String,
+    pub name: String,
+    /// When it was last written (Unix seconds).
+    pub modified: u64,
+    pub bytes: usize,
+    /// The open document that is this file, if a tab of this page has it open.
+    pub open: Option<u64>,
 }
 
 /// No-op services (tests, headless screenshots).
@@ -671,6 +708,16 @@ impl FigApp {
         self.ui.toast = Some((msg.into(), None));
     }
 
+    /// Say that `n` files were opened again from the browser's storage after a reload, and which
+    /// ones couldn't be read.
+    pub fn note_restored_from_browser(&mut self, n: usize, unreadable: &[String]) {
+        if !unreadable.is_empty() {
+            self.toast(i18n::trf("Couldn't read: {names}", &[("names", &unreadable.join(", "))]));
+        } else if n > 0 {
+            self.toast(i18n::trn("Opened {n} files from this browser", n, &[]));
+        }
+    }
+
     /// Say that `n` documents left unsaved by a crash were opened again from recovery copies.
     pub fn note_recovered(&mut self, n: usize) {
         if n > 0 {
@@ -865,13 +912,34 @@ impl FigApp {
             if self.run("file.saveAs", json!({"path": ps})).is_some() {
                 self.toast(i18n::trf("Saved {name}", &[("name", &p.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default())]));
             }
+        } else {
+            // The browser has no save dialog: the file comes down as a download.
+            self.download_copy();
+        }
+    }
+
+    /// Download the active file as a `.figcraft` (the browser's Save; its work is kept in the
+    /// browser as it goes, this is a copy to keep elsewhere).
+    pub fn download_copy(&mut self) {
+        let tab = figcraft_engine::branches::file_tab(&self.session);
+        let Some(ds) = self.session.docs.get(tab) else { return };
+        let stem: String =
+            ds.doc.name.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()).collect();
+        let name = format!("{}.figcraft", if stem.trim().is_empty() { "Untitled" } else { stem.trim() });
+        match figcraft_engine::cmd::file::file_bytes(ds) {
+            Ok(bytes) => {
+                if self.services.download(&name, &bytes) {
+                    self.toast(i18n::trf("Downloaded {name}", &[("name", &name)]));
+                }
+            }
+            Err(e) => self.toast(e.to_string()),
         }
     }
 
     pub fn save(&mut self) {
         // A branch tab saves its main file.
         let tab = figcraft_engine::branches::file_tab(&self.session);
-        if self.session.docs.get(tab).is_some_and(|d| d.path.is_some()) {
+        if self.session.docs.get(tab).is_some_and(|d| d.path.as_deref().is_some_and(|p| !self.session.is_draft(p))) {
             if self.run("file.save", json!({})).is_some() {
                 self.toast(i18n::tr("Saved"));
             }
@@ -975,6 +1043,10 @@ impl FigApp {
     /// gets an autosave checkpoint in its version history.
     fn autosave_tick(&mut self, ctx: &egui::Context) {
         let now = ctx.input(|i| i.time);
+        // Files saved as you work (when the app switched it on): writes after a quiet moment.
+        if let Some(wait) = self.session.filesave_tick(now) {
+            repaint_in(ctx, wait);
+        }
         if now < self.ui.next_autosave {
             // Wake up for it even if nothing else draws a frame by then.
             repaint_in(ctx, self.ui.next_autosave - now);

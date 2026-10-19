@@ -283,6 +283,20 @@ pub fn menu_item(ui: &mut Ui, label: &str, shortcut: &str) -> bool {
     menu_row(ui, label, shortcut, 0.0, |_, _, _| {}).clicked()
 }
 
+/// [`menu_item`] that can be greyed out: a disabled row draws dimmed and does nothing.
+pub fn menu_item_enabled(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
+    if enabled {
+        return menu_item(ui, label, shortcut);
+    }
+    let t = Tokens::get(ui.ctx());
+    let text = ui.painter().layout_no_wrap(label.to_owned(), regular(11.5), t.text_tertiary);
+    let w = ui.available_width().max(menu_row_width(text.size().x, 0.0).ceil());
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::hover());
+    a11y::menu_item(&resp, label, shortcut, None);
+    ui.painter().galley(pos2(r.min.x + MENU_PAD, r.center().y - text.size().y / 2.0), text, t.text_tertiary);
+    false
+}
+
 /// A menu row with art drawn into it after the label (`art(painter, row rect, text colour)`),
 /// taking `art_w` from the row's right edge.
 pub fn menu_item_with(ui: &mut Ui, label: &str, shortcut: &str, art_w: f32, art: impl FnOnce(&egui::Painter, Rect, Color32)) -> bool {

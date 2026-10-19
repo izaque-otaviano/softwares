@@ -26,6 +26,17 @@ Ele compila o FigCraft da pasta `figcraft/` deste repositório com os scripts do
 desta pasta. No Windows ele também instala o `.exe` em silêncio, roda o `figcraft-cli --version` e
 desinstala, para garantir que o instalador funciona.
 
+## Onde ficam meus trabalhos?
+
+- **No computador:** no arquivo `.figcraft` que você escolhe. O FigCraft **salva sozinho** poucos
+  segundos depois de cada alteração (dá para desligar em *Preferências*), de forma segura, e o
+  histórico de versões vai dentro do arquivo. Arquivos novos, sem nome, ficam em **Rascunhos**
+  (tela inicial): no macOS em `~/Library/Application Support/FigCraft/Drafts`, no Windows em
+  `%LOCALAPPDATA%\FigCraft\Drafts`, no Linux em `~/.local/share/FigCraft/Drafts`.
+- **Na versão web:** só no navegador (e pode sumir ao limpar os dados do site): baixe uma cópia do que
+  importa.
+- Guia completo, em português: [`figcraft/docs/salvamento.md`](../../figcraft/docs/salvamento.md).
+
 ## macOS: o DMG
 
 ![Janela do DMG](arte/previa-dmg.png)

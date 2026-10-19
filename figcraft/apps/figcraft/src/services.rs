@@ -31,6 +31,20 @@ pub fn config_dir() -> Option<PathBuf> {
     base.map(|b| b.join("FigCraft"))
 }
 
+/// Where drafts (files never saved) are kept: `Drafts` in the app's data folder (`FigCraft` in
+/// Application Support on macOS, in `%LOCALAPPDATA%` on Windows, in `$XDG_DATA_HOME` or
+/// `~/.local/share` elsewhere).
+pub fn drafts_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"));
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("LOCALAPPDATA").or_else(|| std::env::var_os("APPDATA")).map(PathBuf::from);
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let base =
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
+    base.filter(|b| b.is_absolute()).map(|b| b.join("FigCraft").join("Drafts"))
+}
+
 impl Desktop {
     pub fn load(recovery: crate::recovery::Shared) -> Self {
         Self::load_from(config_dir(), recovery)

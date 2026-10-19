@@ -1744,13 +1744,16 @@ dependencies = [
 name = "figcraft-web"
 version = "0.6.0"
 dependencies = [
+ "base64 0.22.1",
  "eframe",
  "egui",
  "figcraft-collab-net",
  "figcraft-engine",
+ "figcraft-format",
  "figcraft-ui-egui",
  "js-sys",
  "log",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

@@ -164,7 +164,7 @@ pub fn left_panel(app: &mut FigApp, ui: &mut Ui) {
         ui.painter().text(pos2(head.min.x + 16.0, head.min.y + 24.0), Align2::LEFT_CENTER, tr("Assets"), semibold(13.0), t.text);
     } else {
         let name = app.session.doc().map(|d| d.name.clone()).unwrap_or_default();
-        let nr = Rect::from_min_max(pos2(head.min.x + 14.0, head.min.y + 14.0), pos2(head.max.x - 48.0, head.min.y + 34.0));
+        let nr = Rect::from_min_max(pos2(head.min.x + 14.0, head.min.y + 14.0), pos2(head.max.x - 76.0, head.min.y + 34.0));
         // File ▸ Rename: the field takes the keyboard (and starts editing).
         if std::mem::take(&mut app.ui.rename_file) {
             ui.memory_mut(|m| m.request_focus(Id::new("filename").with("te")));
@@ -172,7 +172,13 @@ pub fn left_panel(app: &mut FigApp, ui: &mut Ui) {
         if let Some(new) = crate::widgets::text_field_inline(ui, Id::new("filename"), &name, nr, semibold(13.0)) {
             app.run("file.rename", json!({"name": new}));
         }
-        ui.painter().text(pos2(head.min.x + 16.0, head.min.y + 46.0), Align2::LEFT_CENTER, tr("Drafts"), regular(11.0), t.text_secondary);
+        crate::file_menu::button(app, ui, Rect::from_center_size(pos2(head.max.x - 62.0, head.min.y + 24.0), vec2(24.0, 24.0)));
+        let (line, warn, why) = crate::file_menu::status_line(app);
+        let at = pos2(head.min.x + 16.0, head.min.y + 46.0);
+        let shown = ui.painter().text(at, Align2::LEFT_CENTER, line, regular(11.0), if warn { t.danger } else { t.text_secondary });
+        if let Some(why) = why {
+            ui.interact(shown.expand2(vec2(2.0, 4.0)), ui.id().with("save_status"), Sense::hover()).on_hover_text(why);
+        }
     }
     let hr = Rect::from_center_size(pos2(head.max.x - 24.0, head.min.y + 24.0), vec2(24.0, 24.0));
     let hresp = ui.interact(hr, ui.id().with("hideui"), Sense::click()).tip(tr("Collapse panel"));
