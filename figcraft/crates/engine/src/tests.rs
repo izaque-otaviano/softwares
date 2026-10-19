@@ -355,6 +355,11 @@ fn every_command_survives_junk_params() {
                "trigger": {"type": "mediaHit", "time": "x"}, "action": {"type": "mediaSkip", "seconds": 1e308, "target": "nope"}}),
         json!({"id": 1, "poster": -1e308, "mode": "fit", "index": 0, "trigger": {"type": "mediaEnd", "time": [1]},
                "action": {"type": "mediaSkipTo", "time": {"x": 1}, "target": -5}, "actions": [{"type": "mediaPlayPause", "mode": "sideways"}]}),
+        // Saving as you work: file bytes (base64), names, draft paths and toggles as junk.
+        json!({"data": "AAAA", "name": "x.figcraft", "path": "../../etc/passwd", "on": "maybe"}),
+        json!({"data": 5, "name": ["a"], "path": 7}),
+        json!({"data": "////////", "name": "\u{0}/..\\a.svg", "path": ""}),
+        json!({"data": "UEsDBAoAAAAAAA==", "name": "z.figcraft", "path": "/", "on": null}),
         // Rotation origins and placing with a tool as junk.
         json!({"tool": [1], "x": 1e308, "y": "NaN", "reset": "maybe", "on": {"x": 1}}),
         json!({"tool": "frame", "x": -1e308, "y": 1e308, "reset": true, "on": "yes"}),

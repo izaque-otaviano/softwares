@@ -105,7 +105,11 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
-        with_app(|fig| services::save_state(fig));
+        // Last write of every file saved as you work, with its closing checkpoint.
+        with_app(|fig| {
+            fig.session.filesave_flush();
+            services::save_state(fig);
+        });
         if let Some(r) = recovery::lock(&self.recovery).take() {
             r.finish();
         }
@@ -166,6 +170,18 @@ fn main() -> eframe::Result {
         r.adopt(recovered.waiting);
     }
     *recovery::lock(&recovery) = copies;
+    // Files are saved as you work: the ones with a path back to it, the ones never saved to the
+    // Drafts folder. (A prototype viewer edits nothing.)
+    if viewer.is_none() {
+        session.filesave.enabled = true;
+        session.filesave.drafts_dir = services::drafts_dir();
+        if let Some(dir) = &session.filesave.drafts_dir {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                log::warn!("drafts: couldn't create {}: {e}", dir.display());
+            }
+            figcraft_engine::filesave::clean_stale(dir);
+        }
+    }
     // Plugins installed from a server's plugin directory live with the user's settings.
     session.plugins.install_dir = services::config_dir().map(|d| d.join("Plugins"));
     // Invite links open this app (Windows registers per user at run time; installed builds by

@@ -41,6 +41,13 @@ pub fn specs() -> Vec<CommandSpec> {
             false,
             open_recent
         ),
+        spec!(
+            "file.openData",
+            "Open from data",
+            "{data (base64), name? (with its extension: `Plan.figcraft`, `logo.svg`; default `Untitled.figcraft`)}  open a file's bytes as a new unsaved document (the browser's files and uploads; a .figcraft keeps its version history). Returns {index, repairs | warnings}",
+            false,
+            open_data
+        ),
         spec!("file.save", "Save", "{path?} (programmatic saves need a path the first time)", false, save),
         spec!("file.saveAs", "Save as", "{path}", false, save_as),
         spec!(
@@ -119,6 +126,57 @@ pub fn specs() -> Vec<CommandSpec> {
             s.active = s.docs.len() - 1;
             Ok(json!({"index": s.active}))
         }),
+        spec!(
+            "file.autosaveNow",
+            "Save now",
+            "{}  write every open file (and draft) that has unsaved changes to disk now, after a checkpoint of what changed since the last version; does nothing while saving as you work is off (`pref.autosave`) or not running in this session → {active, saved (files with changes written), failed: [names]}",
+            false,
+            |s, _| {
+                if !s.filesave_active() {
+                    return Ok(json!({"active": false, "saved": 0, "failed": []}));
+                }
+                let pending = s.docs.iter().filter(|d| d.branch_of.is_none() && d.is_dirty()).count();
+                let failed = s.filesave_flush();
+                Ok(json!({"active": true, "saved": pending.saturating_sub(failed.len()), "failed": failed}))
+            }
+        ),
+        spec!(
+            "file.drafts",
+            "List drafts",
+            "{}  the files kept for documents that were never saved, newest first → {dir, drafts: [{path, name, modified (Unix seconds), open (a tab has it)}]}",
+            false,
+            |s, _| {
+                let open: Vec<&str> = s.docs.iter().filter_map(|d| d.path.as_deref()).collect();
+                let list: Vec<Value> = s
+                    .drafts()
+                    .into_iter()
+                    .map(|(path, name, modified)| {
+                        let path = path.to_string_lossy().into_owned();
+                        json!({"open": open.contains(&path.as_str()), "path": path, "name": name, "modified": modified})
+                    })
+                    .collect();
+                Ok(json!({"dir": s.filesave.drafts_dir.as_ref().map(|d| d.to_string_lossy().into_owned()), "drafts": list}))
+            }
+        ),
+        spec!(
+            "file.deleteDraft",
+            "Delete draft",
+            "{path}  delete a draft's file (and its backup); only files in the drafts folder, and not one that is open",
+            false,
+            |s, p| {
+                const CMD: &str = "file.deleteDraft";
+                let path = req_string(CMD, p, "path")?;
+                if !s.is_draft(&path) || !s.drafts().iter().any(|(d, ..)| d.to_string_lossy() == path.as_str()) {
+                    return Err(bad(CMD, "not a draft"));
+                }
+                if s.docs.iter().any(|d| d.path.as_deref() == Some(path.as_str())) {
+                    return Err(EngineError::Disabled(CMD.into(), "the draft is open: close its tab first".into()));
+                }
+                std::fs::remove_file(&path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+                let _ = std::fs::remove_file(crate::filesave::backup_path(std::path::Path::new(&path)));
+                ok()
+            }
+        ),
         spec!("file.revert", "Revert to saved", "{}  leave the live session first, if any", false, |s, _| {
             let path = s.ds()?.path.clone().ok_or_else(|| EngineError::Disabled("file.revert".into(), "the file was never saved".into()))?;
             let (loaded, _) = load_path(&path, None)?;
@@ -630,6 +688,10 @@ pub const MAX_RECENT: usize = 20;
 
 /// Put `path` at the top of the recent files.
 fn remember(s: &mut Session, path: &str) {
+    // Drafts are listed on their own, not among the files the user chose to keep.
+    if s.is_draft(path) {
+        return;
+    }
     let r = &mut s.prefs.recent_files;
     r.retain(|p| p != path);
     r.insert(0, path.to_string());
@@ -695,6 +757,26 @@ fn open(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(out)
 }
 
+/// `file.openData`: a file's bytes as a new document without a path.
+fn open_data(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "file.openData";
+    let data = req_string(CMD, p, "data")?;
+    let name = string(p, "name").unwrap_or_else(|| "Untitled.figcraft".into());
+    // The name only picks the reader: no path separators, and the extension must be there.
+    let name: String = name.chars().filter(|c| !matches!(c, '/' | '\\') && !c.is_control()).take(200).collect();
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|_| bad(CMD, "`data` is not base64"))?;
+    if bytes.len() > crate::share::MAX_DOC_BYTES {
+        return Err(bad(CMD, "the file is too large"));
+    }
+    let (loaded, rest) = load_with(&bytes, &name, None, &figcraft_format::rest::no_images)?;
+    let warnings = rest || ext(&name) == "svg";
+    s.docs.push(DocState::new(loaded.doc, None).with_versions(loaded.versions).with_branches(loaded.branches));
+    s.active = s.docs.len() - 1;
+    let mut out = json!({"index": s.active});
+    out[if warnings { "warnings" } else { "repairs" }] = json!(loaded.issues);
+    Ok(out)
+}
+
 /// Thumbnail PNG of the first page's content (for file browsers / the home screen).
 pub fn thumbnail(doc: &Document) -> Option<Vec<u8>> {
     let page = doc.first_page()?;
@@ -736,10 +818,15 @@ fn save_to(s: &mut Session, path: String) -> Result<Value> {
     let ds = s.docs.get_mut(i).ok_or(EngineError::NoDocument)?;
     let bytes = file_bytes(ds)?;
     write(&path, &bytes)?;
-    ds.path = Some(path.clone());
+    // Saved somewhere of the user's choosing: a draft it was kept as moves there.
+    let was = ds.path.replace(path.clone());
     ds.mark_saved();
     ds.revision += 1;
     let uid = ds.uid;
+    if let Some(was) = was.filter(|w| *w != path && s.is_draft(w)) {
+        let _ = std::fs::remove_file(&was);
+        let _ = std::fs::remove_file(crate::filesave::backup_path(std::path::Path::new(&was)));
+    }
     for tab in s.docs.iter_mut().filter(|d| d.branch_of.as_ref().is_some_and(|(m, _)| *m == uid)) {
         tab.mark_saved();
     }
@@ -752,8 +839,9 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
         return save_to(s, path);
     }
     match s.docs.get(crate::branches::file_tab(s)).ok_or(EngineError::NoDocument)?.path.clone() {
-        Some(path) => save_to(s, path),
-        None => {
+        // A draft is kept by the app: Save asks where the file should live.
+        Some(path) if !s.is_draft(&path) => save_to(s, path),
+        _ => {
             s.request_ui("dialog.saveAs", json!({}));
             Err(EngineError::Disabled("file.save".into(), "the file has no path yet: pass `path`".into()))
         }
@@ -1232,6 +1320,15 @@ fn append_pages(doc: &mut Document, other: &Document) -> Result<Vec<NodeId>> {
 
 fn close(s: &mut Session, p: &Value) -> Result<Value> {
     let i = num(p, "index").map(|x| x as usize).unwrap_or(s.active);
+    if s.docs.get(i).is_none() {
+        return Err(bad("file.close", "no such document"));
+    }
+    // With saving as you work on, closing writes the file (or draft) first, after a last
+    // checkpoint of what changed, so there is nothing to ask about. A discarding close keeps the
+    // file as it was last written.
+    if !boolean(p, "force").unwrap_or(false) {
+        let _ = s.filesave_flush_doc(i);
+    }
     let Some(ds) = s.docs.get(i) else { return Err(bad("file.close", "no such document")) };
     // A branch tab's edits are in its main file already (which then has unsaved changes).
     if ds.branch_of.is_none() && ds.is_dirty() && !boolean(p, "force").unwrap_or(false) {
@@ -1240,6 +1337,7 @@ fn close(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let uid = ds.uid;
     s.docs.remove(i);
+    s.filesave_forget(uid);
     if s.active >= s.docs.len() {
         s.active = s.docs.len().saturating_sub(1);
     }

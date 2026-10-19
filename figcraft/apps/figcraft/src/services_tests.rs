@@ -82,3 +82,12 @@ fn preferences_are_readable_by_their_owner_only() {
     assert_eq!(mode(&dir.join("state.json")), 0o600);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn drafts_live_in_the_data_folder_under_figcraft() {
+    // (Unset on some CI machines: then there is no folder, and the app keeps drafts in memory only.)
+    if let Some(d) = crate::services::drafts_dir() {
+        assert!(d.is_absolute());
+        assert!(d.ends_with("FigCraft/Drafts") || d.ends_with(r"FigCraft\Drafts"), "{}", d.display());
+    }
+}

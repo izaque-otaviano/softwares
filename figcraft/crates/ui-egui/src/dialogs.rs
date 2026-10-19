@@ -148,6 +148,7 @@ pub fn show(app: &mut FigApp, ctx: &Context) {
             let prefs = app.session.prefs.clone();
             let mut toggles = vec![];
             for (label, val, cmd) in [
+                (tr("Save files as I work"), prefs.autosave, "pref.autosave"),
                 (tr("Keep tool selected after use"), prefs.keep_tool, "pref.keepTool"),
                 (tr("Highlight layers on hover"), prefs.highlight_on_hover, "pref.highlightHover"),
                 (tr("Rename duplicated layers"), prefs.rename_duplicates, "pref.renameDuplicates"),

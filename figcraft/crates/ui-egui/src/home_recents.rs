@@ -201,7 +201,7 @@ const MONTHS: [&str; 12] = [
 ];
 
 /// `secs` since 1970 as a date in UTC: "Mar 4, 2026".
-fn date(secs: u64) -> String {
+pub(crate) fn date(secs: u64) -> String {
     // Days to a civil date (Howard Hinnant's days_from_civil, inverted).
     let z = i64::try_from(secs / 86_400).unwrap_or(0) + 719_468;
     let era = z.div_euclid(146_097);
@@ -670,7 +670,7 @@ fn interact(ui: &Ui, resp: &Response, recents: &mut Recents, file: &Shown) -> Op
 }
 
 /// The platform's name for showing a file in its folder.
-fn reveal_label() -> &'static str {
+pub(crate) fn reveal_label() -> &'static str {
     if cfg!(target_os = "macos") {
         tr("Show in Finder")
     } else if cfg!(windows) {

@@ -56,6 +56,9 @@ pub struct Home {
     pub kind: Option<Kind>,
     /// The recent files: what is known about each, and the selection.
     pub recents: crate::home_recents::Recents,
+    /// The drafts listed (path, name, modified) and when (UI clock) they were last read.
+    pub drafts: Vec<(String, String, u64)>,
+    pub drafts_read: Option<f64>,
 }
 
 const SIDEBAR: f32 = 240.0;
@@ -183,6 +186,73 @@ fn heading(ui: &mut Ui, t: &Tokens, text: &str) {
     ui.add_space(24.0);
 }
 
+/// The drafts: files never saved, kept by the app as you work. A click opens one, its menu
+/// deletes it. Nothing is shown while there are none.
+fn drafts(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
+    let now_ui = ui.input(|i| i.time);
+    if app.ui.home_view.drafts_read.is_none_or(|at| now_ui - at > 2.0 || now_ui < at) {
+        app.ui.home_view.drafts_read = Some(now_ui);
+        let list = app.session.drafts();
+        app.ui.home_view.drafts = list.into_iter().map(|(p, n, m)| (p.to_string_lossy().into_owned(), n, m)).collect();
+    }
+    if app.ui.home_view.drafts.is_empty() {
+        return;
+    }
+    ui.ctx().request_repaint_after(std::time::Duration::from_secs(2));
+    subheading(ui, t, tr("Drafts"));
+    if let Some(dir) = app.session.filesave.drafts_dir.as_ref() {
+        ui.label(
+            egui::RichText::new(crate::i18n::trf(
+                "Files you haven't saved yet are kept on this computer, in {folder}",
+                &[("folder", &dir.to_string_lossy())],
+            ))
+            .font(regular(11.0))
+            .color(t.text_secondary),
+        );
+        ui.add_space(8.0);
+    }
+    let now = figcraft_engine::cmd::comment::now_secs();
+    let mut open = None;
+    let mut delete = None;
+    for (path, name, modified) in app.ui.home_view.drafts.iter().take(30) {
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width().min(640.0), 36.0), Sense::hover());
+        let resp = ui.interact(r, ui.id().with(("draft", path)), Sense::click());
+        a11y::button(&resp, name);
+        let detail = crate::home_recents::edited(now, *modified);
+        file_row(
+            ui,
+            t,
+            r,
+            &resp,
+            &FileRow { mark: Some((Icon::Document, ACCENT)), name, ink: t.text, detail: &detail, detail_size: 11.0, detail_ink: t.text_secondary },
+        );
+        crate::right::context_popup(&resp).show(|ui| {
+            if crate::right::menu_item(ui, tr("Open"), "") {
+                open = Some(path.clone());
+                ui.close();
+            }
+            if crate::right::menu_item(ui, tr("Delete draft"), "") {
+                delete = Some(path.clone());
+                ui.close();
+            }
+        });
+        if resp.clicked() {
+            open = Some(path.clone());
+        }
+    }
+    if let Some(path) = open
+        && app.run("file.open", json!({"path": path})).is_some()
+    {
+        app.ui.home = false;
+    }
+    if let Some(path) = delete
+        && app.run("file.deleteDraft", json!({"path": path})).is_some()
+    {
+        app.ui.home_view.drafts_read = None;
+        app.toast(tr("Draft deleted"));
+    }
+}
+
 fn subheading(ui: &mut Ui, t: &Tokens, text: &str) {
     ui.add_space(28.0);
     ui.label(egui::RichText::new(text).font(semibold(12.0)).color(t.text_secondary));
@@ -260,6 +330,8 @@ fn recents(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
             app.ui.home = false;
         }
     }
+    drafts(app, ui, t);
+    crate::browser_files::section(app, ui, t);
     let recents = app.session.prefs.recent_files.clone();
     if recents.is_empty() {
         // A first run: nothing to reopen yet, so offer something to start from.

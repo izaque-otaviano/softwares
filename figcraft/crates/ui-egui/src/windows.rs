@@ -316,6 +316,8 @@ pub fn on_close_request(app: &mut FigApp, ctx: &Context) {
         ctx.request_repaint();
         return;
     }
+    // Files saved as you work are written (with a last checkpoint) before the window asks.
+    app.session.filesave_flush();
     let unsaved = !app.unsaved().is_empty();
     if app.windows.current == 0 && (unsaved || !app.windows.list.is_empty()) {
         ctx.send_viewport_cmd(ViewportCommand::CancelClose);
@@ -382,6 +384,7 @@ pub(crate) fn confirm_close(app: &mut FigApp, ctx: &Context) {
 /// Quit the app (the macOS app menu's Quit, ⌘Q): at once with nothing unsaved, else after asking
 /// about the files with unsaved changes in every window.
 pub fn request_quit(app: &mut FigApp, ctx: &Context) {
+    app.session.filesave_flush();
     if unsaved_anywhere(app).is_empty() {
         quit_now(app, ctx);
     } else {
