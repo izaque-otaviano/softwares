@@ -32,9 +32,11 @@ pub const FLOOR: u32 = 2;
 #[cfg(not(target_arch = "wasm32"))]
 const PARALLEL_DECODE_BYTES: u64 = 512 << 20;
 
-/// The bytes the cache may hold: pictures beyond it are dropped, least recently used first.
+/// The bytes the cache may hold: pictures beyond it are dropped, least recently used first. The
+/// desktop keeps enough for the photos of several open files (switching tabs finds them decoded);
+/// they are shared between files that use the same picture.
 #[cfg(not(target_arch = "wasm32"))]
-pub const DEFAULT_BUDGET: usize = 256 << 20;
+pub const DEFAULT_BUDGET: usize = 640 << 20;
 /// The browser's tab has less to give.
 #[cfg(target_arch = "wasm32")]
 pub const DEFAULT_BUDGET: usize = 96 << 20;

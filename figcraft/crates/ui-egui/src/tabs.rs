@@ -57,6 +57,8 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
         let mut pres_rects = None;
         // A tab dragged off the strip, or "Open in new window", moves to a window of its own.
         let mut detach = None;
+        // The tab under the pointer: the canvas renders it ahead.
+        let mut warm = None;
         let several = !ui.ctx().embed_viewports();
         for (i, d) in app.session.docs.iter().enumerate().filter(|(_, d)| app.shows(d.uid)) {
             let active = i == app.session.active && !app.ui.home && !pres.as_ref().is_some_and(|p| p.active);
@@ -120,6 +122,9 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
                 ui.painter().text(pos2(shown.max.x + 4.0, r.center().y), Align2::LEFT_CENTER, "•", regular(12.0), t.text);
             }
             let cr = Rect::from_center_size(pos2(r.max.x - 16.0, r.center().y), vec2(18.0, 18.0));
+            if resp.hovered() && !active {
+                warm = Some(d.uid);
+            }
             if resp.hovered() || active {
                 let cresp = ui.interact(cr, ui.id().with(("tabclose", d.uid)), Sense::click()).tip(tr("Close tab"));
                 if cresp.hovered() {
@@ -173,6 +178,9 @@ pub fn tab_bar(app: &mut FigApp, ui: &mut Ui) {
             Some(crate::present::tab::Click::Select) => crate::present::tab::select(app),
             Some(crate::present::tab::Click::Close) => crate::present::tab::close(app),
             None => {}
+        }
+        if warm.is_some() {
+            app.canvas.warm_hint = warm;
         }
         if let Some(i) = switch {
             app.run("doc.switch", json!({"index": i}));
