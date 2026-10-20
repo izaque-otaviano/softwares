@@ -153,11 +153,6 @@ impl Cache {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The bytes it may hold.
-    pub fn budget(&self) -> usize {
-        self.budget
-    }
-
     /// The bytes the cache holds.
     pub fn bytes(&self) -> usize {
         self.lock().bytes

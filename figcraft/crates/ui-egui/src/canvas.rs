@@ -66,85 +66,6 @@ pub struct CanvasState {
     pub renders_shown: u64,
     /// Texture bytes uploaded so far (tests compare a drag's uploads with the image's size).
     pub uploaded_bytes: u64,
-    /// How fast the view pans (for the margin ahead and scroll drafts).
-    pub(crate) motion: Motion,
-    /// Seconds from asking for a render to the first picture of it (smoothed).
-    pub(crate) latency: f64,
-    /// A render was asked for and nothing of it has arrived yet.
-    awaiting: bool,
-}
-
-/// How the view is panning: velocity in device pixels a second, the last direction it moved in
-/// and when it last went fast.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Motion {
-    /// The last screen view seen (origin, zoom) and when (egui time).
-    last: Option<((f64, f64), f64, f64)>,
-    /// When the view last moved.
-    moved_at: f64,
-    pub v: (f64, f64),
-    /// The direction of the last pan (-1, 0, 1 an axis).
-    pub heading: (f64, f64),
-    /// When the pan was last faster than [`SCROLL_DRAFT_SPEED`].
-    pub fast_at: Option<f64>,
-}
-
-/// A pan faster than this (device pixels a second) renders what it uncovers at half resolution.
-pub(crate) const SCROLL_DRAFT_SPEED: f64 = 3000.0;
-/// How long after a fast pan slows down renders stay drafts (seconds).
-pub(crate) const SCROLL_SETTLE: f64 = 0.15;
-/// A pan that stopped this long ago (seconds) counts as stopped: the velocity is zero.
-const MOTION_STOP: f64 = 0.1;
-/// Quiet this long after a pan (seconds) draws more margin in the direction it went.
-const IDLE_AHEAD_AFTER: f64 = 0.3;
-
-impl Motion {
-    /// Note the screen view at `now` (`origin` in page units, `scale` device pixels per unit).
-    pub(crate) fn observe(&mut self, origin: (f64, f64), scale: f64, now: f64) {
-        if !(origin.0.is_finite() && origin.1.is_finite() && scale.is_finite() && scale > 0.0 && now.is_finite()) {
-            *self = Self::default();
-            return;
-        }
-        if let Some((o, s, t)) = self.last {
-            let dt = now - t;
-            if (s - scale).abs() > s * 1e-9 {
-                // Another zoom: not a pan.
-                *self = Self { last: Some((origin, scale, now)), moved_at: now, ..Self::default() };
-                return;
-            }
-            let d = ((origin.0 - o.0) * scale, (origin.1 - o.1) * scale);
-            if d.0 != 0.0 || d.1 != 0.0 {
-                if dt > 0.0 {
-                    let inst = (d.0 / dt.max(1.0 / 240.0), d.1 / dt.max(1.0 / 240.0));
-                    // A pan that resumes after a stop starts from its own speed.
-                    let k = if now - self.moved_at > MOTION_STOP { 1.0 } else { 0.6 };
-                    self.v = (self.v.0 + (inst.0 - self.v.0) * k, self.v.1 + (inst.1 - self.v.1) * k);
-                }
-                self.heading = (d.0.signum() * f64::from(u8::from(d.0 != 0.0)), d.1.signum() * f64::from(u8::from(d.1 != 0.0)));
-                self.moved_at = now;
-            } else if now - self.moved_at > MOTION_STOP {
-                self.v = (0.0, 0.0);
-            }
-        }
-        self.last = Some((origin, scale, now));
-        if self.speed() > SCROLL_DRAFT_SPEED {
-            self.fast_at = Some(now);
-        }
-    }
-
-    pub(crate) fn speed(&self) -> f64 {
-        self.v.0.hypot(self.v.1)
-    }
-
-    /// Whether renders are scroll drafts at `now`: the pan went fast within [`SCROLL_SETTLE`].
-    pub(crate) fn drafting(&self, now: f64) -> bool {
-        self.fast_at.is_some_and(|t| now - t < SCROLL_SETTLE)
-    }
-
-    /// Whether the pan has been still long enough to draw ahead of where it went.
-    fn idle(&self, now: f64) -> bool {
-        self.speed() == 0.0 && now - self.moved_at > IDLE_AHEAD_AFTER && (self.heading.0 != 0.0 || self.heading.1 != 0.0)
-    }
 }
 
 /// A tab's last picture: the texture, the view it was rendered for and what it was rendered from.
@@ -221,9 +142,6 @@ impl Default for CanvasState {
             warmed: HashMap::new(),
             renders_shown: 0,
             uploaded_bytes: 0,
-            motion: Motion::default(),
-            latency: 0.1,
-            awaiting: false,
         }
     }
 }
@@ -512,75 +430,6 @@ pub(crate) fn plan_view(wanted: &figcraft_render::View, have: Option<&figcraft_r
     }
 }
 
-/// How much margin to keep ahead of a pan: the pan's velocity (device pixels a second, signed per
-/// axis) and how long a render takes to show (seconds).
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Lead {
-    pub v: (f64, f64),
-    pub latency: f64,
-}
-
-/// The most margin ahead of a pan, in screens.
-const MAX_LEAD_SCREENS: f64 = 1.25;
-
-/// [`plan_view`] for a view that is panning: on each moving axis the margin ahead is what the pan
-/// covers while a render is on its way (at least the usual one and a half margins, at most
-/// [`MAX_LEAD_SCREENS`] screens), and the margin behind half the usual; the whole stays within
-/// `cap`. A still axis keeps the usual margin both ways. Without motion it is [`plan_view`].
-pub(crate) fn plan_view_moving(
-    wanted: &figcraft_render::View,
-    have: Option<&figcraft_render::View>,
-    cap: u32,
-    lead: Option<Lead>,
-) -> figcraft_render::View {
-    let s = wanted.scale;
-    let Some(lead) = lead
-        .filter(|l| l.v.0.is_finite() && l.v.1.is_finite() && l.latency.is_finite() && (l.v.0 != 0.0 || l.v.1 != 0.0) && s.is_finite() && s > 0.0)
-    else {
-        return plan_view(wanted, have, cap);
-    };
-    let capf = f64::from(cap.clamp(1, 16_384));
-    let latency = lead.latency.clamp(0.0, 2.0);
-    // Margins (before, after) on an axis of `size` device pixels moving at `v`.
-    let axis = |size: f64, v: f64| -> (f64, f64) {
-        let g = (size * OVERSCAN).round();
-        if v == 0.0 {
-            let m = ((capf - size) / 2.0).clamp(0.0, g).floor();
-            return (m, m);
-        }
-        let ahead = (v.abs() * latency * 1.5).clamp(1.5 * g, (MAX_LEAD_SCREENS * size).max(1.5 * g));
-        let behind = (g / 2.0).floor();
-        let room = (capf - size).max(0.0);
-        let (ahead, behind) = if ahead + behind > room {
-            let k = room / (ahead + behind);
-            ((ahead * k).floor(), (behind * k).floor())
-        } else {
-            (ahead.floor(), behind)
-        };
-        if v > 0.0 { (behind, ahead) } else { (ahead, behind) }
-    };
-    let (ww, wh) = (f64::from(wanted.width).min(capf), f64::from(wanted.height).min(capf));
-    let (mx, my) = (axis(ww, lead.v.0), axis(wh, lead.v.1));
-    if let Some(h) = have
-        && (h.scale - s).abs() <= s * 1e-9
-    {
-        let left = (wanted.origin.0 - h.origin.0) * s;
-        let top = (wanted.origin.1 - h.origin.1) * s;
-        let right = f64::from(h.width) - left - ww;
-        let bottom = f64::from(h.height) - top - wh;
-        // Ask again once a pan has used up half the margin it needs on any side.
-        if left >= (mx.0 / 2.0).floor() && right >= (mx.1 / 2.0).floor() && top >= (my.0 / 2.0).floor() && bottom >= (my.1 / 2.0).floor() {
-            return h.clone();
-        }
-    }
-    figcraft_render::View {
-        origin: (wanted.origin.0 - mx.0 / s, wanted.origin.1 - my.0 / s),
-        scale: s,
-        width: (ww + mx.0 + mx.1).min(capf) as u32,
-        height: (wh + my.0 + my.1).min(capf) as u32,
-    }
-}
-
 fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
     let ppp = ctx.pixels_per_point();
     let now = ctx.input(|i| i.time);
@@ -600,26 +449,12 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
     // While a zoom is under way, render at half resolution (a quarter of the pixels) and refine
     // once it settles.
     let zooming = pixel_preview.is_none() && app.canvas.last_zoom.is_some_and(|t| now - t < ZOOM_SETTLE);
-    // How fast the view pans; a fast pan renders what it uncovers at half resolution too (a
-    // quarter of the pixels), refined once it slows down.
-    if pixel_preview.is_none() && !zooming && ds.interaction.is_none() {
-        app.canvas.motion.observe((ox, oy), scale, now);
-    } else {
-        app.canvas.motion = Motion::default();
-    }
-    let scrolling = !zooming && pixel_preview.is_none() && app.canvas.motion.drafting(now);
-    let motion_v = app.canvas.motion.v;
-    let (scale, w, h) = if zooming || scrolling {
-        ctx.request_repaint_after(std::time::Duration::from_secs_f64(if zooming { ZOOM_SETTLE } else { SCROLL_SETTLE }));
+    let (scale, w, h) = if zooming {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(ZOOM_SETTLE));
         (scale / 2.0, w.div_ceil(2).max(1), h.div_ceil(2).max(1))
     } else {
         (scale, w, h)
     };
-    let drafting = zooming || scrolling;
-    if !drafting && app.canvas.motion.speed() > 0.0 {
-        // The velocity drops to zero once the pan stops: look again then.
-        ctx.request_repaint_after(std::time::Duration::from_secs_f64(MOTION_STOP));
-    }
     let cap = render_cap(ctx.input(|i| i.max_texture_side));
     let wanted = figcraft_render::View { origin: (ox, oy), scale, width: w.min(cap), height: h.min(cap) };
     // The edited text is drawn live (an IME composition included); the caret is an overlay.
@@ -638,27 +473,15 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
         solo: ds.focused(),
         fonts: figcraft_text::layout_generation(),
         proof,
-        draft: drafting,
+        draft: zooming,
     };
     let last = app.canvas.submitted.as_ref();
-    // Device pixels a second at the scale rendered (a draft's is half).
-    let k = if scrolling { 0.5 } else { 1.0 };
-    let lead = if app.canvas.motion.speed() > 0.0 {
-        Some(Lead { v: (motion_v.0 * k, motion_v.1 * k), latency: app.canvas.latency })
-    } else if app.canvas.motion.idle(now) && !worker.in_flight() {
-        // Still after a pan: draw ahead in the direction it went, as if it went on slowly.
-        let hd = app.canvas.motion.heading;
-        let slow = f64::from(w.max(h)) * OVERSCAN * 4.0;
-        Some(Lead { v: (hd.0 * slow, hd.1 * slow), latency: 0.5 })
-    } else {
-        None
-    };
     let view = if pixel_preview.is_some() || zooming {
         // Pixel preview renders the view exactly (it is cheap: few pixels per page unit); so does
         // a zoom draft (the next frame zooms on: a margin would be thrown away).
-        wanted.clone()
+        wanted
     } else {
-        plan_view_moving(&wanted, last.map(|(_, v)| v), cap, lead)
+        plan_view(&wanted, last.map(|(_, v)| v), cap)
     };
     if let Some((k, v)) = last
         && *k == key
@@ -683,14 +506,12 @@ fn request_render(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
         skip,
         solo: key.solo,
         proof,
-        draft: drafting,
+        draft: zooming,
         uid: if legacy_tabs() { 0 } else { ds.uid },
         background: false,
         fresh: std::mem::take(&mut app.canvas.fresh),
-        focus: Some(wanted),
     };
     worker.submit(job);
-    app.canvas.awaiting = true;
     app.canvas.last_job = now;
     app.canvas.submitted = Some((key, view));
 }
@@ -775,12 +596,6 @@ fn apply_done(app: &mut FigApp, ctx: &egui::Context, done: crate::render_worker:
     let current = if legacy_tabs() { Some(0) } else { app.session.ds().ok().map(|d| d.uid) };
     let filter = if current == Some(done.uid) { filter_for(app, done.view.scale) } else { egui::TextureOptions::LINEAR };
     let c = &mut app.canvas;
-    if current == Some(done.uid) && !done.background && std::mem::take(&mut c.awaiting) {
-        let took = ctx.input(|i| i.time) - c.last_job;
-        if took.is_finite() && took >= 0.0 {
-            c.latency = (c.latency * 0.7 + took.min(2.0) * 0.3).clamp(0.005, 2.0);
-        }
-    }
     if current != Some(done.uid) {
         // A tab the window isn't showing (it was left while rendering, or rendered ahead).
         let now_bytes = match done.patches {
@@ -929,7 +744,6 @@ fn prewarm(app: &mut FigApp, worker: &mut Worker, ctx: &egui::Context) {
             uid,
             background: true,
             fresh: false,
-            focus: None,
         };
         worker.submit(job);
         app.canvas.warmed.insert(uid, (doc_ptr, view));

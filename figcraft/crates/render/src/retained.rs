@@ -14,9 +14,6 @@ use tiny_skia::{IntRect, Pixmap, PixmapPaint, Transform};
 
 use crate::{Options, View, draw, moved, render_view};
 
-mod tiles;
-pub use tiles::{TILE, TILE_BUDGET, Tiles};
-
 /// What a render had to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Work {
@@ -36,7 +33,7 @@ const MAX_RECTS: usize = 8;
 /// A change covering more than this share of the view renders it whole.
 const MAX_PARTIAL_SHARE: f64 = 0.6;
 /// More changed layers than this render the view whole.
-pub(crate) const MAX_CHANGED: usize = 4096;
+const MAX_CHANGED: usize = 4096;
 /// Effect margins beyond this many device pixels render the view whole.
 const MAX_MARGIN_PX: f64 = 1024.0;
 
@@ -60,12 +57,10 @@ struct Frame {
     /// largest background blur (what backdrops read around).
     sensitive: Arc<Sensitive>,
     pix: Pixmap,
-    /// Areas of `pix` never drawn (a render given up for a newer one): the next render draws them.
-    holes: Vec<Px>,
 }
 
 #[derive(Default)]
-pub(crate) struct Sensitive {
+struct Sensitive {
     areas: Vec<Rect>,
     backdrop_blur: f64,
     /// Pattern fill sources: an edit inside one shows wherever the pattern does.
@@ -74,7 +69,7 @@ pub(crate) struct Sensitive {
 
 /// Grain effects (noise, texture) work on their layer's pixels, which end where a render cuts the
 /// layer (texture scatters pixels from across the cut): grainy layers are redrawn whole.
-pub(crate) fn sensitive(doc: &Document) -> Sensitive {
+fn sensitive(doc: &Document) -> Sensitive {
     let noisy = doc.nodes().filter(|n| n.effects.iter().any(|e| e.visible && matches!(e.kind, EffectKind::Noise(_) | EffectKind::Texture(_))));
     let pattern_sources = doc
         .nodes()
@@ -88,7 +83,7 @@ pub(crate) fn sensitive(doc: &Document) -> Sensitive {
 }
 
 /// Whether `id` is a pattern source or inside one in `doc`.
-pub(crate) fn in_pattern_source(doc: &Document, s: &Sensitive, id: NodeId) -> bool {
+fn in_pattern_source(doc: &Document, s: &Sensitive, id: NodeId) -> bool {
     s.pattern_sources.iter().any(|src| *src == id || doc.is_ancestor(*src, id))
 }
 
@@ -198,8 +193,8 @@ pub const MAX_ROWS: u32 = 512;
 
 /// One piece of a render in pieces.
 enum Piece {
-    /// Decode picture levels the view draws from (in parallel where there are threads).
-    Decode(Vec<crate::prefetch::Need>),
+    /// Decode a picture level the view draws from.
+    Decode(crate::prefetch::Need),
     /// Draw an area of the image.
     Draw(Px),
 }
@@ -220,16 +215,6 @@ pub struct Sliced {
     margin: i64,
     work: Work,
     dirty: Dirty,
-    /// Pieces up to here draw (or decode for) the visible part of the view: once they have run,
-    /// the screen is covered.
-    focus_end: usize,
-    /// The image may be shown before it is finished: every area not drawn yet is blank (a pan's
-    /// uncovered strips, a whole render). An edit's patch keeps stale pixels until drawn and isn't.
-    showable: bool,
-    /// Pixels copied from kept tiles instead of drawn.
-    tiled: u64,
-    /// Tiles may be taken from the finished image.
-    tiles_ok: bool,
 }
 
 impl Sliced {
@@ -238,7 +223,7 @@ impl Sliced {
     pub fn step(&mut self, more: &mut dyn FnMut() -> bool) -> bool {
         while let Some(piece) = self.pieces.get(self.next) {
             match piece {
-                Piece::Decode(needs) => crate::prefetch::run(&self.doc, self.doc.color_profile, needs),
+                Piece::Decode(need) => crate::prefetch::run(&self.doc, self.doc.color_profile, std::slice::from_ref(need)),
                 // A band that fails to draw is left as it was (stale pixels beat none).
                 Piece::Draw(d) => {
                     let _ = render_into(&self.doc, self.page, &self.view, self.px, d, self.margin, &self.opts, &mut self.pix);
@@ -270,82 +255,6 @@ impl Sliced {
     pub fn view(&self) -> &View {
         &self.view
     }
-
-    /// Whether the pieces covering the visible part of the view (the focus given to
-    /// [`Retained::begin_focused`]) have all run.
-    pub fn focus_done(&self) -> bool {
-        self.next >= self.focus_end
-    }
-
-    /// Whether the image may be shown unfinished (see [`Sliced::image`]).
-    pub fn showable(&self) -> bool {
-        self.showable
-    }
-
-    /// The image as drawn so far: what is not drawn yet is blank when [`Sliced::showable`].
-    pub fn image(&self) -> &Pixmap {
-        &self.pix
-    }
-
-    /// Pieces run so far (an index for [`Sliced::drawn`]).
-    pub fn ran(&self) -> usize {
-        self.next
-    }
-
-    /// The areas (`[x, y, w, h]`) the draw pieces from `from` up to those run so far covered.
-    pub fn drawn(&self, from: usize) -> Vec<[u32; 4]> {
-        self.pieces
-            .get(from..self.next)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|p| match p {
-                Piece::Draw(d) => px_rect(d),
-                Piece::Decode(_) => None,
-            })
-            .collect()
-    }
-
-    /// Pixels copied from kept tiles instead of drawn.
-    pub fn tiled(&self) -> u64 {
-        self.tiled
-    }
-
-    /// Whether `view` (a screen, same zoom) lies inside this render, so letting it finish shows it
-    /// (its focus is drawn first and the margin nearest it next).
-    pub fn covers(&self, view: &View) -> bool {
-        let Some((v, p)) = snap(view) else { return false };
-        if v.scale.to_bits() != self.view.scale.to_bits() {
-            return false;
-        }
-        let (x0, y0) = (p.0 - self.px.0, p.1 - self.px.1);
-        let (x1, y1) = (x0 + i64::from(view.width), y0 + i64::from(view.height));
-        x0 >= 0 && y0 >= 0 && x1 <= i64::from(self.view.width) && y1 <= i64::from(self.view.height)
-    }
-
-    /// Pixels the pieces not run yet would draw.
-    pub fn left(&self) -> u64 {
-        self.pieces.get(self.next..).unwrap_or_default().iter().map(|p| if let Piece::Draw(d) = p { d.area() } else { 0 }).sum()
-    }
-}
-
-fn px_rect(d: &Px) -> Option<[u32; 4]> {
-    Some([u32::try_from(d.x0).ok()?, u32::try_from(d.y0).ok()?, u32::try_from(d.x1 - d.x0).ok()?, u32::try_from(d.y1 - d.y0).ok()?])
-}
-
-/// Make `d` of `pix` blank (transparent).
-fn blank(pix: &mut Pixmap, d: &Px) {
-    let w = i64::from(pix.width());
-    let Ok(row) = usize::try_from(w * 4) else { return };
-    let (x0, x1) = (d.x0.clamp(0, w), d.x1.clamp(0, w));
-    let (Ok(a), Ok(n)) = (usize::try_from(x0 * 4), usize::try_from((x1 - x0) * 4)) else { return };
-    let data = pix.data_mut();
-    for y in d.y0.max(0)..d.y1 {
-        let Ok(y) = usize::try_from(y) else { continue };
-        let at = y * row + a;
-        if let Some(s) = data.get_mut(at..at + n) {
-            s.fill(0);
-        }
-    }
 }
 
 fn new_pixmap_for(v: &View) -> Option<Pixmap> {
@@ -358,8 +267,6 @@ pub struct Retained {
     last: Option<Frame>,
     /// What the last render changed against the one before.
     dirty: Dirty,
-    /// Blocks of earlier renders, for coming back to a region ([`Tiles`]).
-    tiles: Tiles,
 }
 
 impl Retained {
@@ -374,25 +281,9 @@ impl Retained {
         self.last.as_ref().map(|f| &f.pix)
     }
 
-    /// The bytes of the kept image and tiles.
+    /// The bytes of the kept image.
     pub fn bytes(&self) -> usize {
-        self.last.as_ref().map_or(0, |f| f.pix.data().len()) + self.tiles.bytes()
-    }
-
-    /// The kept tiles ([`Tiles`]).
-    pub fn tiles(&self) -> &Tiles {
-        &self.tiles
-    }
-
-    /// Keep tiles under `budget` bytes from now on (0: none), dropping those held.
-    pub fn set_tile_budget(&mut self, budget: usize) {
-        self.tiles = Tiles::new(budget);
-    }
-
-    /// Forget the kept image and the tiles.
-    pub fn clear_all(&mut self) {
-        self.clear();
-        self.tiles.clear();
+        self.last.as_ref().map_or(0, |f| f.pix.data().len())
     }
 
     /// What the last render changed in the image against the one before it ([`Dirty`]).
@@ -484,202 +375,55 @@ impl Retained {
     /// about `rows` rows. Run the pieces with [`Sliced::step`] and keep the result with
     /// [`Retained::finish`]. The same image as [`Retained::render`] (bands that cut an effect are
     /// drawn with the margin patches use). Dropping a [`Sliced`] unfinished forgets the kept image
-    /// (the next render is whole); [`Retained::abandon`] keeps what it drew.
+    /// (the next render is whole).
     pub fn begin(&mut self, doc: &Arc<Document>, page: NodeId, view: &View, opts: &Options, rows: u32) -> Option<Sliced> {
-        self.begin_focused(doc, page, view, opts, Some(rows), None)
-    }
-
-    /// [`Retained::begin`], drawing the part of the view in `focus` (what the screen shows; the
-    /// rest is margin for a pan) first: its pictures, then its bands, then the margin's, the side
-    /// with more margin (where a pan is heading) first. `rows: None` draws each area in one piece
-    /// (a renderer with threads splits it itself). Areas held as tiles ([`Tiles`]) are copied.
-    pub fn begin_focused(
-        &mut self,
-        doc: &Arc<Document>,
-        page: NodeId,
-        view: &View,
-        opts: &Options,
-        rows: Option<u32>,
-        focus: Option<&View>,
-    ) -> Option<Sliced> {
         let Start { snapped, px, fonts, outcome } = self.start(doc, page, view, opts)?;
-        let rows = rows.map(|r| i64::from(r.clamp(MIN_ROWS, MAX_ROWS)));
+        let rows = i64::from(rows.clamp(MIN_ROWS, MAX_ROWS));
         let (w, h) = (i64::from(snapped.width), i64::from(snapped.height));
         let mut dirty = None;
-        let mut shifted = false;
-        let (mut pix, damage, margin, work, sens) = match outcome {
+        let (pix, damage, margin, work, sens) = match outcome {
             Outcome::Patch(p, s) => {
                 let work = if p.pixels == 0 && p.copied.is_empty() { Work::Reused } else { Work::Partial { pixels: p.pixels } };
                 dirty = dirty_of(&p);
-                shifted = p.shifted;
                 (p.pix, p.damage, p.margin, work, s)
             }
             Outcome::Full(s) => {
                 let reach = crate::backdrop_reach(s.backdrop_blur, snapped.scale).ceil();
                 // Grain works on whole layers and a backdrop that reaches past a band needs the
                 // whole view: those draw in one piece.
-                let band = rows.unwrap_or(MAX_ROWS.into()) as f64;
-                let whole = !s.areas.is_empty() || !reach.is_finite() || reach > band / 2.0;
+                let whole = !s.areas.is_empty() || !reach.is_finite() || reach > rows as f64 / 2.0;
                 let all = vec![Px { x0: 0, y0: 0, x1: w, y1: h }];
                 (new_pixmap_for(&snapped)?, all, if whole { 0 } else { reach as i64 + 1 }, Work::Full, s)
             }
         };
+        let mut pieces: Vec<Piece> = Vec::new();
+        // Pictures not held yet decode first, one piece each.
+        for need in crate::prefetch::missing(doc, &crate::prefetch::needs(doc, page, &snapped, opts)) {
+            pieces.push(Piece::Decode(need));
+        }
+        // Bands: no taller than `rows` (a whole piece stays whole).
         let splits = !matches!(work, Work::Full) || margin > 0;
-        // The focus in frame pixels (the whole frame without one).
-        let focus_px = focus
-            .and_then(|f| {
-                let (fv, fp) = snap(f)?;
-                (fv.scale.to_bits() == snapped.scale.to_bits()).then_some(())?;
-                let (x0, y0) = (fp.0 - px.0, fp.1 - px.1);
-                Px { x0, y0, x1: x0 + i64::from(f.width) + 1, y1: y0 + i64::from(f.height) + 1 }.clamp(w, h)
-            })
-            .unwrap_or(Px { x0: 0, y0: 0, x1: w, y1: h });
-        // Kept tiles fill what they can; the backdrop reach keeps them off the frame's edges.
-        let tiles_ok = self.tiles.sync(doc, page, opts, fonts, &sens);
-        let reach = crate::backdrop_reach(sens.backdrop_blur, snapped.scale).ceil();
-        let reach = if reach.is_finite() { reach.min(1e6) as i64 } else { i64::MAX / 4 };
-        let mut tiled = 0;
-        let damage = if tiles_ok && splits {
-            let (left, copied) = self.tiles.fill(&mut pix, px, snapped.scale, reach, damage);
-            tiled = copied;
-            left
-        } else {
-            damage
-        };
-        // Visible areas first, then the margin.
-        let (mut inside, mut outside): (Vec<Px>, Vec<Px>) = (Vec::new(), Vec::new());
         for d in damage {
             if !splits {
-                inside.push(d);
+                pieces.push(Piece::Draw(d));
                 continue;
             }
-            let hit = Px { x0: d.x0.max(focus_px.x0), y0: d.y0.max(focus_px.y0), x1: d.x1.min(focus_px.x1), y1: d.y1.min(focus_px.y1) };
-            if hit.x1 > hit.x0 && hit.y1 > hit.y0 {
-                inside.push(hit);
-                outside.extend(subtract(d, hit));
-            } else {
-                outside.push(d);
+            let mut y = d.y0;
+            while y < d.y1 {
+                let y1 = (y + rows).min(d.y1);
+                pieces.push(Piece::Draw(Px { y0: y, y1, ..d }));
+                y = y1;
             }
         }
-        // The margin nearest the screen first, the side with more margin (ahead of a pan) before
-        // the other.
-        let (ahead_x, ahead_y) = ((w - focus_px.x1) - focus_px.x0, (h - focus_px.y1) - focus_px.y0);
-        let gap = |d: &Px| -> i64 {
-            let gx = if d.x1 <= focus_px.x0 {
-                focus_px.x0 - d.x1 + i64::from(ahead_x > 0) * w
-            } else if d.x0 >= focus_px.x1 {
-                d.x0 - focus_px.x1 + i64::from(ahead_x < 0) * w
-            } else {
-                0
-            };
-            let gy = if d.y1 <= focus_px.y0 {
-                focus_px.y0 - d.y1 + i64::from(ahead_y > 0) * h
-            } else if d.y0 >= focus_px.y1 {
-                d.y0 - focus_px.y1 + i64::from(ahead_y < 0) * h
-            } else {
-                0
-            };
-            gx.max(gy)
-        };
-        let band = |list: Vec<Px>, out: &mut Vec<Px>| {
-            for d in list {
-                match rows {
-                    Some(rows) if splits => {
-                        let mut y = d.y0;
-                        while y < d.y1 {
-                            let y1 = (y + rows).min(d.y1);
-                            out.push(Px { y0: y, y1, ..d });
-                            y = y1;
-                        }
-                    }
-                    _ => out.push(d),
-                }
-            }
-        };
-        let mut near = Vec::new();
-        band(inside, &mut near);
-        let mut far = Vec::new();
-        band(outside, &mut far);
-        far.sort_by_key(|d| gap(d));
-        // A pan's uncovered strips hold stale pixels until drawn: blank them, so the image can be
-        // shown before it is finished.
-        let showable = shifted || matches!(work, Work::Full);
-        if shifted {
-            for d in near.iter().chain(&far) {
-                blank(&mut pix, d);
-            }
-        }
-        // Pictures not held yet decode first: those on screen, then the margin's. One piece for
-        // each where there is one thread (the browser), all at once where they decode in parallel.
-        let all_needs = crate::prefetch::missing(doc, &crate::prefetch::needs(doc, page, &snapped, opts));
-        let (near_needs, far_needs): (Vec<_>, Vec<_>) = match focus {
-            Some(f) => {
-                let shown = crate::prefetch::needs(doc, page, f, opts);
-                all_needs.into_iter().partition(|n| shown.contains(n))
-            }
-            None => (all_needs, Vec::new()),
-        };
-        let decode = |needs: Vec<crate::prefetch::Need>, out: &mut Vec<Piece>| {
-            if needs.is_empty() {
-                return;
-            }
-            if cfg!(target_arch = "wasm32") || rows.is_some() {
-                out.extend(needs.into_iter().map(|n| Piece::Decode(vec![n])));
-            } else {
-                out.push(Piece::Decode(needs));
-            }
-        };
-        let mut pieces: Vec<Piece> = Vec::new();
-        decode(near_needs, &mut pieces);
-        pieces.extend(near.into_iter().map(Piece::Draw));
-        let focus_end = pieces.len();
-        decode(far_needs, &mut pieces);
-        pieces.extend(far.into_iter().map(Piece::Draw));
-        Some(Sliced {
-            doc: doc.clone(),
-            page,
-            view: snapped,
-            px,
-            fonts,
-            opts: opts.clone(),
-            sens,
-            pix,
-            pieces,
-            next: 0,
-            margin,
-            work,
-            dirty,
-            focus_end,
-            showable,
-            tiled,
-            tiles_ok,
-        })
-    }
-
-    /// Give up an unfinished [`Sliced`] render for a newer one but keep what it drew: the next
-    /// render draws the rest (where it still shows) along with its own areas.
-    pub fn abandon(&mut self, done: Sliced) {
-        let holes: Vec<Px> =
-            done.pieces.get(done.next..).unwrap_or_default().iter().filter_map(|p| if let Piece::Draw(d) = p { Some(*d) } else { None }).collect();
-        let Sliced { doc, page, view, px, fonts, opts, sens, pix, .. } = done;
-        self.dirty = None;
-        self.keep(&doc, page, (&view, px, fonts), &opts, pix, sens);
-        if let Some(f) = self.last.as_mut() {
-            f.holes = holes;
-        }
+        let image = pix;
+        Some(Sliced { doc: doc.clone(), page, view: snapped, px, fonts, opts: opts.clone(), sens, pix: image, pieces, next: 0, margin, work, dirty })
     }
 
     /// Keep a finished [`Sliced`] render as the last image; returns it like [`Retained::render`].
     pub fn finish(&mut self, done: Sliced) -> Option<(View, &Pixmap, Work)> {
-        let Sliced { doc, page, view, px, fonts, opts, sens, pix, work, next, pieces, dirty, tiles_ok, .. } = done;
+        let Sliced { doc, page, view, px, fonts, opts, sens, pix, work, next, pieces, dirty, .. } = done;
         if next < pieces.len() {
             return None;
-        }
-        if tiles_ok {
-            let reach = crate::backdrop_reach(sens.backdrop_blur, view.scale).ceil();
-            if reach.is_finite() && reach < 1e6 {
-                self.tiles.store(&pix, px, view.scale, reach as i64, &sens);
-            }
         }
         self.dirty = dirty;
         crate::perf::count(|s| match work {
@@ -719,14 +463,13 @@ impl Retained {
             fonts,
             sensitive,
             pix,
-            holes: Vec::new(),
         })
     }
 }
 
 /// Page rectangle → device pixels of a frame whose top-left is `px`, rounded outwards plus a pixel
 /// of anti-aliasing.
-pub(crate) fn to_px(r: Rect, scale: f64, px: (i64, i64)) -> Option<Px> {
+fn to_px(r: Rect, scale: f64, px: (i64, i64)) -> Option<Px> {
     let (x0, y0, x1, y1) = ((r.x0 * scale).floor() - 1.0, (r.y0 * scale).floor() - 1.0, (r.x1 * scale).ceil() + 1.0, (r.y1 * scale).ceil() + 1.0);
     if !(x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite())
         || x0.abs() > 1e15
@@ -740,7 +483,7 @@ pub(crate) fn to_px(r: Rect, scale: f64, px: (i64, i64)) -> Option<Px> {
 }
 
 /// Page areas a change to `id` in `doc` affects on `page`; `None` when only a full render will do.
-pub(crate) fn changed_areas(doc: &Document, page: NodeId, id: NodeId, out: &mut Vec<Rect>) -> Option<()> {
+fn changed_areas(doc: &Document, page: NodeId, id: NodeId, out: &mut Vec<Rect>) -> Option<()> {
     let Some(n) = doc.node(id) else { return Some(()) };
     if n.is_page() {
         // Page background, page order or top-level layers.
@@ -796,12 +539,6 @@ fn plan_patch(
     }
     let reach = reach as i64;
     let mut damage: Vec<Px> = Vec::new();
-    // Areas the last render never drew (it was given up for a newer one), where they are now.
-    let holes = !last.holes.is_empty();
-    for o in &last.holes {
-        damage.push(Px { x0: o.x0 - dx - reach, y0: o.y0 - dy - reach, x1: o.x1 - dx + reach, y1: o.y1 - dy + reach });
-    }
-    let allow_copies = allow_copies && !holes;
     // Strips a pan uncovers.
     if dx > 0 {
         damage.push(Px { x0: w - dx - reach, y0: 0, x1: w, y1: h });
