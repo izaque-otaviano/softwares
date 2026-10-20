@@ -5,7 +5,7 @@
 
     wix build figcraft.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
       -culture en-US -loc figcraft.en-us.wxl -d Version=1.2.3 -d DisplayVersion=1.2.3-rc.1
-      -d BinDir=... -d IconPath=... -d BannerBmp=... -d DialogBmp=... -d HasCli=1 -o out.msi
+      -d BinDir=... -d IconPath=... -d DocIconPath=... -d BannerBmp=... -d DialogBmp=... -d HasCli=1 -o out.msi
 
   Per-machine install with a setup wizard that names the version: Welcome, install folder
   (Program Files\FigCraft by default, remembered for upgrades), Ready, a progress page, and a
@@ -90,12 +90,15 @@
               Icon="FigcraftIcon.exe" IconIndex="0" />
         </File>
 
-        <!-- .figcraft: FigCraft's own format; FigCraft is its default app. -->
-        <ProgId Id="Figcraft.Document" Description="FigCraft Document" Icon="FigcraftExe" IconIndex="0">
+        <!-- .figcraft: FigCraft's own format; FigCraft is its default app. Its files show the
+             document icon (assets/app-icon/document.ico, installed beside the app), not the app's. -->
+        <File Id="FigcraftDocumentIco" Source="$(var.DocIconPath)" Name="figcraft-document.ico" />
+        <ProgId Id="Figcraft.Document" Description="FigCraft Document">
           <Extension Id="figcraft" ContentType="application/x-figcraft">
             <Verb Id="open" Command="Open" TargetFile="FigcraftExe" Argument="&quot;%1&quot;" />
           </Extension>
         </ProgId>
+        <RegistryValue Root="HKLM" Key="Software\Classes\Figcraft.Document\DefaultIcon" Value="&quot;[#FigcraftDocumentIco]&quot;,0" Type="string" />
         <!-- SVG and images: offered under "Open with", never forced as the default. -->
         <ProgId Id="Figcraft.Image" Description="Image" Icon="FigcraftExe" IconIndex="0" />
         <RegistryValue Root="HKLM" Key="Software\Classes\Figcraft.Image\shell\open\command" Value="&quot;[#FigcraftExe]&quot; &quot;%1&quot;" Type="string" />

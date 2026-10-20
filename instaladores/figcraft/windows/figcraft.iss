@@ -5,7 +5,7 @@
 ; Idioma automático (português do Brasil ou inglês).
 ;
 ; Compilar (feito pelo workflow .github/workflows/figcraft-instaladores.yml):
-;   ISCC.exe /DVersion=0.6.0 /DBinDir=C:\caminho\binarios /DIconFile=C:\caminho\figcraft.ico ^
+;   ISCC.exe /DVersion=0.6.0 /DBinDir=C:\caminho\binarios /DIconFile=C:\caminho\figcraft.ico /DDocIconFile=C:\caminho\document.ico ^
 ;            /DDocsDir=C:\caminho\figcraft /O.\saida figcraft.iss
 ;
 ; Instalação silenciosa: FigCraft-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES [/ALLUSERS]
@@ -21,6 +21,9 @@
 #endif
 #ifndef IconFile
   #error Defina /DIconFile com o caminho do figcraft.ico
+#endif
+#ifndef DocIconFile
+  #error Defina /DDocIconFile com o caminho do document.ico (ícone dos arquivos .figcraft, assets/app-icon/document.ico)
 #endif
 #ifndef DocsDir
   #define DocsDir BinDir
@@ -117,6 +120,7 @@ Name: "assoc"; Description: "{cm:TaskAssoc}"
 [Files]
 Source: "{#BinDir}\figcraft.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinDir}\figcraft-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#DocIconFile}"; DestDir: "{app}"; DestName: "figcraft-document.ico"; Flags: ignoreversion
 Source: "{#DocsDir}\LICENSE-MIT"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#DocsDir}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#DocsDir}\NOTICE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
@@ -132,7 +136,7 @@ Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\figcraft
 ; Associação de arquivos (opcional, marcada): .figcraft é do FigCraft, como no MSI oficial.
 Root: HKA; Subkey: "Software\Classes\.figcraft"; ValueType: string; ValueData: "FigCraft.Document"; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\FigCraft.Document"; ValueType: string; ValueData: "{cm:DocName}"; Flags: uninsdeletekey; Tasks: assoc
-Root: HKA; Subkey: "Software\Classes\FigCraft.Document\DefaultIcon"; ValueType: string; ValueData: "{app}\figcraft.exe,0"; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\FigCraft.Document\DefaultIcon"; ValueType: string; ValueData: "{app}\figcraft-document.ico,0"; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\FigCraft.Document\shell\open\command"; ValueType: string; ValueData: """{app}\figcraft.exe"" ""%1"""; Tasks: assoc
 ; "Abrir com" para SVG e imagens, sem tomar o lugar do app padrão (como o MSI oficial).
 Root: HKA; Subkey: "Software\Classes\.svg\OpenWithProgids"; ValueType: string; ValueName: "FigCraft.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc

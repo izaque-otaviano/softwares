@@ -224,7 +224,14 @@ fn drafts(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
             t,
             r,
             &resp,
-            &FileRow { mark: Some((Icon::Document, ACCENT)), name, ink: t.text, detail: &detail, detail_size: 11.0, detail_ink: t.text_secondary },
+            &FileRow {
+                mark: Some((Icon::Document, Color32::WHITE)),
+                name,
+                ink: t.text,
+                detail: &detail,
+                detail_size: 11.0,
+                detail_ink: t.text_secondary,
+            },
         );
         crate::right::context_popup(&resp).show(|ui| {
             if crate::right::menu_item(ui, tr("Open"), "") {
@@ -314,7 +321,7 @@ fn recents(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
         for (i, d) in app.session.docs.iter().enumerate() {
             let detail = d.path.as_deref().unwrap_or_default();
             let row = FileRow {
-                mark: Some((Icon::Document, ACCENT)),
+                mark: Some((Icon::Document, Color32::WHITE)),
                 name: &d.doc.name,
                 ink: t.text,
                 detail,

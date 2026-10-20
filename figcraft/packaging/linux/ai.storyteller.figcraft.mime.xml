@@ -5,7 +5,8 @@
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
   <mime-type type="application/x-figcraft">
     <comment>FigCraft document</comment>
-    <icon name="ai.storyteller.figcraft"/>
+    <!-- assets/app-icon/hicolor/<size>/mimetypes/application-x-figcraft.png (the sheet with the logo). -->
+    <icon name="application-x-figcraft"/>
     <glob pattern="*.figcraft"/>
   </mime-type>
 </mime-info>

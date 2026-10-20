@@ -142,7 +142,7 @@ Invoke-Native 'wix build' {
   wix build (Join-Path $PSScriptRoot 'figcraft.wxs') -arch $Arch `
     -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext `
     -culture en-US -loc (Join-Path $PSScriptRoot 'figcraft.en-us.wxl') `
-    -d "Version=$MsiVersion" -d "DisplayVersion=$Version" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\figcraft.ico')" `
+    -d "Version=$MsiVersion" -d "DisplayVersion=$Version" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\figcraft.ico')" -d "DocIconPath=$(Join-Path $Root 'assets\app-icon\document.ico')" `
     -d "BannerBmp=$Banner" -d "DialogBmp=$Dialog" -d "HasCli=$([int]$HasCli)" `
     -o $Msi
 }

@@ -2,7 +2,7 @@
 //! this site, with a plain warning about what that means, a download of each file and a way to
 //! forget it. Desktop builds list nothing here (their files are on disk; see `home` for drafts).
 
-use egui::{Sense, Ui, vec2};
+use egui::{Color32, Sense, Ui, vec2};
 use serde_json::json;
 
 use crate::FigApp;
@@ -10,7 +10,7 @@ use crate::a11y;
 use crate::home::{FileRow, file_row};
 use crate::i18n::{tr, trf};
 use crate::icons::Icon;
-use crate::theme::{ACCENT, Tokens, regular};
+use crate::theme::{Tokens, regular};
 
 pub fn section(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
     let files = app.services.browser_files();
@@ -53,7 +53,7 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
             r,
             &resp,
             &FileRow {
-                mark: Some((Icon::Document, ACCENT)),
+                mark: Some((Icon::Document, Color32::WHITE)),
                 name: &f.name,
                 ink: t.text,
                 detail: &detail,

@@ -202,6 +202,7 @@ jobs:
           & $Iscc /Q "/DVersion=$Version" "/DArch=${{ matrix.arch }}" `
             "/DBinDir=$(Resolve-Path $Bin)" `
             "/DIconFile=$(Resolve-Path figcraft\assets\app-icon\figcraft.ico)" `
+            "/DDocIconFile=$(Resolve-Path figcraft\assets\app-icon\document.ico)" `
             "/DDocsDir=$(Resolve-Path figcraft)" `
             "/O$PWD\saida" instaladores\figcraft\windows\figcraft.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }

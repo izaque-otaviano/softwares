@@ -59,7 +59,7 @@
         <string>public.content</string>
       </array>
       <key>UTTypeIconFile</key>
-      <string>FigCraft</string>
+      <string>FigCraftDocument</string>
       <key>UTTypeTagSpecification</key>
       <dict>
         <key>public.filename-extension</key>
@@ -93,7 +93,7 @@
       <key>LSHandlerRank</key>
       <string>Owner</string>
       <key>CFBundleTypeIconFile</key>
-      <string>FigCraft</string>
+      <string>FigCraftDocument</string>
       <key>LSItemContentTypes</key>
       <array><string>ai.storyteller.figcraft.document</string></array>
     </dict>

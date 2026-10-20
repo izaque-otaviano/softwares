@@ -108,6 +108,14 @@ for s in 16 32 128 256 512; do
   cp "$ICONS/figcraft-$((s * 2)).png" "$ICONSET/icon_${s}x${s}@2x.png"
 done
 iconutil -c icns -o "$WORK/FigCraft.icns" "$ICONSET"
+# The .figcraft document icon (assets/app-icon/document-<size>.png), the same way.
+DOCSET="$WORK/FigCraftDocument.iconset"
+mkdir -p "$DOCSET"
+for s in 16 32 128 256 512; do
+  cp "$ICONS/document-$s.png" "$DOCSET/icon_${s}x${s}.png"
+  cp "$ICONS/document-$((s * 2)).png" "$DOCSET/icon_${s}x${s}@2x.png"
+done
+iconutil -c icns -o "$WORK/FigCraftDocument.icns" "$DOCSET"
 
 # ---- FigCraft.app ------------------------------------------------------------------------------
 echo "==> assembling $APP"
@@ -115,6 +123,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # Executable and icon carry the display name (CFBundleExecutable / CFBundleIconFile).
 cp "$WORK/bin/figcraft" "$APP/Contents/MacOS/FigCraft"
 cp "$WORK/FigCraft.icns" "$APP/Contents/Resources/FigCraft.icns"
+cp "$WORK/FigCraftDocument.icns" "$APP/Contents/Resources/FigCraftDocument.icns"
 # Licences of the embedded craft-fonts fonts (only when built with CRAFT_FONTS_DIR).
 if [ -n "${CRAFT_FONTS_DIR:-}" ]; then
   mkdir -p "$APP/Contents/Resources/Licenses"
