@@ -15,6 +15,7 @@ pub mod handoff;
 pub mod ids;
 pub mod library;
 pub mod node;
+pub mod previews;
 pub mod props;
 pub mod proto;
 pub mod styles;

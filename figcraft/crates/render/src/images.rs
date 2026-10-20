@@ -49,6 +49,19 @@ pub(crate) fn decode_filtered(data: &ImageData, filters: &ImageFilters, profile:
     Some(p)
 }
 
+/// Preview bytes decoded and resized to exactly `w` × `h`, then filtered and converted like level 0.
+pub(crate) fn decode_preview(bytes: &[u8], w: u32, h: u32, filters: &ImageFilters, profile: ColorProfile) -> Option<Pixmap> {
+    if w == 0 || h == 0 || w > 16_384 || h > 16_384 {
+        return None;
+    }
+    let img = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.decode().ok()?;
+    let rgba = img.into_rgba8();
+    let rgba = if rgba.dimensions() == (w, h) { rgba } else { image::imageops::resize(&rgba, w, h, image::imageops::FilterType::Triangle) };
+    let mut p = premultiplied_owned(rgba)?;
+    finish(&mut p, filters, profile);
+    Some(p)
+}
+
 fn profile_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     static C: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
     C.get_or_init(|| Mutex::new(HashMap::new()))

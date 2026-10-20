@@ -517,6 +517,8 @@ mod moved_tests;
 #[cfg(test)]
 mod paint_behaviour_tests;
 #[cfg(test)]
+mod preview_tests;
+#[cfg(test)]
 mod progressive_tests;
 #[cfg(test)]
 mod retained_edit_tests;

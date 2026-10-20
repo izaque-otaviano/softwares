@@ -206,6 +206,12 @@ No alpha blockers: the alpha gate in [`roadmap.md`](roadmap.md#alpha-gate) passe
   [hardware-parity](hardware-parity.md#a-photo-heavy-page-2026-10-16)). What remains: a single
   big picture still decodes in one piece in the browser, a pan uploads the whole texture, and the
   pictures themselves are about half of what a render costs.
+  Since 2026-10-20 `.figcraft` files keep previews of every photo over 1024 px (longer side 256
+  and 1024, JPEG q80 or PNG with alpha, `previews/<hash>/<w>x<h>`), made at save, and the canvas
+  draws a photo shown at a quarter of its size or less from the smallest preview that isn't
+  magnified: decoding a 4000×3000 JPEG takes 130 ms against 8 ms for its 1024 preview (measured,
+  native release, `preview_decode_cost`). Not yet: previews made in the background on open or
+  import (an old file gets them at its next save), and the browser before/after numbers.
 - **Impact:** large files and effect-heavy designs; battery on laptops.
 - **Estimate:** 30–60 h for a GPU path (vello or wgpu shaders) held to the CPU renderer as the
   oracle.

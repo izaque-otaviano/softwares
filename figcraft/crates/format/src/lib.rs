@@ -19,6 +19,7 @@
 
 pub mod fig;
 pub mod library;
+pub mod previews;
 pub mod rest;
 pub mod thumbnail;
 
@@ -384,6 +385,10 @@ pub fn save_bytes_with_history(
         for (hash, img) in std::iter::once(&doc.images).chain(versions.iter().map(Version::images)).chain(branch_images).flatten() {
             if written.insert(hash) {
                 put(&mut z, &format!("images/{hash}"), stored, &img.bytes)?;
+                previews::ensure_one(hash, img);
+                for p in figcraft_doc::previews::all(hash) {
+                    put(&mut z, &previews::member(hash, p.width, p.height), stored, &p.bytes)?;
+                }
             }
         }
         if let Some(t) = thumbnail_png {
@@ -486,6 +491,7 @@ pub fn load_bytes_with_versions(bytes: &[u8]) -> Result<Loaded, FormatError> {
         }
     }
     report_lost_images(&mut issues, &unread, own_images.as_ref(), &images);
+    previews::read(&mut z, &images);
     match library::read(&mut z, &images, u64::MAX) {
         Ok(lib) => doc.published = lib.map(Arc::new),
         Err(e) => issues.push(format!("the published library was skipped: {e}")),
@@ -685,6 +691,8 @@ mod branch_tests;
 mod image_tests;
 #[cfg(test)]
 mod large_tests;
+#[cfg(test)]
+mod preview_tests;
 #[cfg(test)]
 mod thumbnail_tests;
 #[cfg(test)]

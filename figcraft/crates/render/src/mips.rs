@@ -236,6 +236,11 @@ impl Cache {
                 (Some((l, p)), Some(full)) => (l, p, full),
                 _ => {
                     drop(g);
+                    // Small on screen: a preview stored with the file is enough, and decodes in a
+                    // fraction of the time.
+                    if let Some(pic) = self.level_from_preview(s, src, level) {
+                        return Some(pic);
+                    }
                     // Decoding takes a while: not with the cache locked.
                     let pm = Arc::new(decode_level0(s)?);
                     let full = (pm.width(), pm.height());
@@ -264,6 +269,32 @@ impl Cache {
         }
         self.lock().insert(Key { src: src.clone(), level, padded: false }, cur.clone(), self.budget);
         Some(Picture { pixmap: cur, level: at, full })
+    }
+
+    /// Level `level` (> 0) made from a stored preview of the picture
+    /// ([`figcraft_doc::previews`]) at least the level's size, so it is never magnified. Only for
+    /// pictures without their own colour profile (previews are plain sRGB). Called with the
+    /// picture's lock held.
+    fn level_from_preview(&self, s: &Source, src: &SrcKey, level: u32) -> Option<Picture> {
+        let data = s.data?;
+        let level = level.min(max_level(data.width, data.height));
+        if level == 0 {
+            return None;
+        }
+        let (tw, th) = (data.width >> level, data.height >> level);
+        let preview = figcraft_doc::previews::at_least(s.hash, tw, th)?;
+        if crate::images::profile_name(s.hash, Some(data)).is_some() {
+            return None;
+        }
+        let pm = Arc::new(crate::images::decode_preview(&preview.bytes, tw, th, s.filters, s.profile)?);
+        let mut g = self.lock();
+        if g.sizes.len() > 4096 {
+            g.sizes.clear();
+        }
+        let full = (data.width, data.height);
+        g.sizes.insert(src.clone(), full);
+        g.insert(Key { src: src.clone(), level, padded: false }, pm.clone(), self.budget);
+        Some(Picture { pixmap: pm, level, full })
     }
 
     /// Make level `level` of each of `list` ready, in parallel where there are threads. Decodes
