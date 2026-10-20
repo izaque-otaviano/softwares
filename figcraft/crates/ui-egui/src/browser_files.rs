@@ -10,7 +10,7 @@ use crate::a11y;
 use crate::home::{FileRow, file_row};
 use crate::i18n::{tr, trf};
 use crate::icons::Icon;
-use crate::theme::{Tokens, regular};
+use crate::theme::{ACCENT, Tokens, regular};
 
 pub fn section(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
     let files = app.services.browser_files();
@@ -53,7 +53,7 @@ pub fn section(app: &mut FigApp, ui: &mut Ui, t: &Tokens) {
             r,
             &resp,
             &FileRow {
-                mark: Some((Icon::Document, Color32::WHITE)),
+                mark: Some((Icon::Document, ACCENT)),
                 name: &f.name,
                 ink: t.text,
                 detail: &detail,

@@ -1,8 +1,8 @@
 //! The two pieces of UI art that are the repository owner's own and not Lucide icons (`icons.rs`):
 //! the FigCraft logo (the owner's pen, `assets/app-icon/figcraft-mark.svg`, with a light-ink
-//! variant for the dark theme) and the document mark before a file's name (tabs, open and recent
-//! files; `assets/app-icon/document.svg`, the same sheet as the `.figcraft` file icon). See
-//! `ATTRIBUTION.md`.
+//! variant for the dark theme), the document mark before a file's name (tabs, open and recent
+//! files; `assets/ui/document-tab.svg`, a MingCute pen nib painted in the caller's colour) and the
+//! `.figcraft` file sheet (`assets/app-icon/document.svg`, the file's icon). See `ATTRIBUTION.md`.
 //!
 //! Each is rasterised with resvg at the exact physical pixel size it is shown at, so it stays crisp
 //! at any display scale, and cached as a texture per size.
@@ -15,9 +15,12 @@ use egui::{Color32, ColorImage, Id, Painter, Rect, TextureHandle, TextureOptions
 /// otherwise).
 const LOGO: &[u8] = include_bytes!("../../../assets/app-icon/figcraft-mark.svg");
 const LOGO_DARK: &[u8] = include_bytes!("../../../assets/app-icon/figcraft-dark.svg");
-/// The document sheet with the logo and the extension, and (32 px and below) without the label.
-const DOCUMENT: &[u8] = include_bytes!("../../../assets/app-icon/document.svg");
-const DOCUMENT_SMALL: &[u8] = include_bytes!("../../../assets/app-icon/document-small.svg");
+/// The document mark (a pen nib), one colour: painted as a mask in the caller's colour.
+const DOCUMENT: &[u8] = include_bytes!("../../../assets/ui/document-tab.svg");
+/// The `.figcraft` file sheet with the logo and the extension, and (32 px and below) without the
+/// label: the file's icon, and the placeholder picture of a file without one.
+const SHEET: &[u8] = include_bytes!("../../../assets/app-icon/document.svg");
+const SHEET_SMALL: &[u8] = include_bytes!("../../../assets/app-icon/document-small.svg");
 
 /// The largest texture side rasterised; bigger requests are drawn from this one.
 const MAX_PX: u32 = 1024;
@@ -28,8 +31,10 @@ const CACHE_CAP: usize = 64;
 pub enum Art {
     /// The full-colour FigCraft logo.
     Logo,
-    /// The document mark: the sheet with the logo, full colour.
+    /// The document mark before a file's name (tabs, open and recent files): a pen nib, tinted.
     Document,
+    /// The `.figcraft` file sheet with the logo, full colour.
+    Sheet,
 }
 
 #[derive(Clone, Default)]
@@ -40,8 +45,9 @@ fn source(art: Art, px: u32, dark: bool) -> &'static [u8] {
     match art {
         Art::Logo if dark => LOGO_DARK,
         Art::Logo => LOGO,
-        Art::Document if px <= 32 => DOCUMENT_SMALL,
         Art::Document => DOCUMENT,
+        Art::Sheet if px <= 32 => SHEET_SMALL,
+        Art::Sheet => SHEET,
     }
 }
 
@@ -75,8 +81,8 @@ fn texture(ctx: &egui::Context, art: Art, px: u32) -> Option<TextureHandle> {
     if let Some(hit) = ctx.data(|d| d.get_temp::<Cache>(id).and_then(|c| c.0.get(&(art, px, dark)).cloned())) {
         return hit;
     }
-    let made =
-        rasterize(source(art, px, dark), px, false).map(|img| ctx.load_texture(format!("figcraft-{art:?}-{px}-{dark}"), img, TextureOptions::LINEAR));
+    let made = rasterize(source(art, px, dark), px, art == Art::Document)
+        .map(|img| ctx.load_texture(format!("figcraft-{art:?}-{px}-{dark}"), img, TextureOptions::LINEAR));
     ctx.data_mut(|d| {
         let cache = d.get_temp_mut_or_default::<Cache>(id);
         if cache.0.len() >= CACHE_CAP {
@@ -123,7 +129,7 @@ mod tests {
 
     #[test]
     fn the_art_rasterises() {
-        for (svg, mask) in [(LOGO, false), (LOGO_DARK, false), (DOCUMENT, false), (DOCUMENT_SMALL, true)] {
+        for (svg, mask) in [(LOGO, false), (LOGO_DARK, false), (DOCUMENT, true), (SHEET, false), (SHEET_SMALL, false)] {
             for px in [1, 14, 16, 32, 48, 96, 2000] {
                 let img = rasterize(svg, px, mask).unwrap();
                 let side = px.min(MAX_PX) as usize;
@@ -166,10 +172,18 @@ mod tests {
         assert_eq!(textures(&ctx).len(), 2);
     }
 
-    /// The document mark is a white sheet with a transparent surround (full colour, never a mask).
+    /// The document mark is a white mask (tinted when painted), transparent around the nib.
     #[test]
-    fn the_document_mark_is_a_white_sheet() {
-        for (svg, px) in [(DOCUMENT, 64usize), (DOCUMENT_SMALL, 24)] {
+    fn the_document_mark_is_a_mask() {
+        let img = rasterize(DOCUMENT, 32, true).unwrap();
+        assert_eq!(img.pixels[0], Color32::TRANSPARENT);
+        assert!(img.pixels.iter().any(|c| c.a() > 0 && c.r() == c.a() && c.g() == c.a() && c.b() == c.a()));
+    }
+
+    /// The file sheet is white with a transparent surround (full colour, never a mask).
+    #[test]
+    fn the_file_sheet_is_white() {
+        for (svg, px) in [(SHEET, 64usize), (SHEET_SMALL, 24)] {
             let img = rasterize(svg, px as u32, false).unwrap();
             assert_eq!(img.pixels[0], Color32::TRANSPARENT);
             assert_eq!(img.pixels[px * px - 1], Color32::TRANSPARENT);
@@ -185,7 +199,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             for side in [0.0, -4.0, f32::NAN, f32::INFINITY, 0.3, 14.0, 5000.0] {
-                for art in [Art::Logo, Art::Document] {
+                for art in [Art::Logo, Art::Document, Art::Sheet] {
                     paint(ui.painter(), Rect::from_min_size(pos2(1.3, 2.7), vec2(side, side)), art, Color32::WHITE);
                 }
             }

@@ -134,7 +134,7 @@ fn the_art_on_disk_is_embedded_attributed_and_used() {
 fn every_icon_has_art() {
     for &icon in Icon::ALL {
         match icon {
-            Icon::Logo | Icon::Document => assert!(source(icon).is_none()),
+            Icon::Logo | Icon::Document | Icon::Sheet => assert!(source(icon).is_none()),
             _ => {
                 let key = source(icon).unwrap_or_else(|| panic!("{icon:?} has no art"));
                 assert!(lucide::file(key).is_some(), "{icon:?}: {key} is not embedded");
@@ -210,7 +210,7 @@ fn gallery_at(ppp: f32, size: f32) {
     for (m, (icon, r)) in meshes.iter().zip(&boxes) {
         let drawn = Rect::from_points(&m.vertices.iter().map(|v| v.pos).collect::<Vec<_>>());
         // (The owner's logo and document mark round to the nearest pixel instead: half a pixel.)
-        let slack = if matches!(icon, Icon::Logo | Icon::Document) { 0.5 / ppp } else { 0.0 };
+        let slack = if matches!(icon, Icon::Logo | Icon::Document | Icon::Sheet) { 0.5 / ppp } else { 0.0 };
         assert!(r.expand(slack + 1e-3).contains_rect(drawn), "{icon:?} at {size} px, {ppp}x: {drawn:?} not inside {r:?}");
         assert!(drawn.width() >= size - 1.0 / ppp - 1e-3, "{icon:?}: drawn {drawn:?} smaller than its {size} px box");
         // Whole physical pixels (the box itself is off the grid, the icon isn't), unless it was

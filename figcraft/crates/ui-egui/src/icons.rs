@@ -166,6 +166,7 @@ icons! {
     Logo,
     /// A FigCraft document: a pen nib (tabs, open and recent files; `crate::brand`).
     Document,
+    Sheet,
     /// Ignore auto layout: a layer pinned at an offset inside its frame.
     AbsolutePosition,
     /// A component slot: a dashed frame with a plus, a place that takes any content.
@@ -356,7 +357,7 @@ pub(crate) fn source(icon: Icon) -> Option<&'static str> {
         Code => "code-xml",
         Export => "upload",
         Prototype => "circle-play",
-        Logo | Document => return None,
+        Logo | Document | Sheet => return None,
     })
 }
 
@@ -367,6 +368,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         // The logo and the document sheet keep their own colours (`color` only fades them).
         Icon::Logo => crate::brand::paint(painter, rect, crate::brand::Art::Logo, Color32::WHITE),
         Icon::Document => crate::brand::paint(painter, rect, crate::brand::Art::Document, color),
+        Icon::Sheet => crate::brand::paint(painter, rect, crate::brand::Art::Sheet, color),
         _ => lucide::paint(painter, rect, icon, color),
     }
 }

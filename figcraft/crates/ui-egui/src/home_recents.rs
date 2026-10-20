@@ -706,8 +706,10 @@ fn arrows(ui: &Ui, recents: &mut Recents, files: &[Shown], across: usize, down: 
 fn file_icon(ui: &Ui, t: &Tokens, center: egui::Pos2, path: &str) {
     let r = Rect::from_center_size(center, vec2(16.0, 16.0));
     match FileKind::of(Path::new(path)) {
-        // (The sheet with the logo, its own colours.)
-        FileKind::FigCraft | FileKind::Fig => icons::paint(ui.painter(), r, Icon::Document, Color32::WHITE),
+        FileKind::FigCraft | FileKind::Fig => {
+            ui.painter().rect_filled(r, CornerRadius::same(4), ACCENT);
+            icons::paint(ui.painter(), r.shrink(2.0), Icon::Document, Color32::WHITE);
+        }
         kind => {
             ui.painter().rect_filled(r, CornerRadius::same(4), t.field);
             let glyph = match kind {
@@ -815,7 +817,7 @@ fn card(
         // FigCraft's own files, a file glyph for the rest.
         _ => match FileKind::of(Path::new(&file.path)) {
             FileKind::FigCraft | FileKind::Fig => {
-                icons::paint(p, Rect::from_center_size(area.center(), vec2(48.0, 48.0)), Icon::Document, Color32::WHITE.gamma_multiply(alpha))
+                icons::paint(p, Rect::from_center_size(area.center(), vec2(48.0, 48.0)), Icon::Sheet, Color32::WHITE.gamma_multiply(alpha))
             }
             _ => icons::paint(p, Rect::from_center_size(area.center(), vec2(28.0, 28.0)), Icon::Page, t.icon_secondary),
         },

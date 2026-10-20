@@ -46,3 +46,8 @@ bootstrap-icons 1.13.1), Copyright (c) 2019-2024 The Bootstrap Authors, under th
 
 The FigCraft logo (the pen in assets/app-icon/) is the repository owner's original work and the
 document icon around it was drawn for FigCraft; both are MIT OR Apache-2.0 like the code.
+
+The document-tab icon (assets/ui/document-tab.svg, "pen-line") is from the MingCute icon set
+(https://github.com/Richard9394/MingCute, Copyright MingCute Design), licensed under the Apache
+License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0). It is used unmodified except
+for its colour.
