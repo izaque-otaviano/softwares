@@ -5,11 +5,15 @@ use std::path::{Path, PathBuf};
 
 use egui::{Color32, ColorImage, Rect, Shape, pos2, vec2};
 
-use super::lucide::{self, FILES, MAX_PX, rasterize, stroke_units};
+use super::lucide::{self, BOOTSTRAP_FILES, FILES, MAX_PX, rasterize, stroke_units};
 use super::{Icon, paint, source};
 
 fn assets_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ui/lucide")
+}
+
+fn bootstrap_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ui/bootstrap")
 }
 
 fn svg_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -61,6 +65,31 @@ fn every_embedded_svg_parses_and_draws() {
     }
 }
 
+/// The Bootstrap family: unchanged files (their root element as Bootstrap writes it, filled with
+/// `currentColor` on the 16 grid, no stroke), rasterised as masks like the rest.
+#[test]
+fn every_bootstrap_svg_is_unchanged_and_draws() {
+    assert!(!BOOTSTRAP_FILES.is_empty());
+    for (key, svg) in BOOTSTRAP_FILES {
+        let name = key.strip_prefix("bootstrap/").unwrap_or_else(|| panic!("{key}: Bootstrap keys are under bootstrap/"));
+        let root = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" fill=\"currentColor\" class=\"bi bi-{name}\" viewBox=\"0 0 16 16\">"
+        );
+        assert!(svg.starts_with(&root), "{key}: not a Bootstrap icon as published");
+        assert!(!svg.contains("stroke"), "{key}: Bootstrap icons are filled");
+        for px in [12, 16, 20, 24, 48] {
+            let img = rasterize(svg, px, stroke_units(px, 1.0)).unwrap_or_else(|| panic!("{key} does not parse at {px}"));
+            assert_eq!(img.size, [px as usize, px as usize]);
+            assert!(opaque(&img) >= px as usize, "{key} is blank at {px}");
+            assert!(img.pixels.iter().all(|c| c.r() == c.a() && c.g() == c.a() && c.b() == c.a()), "{key}: a white mask");
+        }
+    }
+    // The thick bar and the thin line are both there: the bar is wider than the line.
+    let img = rasterize(lucide::file("bootstrap/align-start").unwrap(), 32, 2.0).unwrap();
+    let row = |y: usize| (0..32).filter(|x| img.pixels[y * 32 + x].a() > 128).count();
+    assert!(row(16) > row(4) && row(4) >= 1, "bar row {} vs line row {}", row(16), row(4));
+}
+
 /// Every SVG in the assets folder is embedded, listed in ATTRIBUTION.md, and used by an icon; the
 /// ISC licence text sits beside them.
 #[test]
@@ -84,6 +113,21 @@ fn the_art_on_disk_is_embedded_attributed_and_used() {
     for k in &keys {
         assert!(used.contains(&k.as_str()), "{k} is not used by any icon");
     }
+    // The Bootstrap family likewise, with its MIT licence beside it.
+    let mut on_disk = Vec::new();
+    svg_files(&bootstrap_dir(), &mut on_disk);
+    let mut disk: Vec<String> =
+        on_disk.iter().map(|p| format!("bootstrap/{}", p.strip_prefix(bootstrap_dir()).unwrap().with_extension("").to_string_lossy())).collect();
+    let mut embedded: Vec<&str> = BOOTSTRAP_FILES.iter().map(|(k, _)| *k).collect();
+    embedded.sort_unstable();
+    disk.sort_unstable();
+    assert_eq!(embedded, disk, "assets/ui/bootstrap and the embedded list differ");
+    for k in &disk {
+        assert!(attribution.contains(&format!("`assets/ui/{k}.svg`")), "{k} has no ATTRIBUTION.md row");
+        assert!(used.contains(&k.as_str()), "{k} is not used by any icon");
+    }
+    assert!(attribution.contains("`assets/ui/bootstrap/LICENSE`"));
+    assert!(std::fs::read_to_string(bootstrap_dir().join("LICENSE")).unwrap().starts_with("The MIT License (MIT)"));
 }
 
 #[test]
@@ -201,10 +245,12 @@ fn every_icon_draws_something_inside_its_square() {
     for &icon in Icon::ALL {
         let Some(svg) = source(icon).and_then(lucide::file) else { continue };
         for px in [16u32, 20, 24, 32, 40, 48] {
+            // (Bootstrap's thin 1-unit lines on the 16 grid cover less; a mask that is there is enough.)
+            let bootstrap = source(icon).is_some_and(|k| k.starts_with("bootstrap/"));
             let img = rasterize(svg, px, stroke_units(px, 1.0)).unwrap();
             let n = opaque(&img);
             let area = (px * px) as usize;
-            assert!(n * 100 >= area, "{icon:?} at {px}: only {n}/{area} pixels");
+            assert!(n * 100 >= area || (bootstrap && n * 200 >= area), "{icon:?} at {px}: only {n}/{area} pixels");
             assert!(n * 100 <= area * 85, "{icon:?} at {px}: {n}/{area} pixels is a blob");
             let (x0, y0, x1, y1) = bounds(&img).unwrap();
             // (A line is thin one way.)

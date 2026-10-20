@@ -1,6 +1,7 @@
-//! The icons' art: the SVG files (Lucide's, and FigCraft's originals in Lucide's style) embedded at
-//! build time, rasterised with resvg as white masks at the exact physical pixel size and cached as
-//! textures per (icon, size); [`paint`] tints a mask with the caller's colour.
+//! The icons' art: the SVG files (Lucide's, FigCraft's originals in Lucide's style, and the few
+//! Bootstrap Icons the owner chose, under `bootstrap/`) embedded at build time, rasterised with
+//! resvg as white masks at the exact physical pixel size and cached as textures per (icon, size);
+//! [`paint`] tints a mask with the caller's colour.
 
 use std::collections::HashMap;
 
@@ -11,20 +12,32 @@ use super::Icon;
 /// Embed `assets/ui/lucide/<key>.svg` for every key.
 macro_rules! files {
     ($($key:literal,)*) => {
-        /// Every embedded SVG: (key under `assets/ui/lucide/` without `.svg`, its text).
+        /// Every embedded Lucide-style SVG: (key under `assets/ui/lucide/` without `.svg`, its text).
         pub(crate) static FILES: &[(&str, &str)] =
             &[$(($key, include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/ui/lucide/", $key, ".svg"))),)*];
     };
 }
 
+/// Embed `assets/ui/bootstrap/<name>.svg` for every name, keyed `bootstrap/<name>`.
+macro_rules! bootstrap_files {
+    ($($key:literal,)*) => {
+        /// Every embedded Bootstrap Icons SVG (filled art on a 16 grid): (`bootstrap/<name>`, its text).
+        pub(crate) static BOOTSTRAP_FILES: &[(&str, &str)] =
+            &[$((concat!("bootstrap/", $key), include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/ui/bootstrap/", $key, ".svg"))),)*];
+    };
+}
+
+bootstrap_files! {
+    "align-bottom",
+    "align-center",
+    "align-end",
+    "align-middle",
+    "align-start",
+    "align-top",
+}
+
 files! {
-    "align-center-horizontal",
-    "align-center-vertical",
-    "align-end-horizontal",
-    "align-end-vertical",
     "align-horizontal-distribute-center",
-    "align-start-horizontal",
-    "align-start-vertical",
     "align-vertical-distribute-center",
     "align-vertical-justify-center",
     "align-vertical-justify-end",
@@ -175,9 +188,14 @@ fn cache_id() -> Id {
     Id::new("figcraft_icon_textures")
 }
 
-/// The SVG text for `key`.
+/// Every embedded SVG, both families.
+pub(crate) fn all_files() -> impl Iterator<Item = (&'static str, &'static str)> {
+    FILES.iter().chain(BOOTSTRAP_FILES).copied()
+}
+
+/// The SVG text for `key` (`bootstrap/<name>` for the Bootstrap family).
 pub(crate) fn file(key: &str) -> Option<&'static str> {
-    FILES.iter().find(|(k, _)| *k == key).map(|(_, svg)| *svg)
+    all_files().find(|(k, _)| *k == key).map(|(_, svg)| svg)
 }
 
 /// The stroke width, in grid units, for an icon `px` physical pixels wide on a display of `ppp`
@@ -187,12 +205,14 @@ pub(crate) fn stroke_units(px: u32, ppp: f32) -> f32 {
     ((STROKE_PT * ppp).max(MIN_STROKE_PX) * GRID / px.max(1) as f32).clamp(0.25, MAX_STROKE)
 }
 
-/// Rasterise `svg` (a 24-unit Lucide-style icon) into a `px`×`px` mask: white with the art's
-/// coverage as alpha, its stroke `stroke` grid units wide. `None` when the SVG doesn't parse.
+/// Rasterise `svg` (a 24-unit Lucide-style icon, or a filled Bootstrap one) into a `px`×`px` mask:
+/// white with the art's coverage as alpha, its stroke `stroke` grid units wide (filled art has no
+/// stroke to set; its `currentColor` fill is the mask's coverage). `None` when the SVG doesn't
+/// parse.
 pub(crate) fn rasterize(svg: &str, px: u32, stroke: f32) -> Option<ColorImage> {
     let px = px.clamp(1, MAX_PX);
     let stroke = if stroke.is_finite() { stroke.clamp(0.25, 6.0) } else { STROKE_PT };
-    // Every icon file sets its width once, on the root element, as Lucide's own do.
+    // Every Lucide-style file sets its width once, on the root element, as Lucide's own do.
     let svg = svg.replacen("stroke-width=\"2\"", &format!("stroke-width=\"{stroke:.3}\""), 1);
     let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).ok()?;
     let (w, h) = (tree.size().width(), tree.size().height());

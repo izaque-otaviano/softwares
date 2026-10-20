@@ -311,12 +311,13 @@ pub(crate) fn source(icon: Icon) -> Option<&'static str> {
         ArcSweep => "original/arc-sweep",
         ArcRatio => "original/arc-ratio",
         // Position, alignment and layout.
-        AlignLeft => "align-start-vertical",
-        AlignHCenter => "align-center-vertical",
-        AlignRight => "align-end-vertical",
-        AlignTop => "align-start-horizontal",
-        AlignVCenter => "align-center-horizontal",
-        AlignBottom => "align-end-horizontal",
+        // (Bootstrap Icons, the owner's choice for the alignment buttons.)
+        AlignLeft => "bootstrap/align-start",
+        AlignHCenter => "bootstrap/align-center",
+        AlignRight => "bootstrap/align-end",
+        AlignTop => "bootstrap/align-top",
+        AlignVCenter => "bootstrap/align-middle",
+        AlignBottom => "bootstrap/align-bottom",
         DistributeH => "align-horizontal-distribute-center",
         DistributeV => "align-vertical-distribute-center",
         Rotate => "rotate-cw",
@@ -363,7 +364,7 @@ pub(crate) fn source(icon: Icon) -> Option<&'static str> {
 /// `color`.
 pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     match icon {
-        // The logo keeps its own colours; the document mark takes `color`.
+        // The logo and the document sheet keep their own colours (`color` only fades them).
         Icon::Logo => crate::brand::paint(painter, rect, crate::brand::Art::Logo, Color32::WHITE),
         Icon::Document => crate::brand::paint(painter, rect, crate::brand::Art::Document, color),
         _ => lucide::paint(painter, rect, icon, color),
