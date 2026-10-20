@@ -40,7 +40,9 @@ macOS builds link muda (https://github.com/tauri-apps/muda, Copyright the Tauri 
 The Commons Conservancy, MIT OR Apache-2.0) for the system menu bar; it ships no assets (its menu
 items are AppKit's own and FigCraft's text).
 
-The document-tab icon (assets/ui/document-tab.svg, "pen-line") is from the MingCute icon set
-(https://github.com/Richard9394/MingCute, Copyright MingCute Design), licensed under the Apache
-License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0). It is used unmodified except
-for its colour.
+The six alignment icons in assets/ui/bootstrap/ are Bootstrap Icons (https://icons.getbootstrap.com,
+bootstrap-icons 1.13.1), Copyright (c) 2019-2024 The Bootstrap Authors, under the MIT License
+(full text in assets/ui/bootstrap/LICENSE). They are used unmodified except for their colour.
+
+The FigCraft logo (the pen in assets/app-icon/) is the repository owner's original work and the
+document icon around it was drawn for FigCraft; both are MIT OR Apache-2.0 like the code.

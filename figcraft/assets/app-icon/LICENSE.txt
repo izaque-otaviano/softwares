@@ -1,9 +1,10 @@
-FigCraft app icon (figcraft.svg, figcraft-small.svg and every file derived from them in this
-directory: figcraft-<size>.png, figcraft.ico, hicolor/).
+FigCraft logo, app icon and document icon (figcraft-mark.svg, figcraft-dark.svg, figcraft.svg,
+figcraft-small.svg, document.svg, document-small.svg and every file derived from them in this
+directory: figcraft-<size>.png, document-<size>.png, figcraft.ico, document.ico, hicolor/).
 
-Supplied by the repository owner (GitHub user izaque-otaviano) on 2026-10-16: a chameleon
-silhouette on a yellow square, replacing the previous chameleon app icon. Licensed like the rest
-of this fork, under either of
+The pen logo was supplied by the repository owner (GitHub user izaque-otaviano) on 2026-10-20,
+replacing the chameleon app icon; the sheet of the document icon was drawn for FigCraft. Licensed
+like the rest of this fork, under either of
 
   * Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
   * MIT license (https://opensource.org/licenses/MIT)

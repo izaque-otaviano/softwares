@@ -1,7 +1,8 @@
 //! The two pieces of UI art that are the repository owner's own and not Lucide icons (`icons.rs`):
-//! the FigCraft logo (the app icon, `assets/app-icon/`) and the document mark before a file's name
-//! (tabs, open and recent files; `assets/ui/document-tab.svg`). Both were supplied by the owner,
-//! see `ATTRIBUTION.md`.
+//! the FigCraft logo (the owner's pen, `assets/app-icon/figcraft-mark.svg`, with a light-ink
+//! variant for the dark theme) and the document mark before a file's name (tabs, open and recent
+//! files; `assets/app-icon/document.svg`, the same sheet as the `.figcraft` file icon). See
+//! `ATTRIBUTION.md`.
 //!
 //! Each is rasterised with resvg at the exact physical pixel size it is shown at, so it stays crisp
 //! at any display scale, and cached as a texture per size.
@@ -10,11 +11,13 @@ use std::collections::HashMap;
 
 use egui::{Color32, ColorImage, Id, Painter, Rect, TextureHandle, TextureOptions, pos2, vec2};
 
-/// The app icon's master, and its small-size variant (pixel-snapped border) for 32 px and below.
-const LOGO: &[u8] = include_bytes!("../../../assets/app-icon/figcraft.svg");
-const LOGO_SMALL: &[u8] = include_bytes!("../../../assets/app-icon/figcraft-small.svg");
-/// The document mark (a pen nib), one colour: painted as a mask in the caller's colour.
-const DOCUMENT: &[u8] = include_bytes!("../../../assets/ui/document-tab.svg");
+/// The logo as drawn on light surfaces (dark ink), and on dark ones (light ink, the same colours
+/// otherwise).
+const LOGO: &[u8] = include_bytes!("../../../assets/app-icon/figcraft-mark.svg");
+const LOGO_DARK: &[u8] = include_bytes!("../../../assets/app-icon/figcraft-dark.svg");
+/// The document sheet with the logo and the extension, and (32 px and below) without the label.
+const DOCUMENT: &[u8] = include_bytes!("../../../assets/app-icon/document.svg");
+const DOCUMENT_SMALL: &[u8] = include_bytes!("../../../assets/app-icon/document-small.svg");
 
 /// The largest texture side rasterised; bigger requests are drawn from this one.
 const MAX_PX: u32 = 1024;
@@ -25,17 +28,19 @@ const CACHE_CAP: usize = 64;
 pub enum Art {
     /// The full-colour FigCraft logo.
     Logo,
-    /// The document mark, tinted.
+    /// The document mark: the sheet with the logo, full colour.
     Document,
 }
 
 #[derive(Clone, Default)]
-struct Cache(HashMap<(Art, u32), Option<TextureHandle>>);
+struct Cache(HashMap<(Art, u32, bool), Option<TextureHandle>>);
 
-fn source(art: Art, px: u32) -> &'static [u8] {
+/// The file for `art` at `px` pixels, `dark` on the dark theme.
+fn source(art: Art, px: u32, dark: bool) -> &'static [u8] {
     match art {
-        Art::Logo if px <= 32 => LOGO_SMALL,
+        Art::Logo if dark => LOGO_DARK,
         Art::Logo => LOGO,
+        Art::Document if px <= 32 => DOCUMENT_SMALL,
         Art::Document => DOCUMENT,
     }
 }
@@ -66,17 +71,18 @@ pub fn rasterize(svg: &[u8], px: u32, mask: bool) -> Option<ColorImage> {
 
 fn texture(ctx: &egui::Context, art: Art, px: u32) -> Option<TextureHandle> {
     let id = Id::new("figcraft_brand_textures");
-    if let Some(hit) = ctx.data(|d| d.get_temp::<Cache>(id).and_then(|c| c.0.get(&(art, px)).cloned())) {
+    let dark = crate::theme::Tokens::get(ctx).dark;
+    if let Some(hit) = ctx.data(|d| d.get_temp::<Cache>(id).and_then(|c| c.0.get(&(art, px, dark)).cloned())) {
         return hit;
     }
-    let made = rasterize(source(art, px), px, art == Art::Document)
-        .map(|img| ctx.load_texture(format!("figcraft-{art:?}-{px}"), img, TextureOptions::LINEAR));
+    let made =
+        rasterize(source(art, px, dark), px, false).map(|img| ctx.load_texture(format!("figcraft-{art:?}-{px}-{dark}"), img, TextureOptions::LINEAR));
     ctx.data_mut(|d| {
         let cache = d.get_temp_mut_or_default::<Cache>(id);
         if cache.0.len() >= CACHE_CAP {
             cache.0.clear();
         }
-        cache.0.insert((art, px), made.clone());
+        cache.0.insert((art, px, dark), made.clone());
     });
     made
 }
@@ -93,7 +99,8 @@ pub(crate) fn textures(ctx: &egui::Context) -> Vec<egui::TextureId> {
 }
 
 /// Paint `art` as the largest square that fits `rect`, centred and on whole physical pixels.
-/// `tint` colours the document mark; the logo keeps its own colours (pass white).
+/// Both pieces keep their own colours (the logo's ink follows the theme); `tint` only multiplies
+/// them, so pass white, or white with some alpha to fade.
 pub fn paint(painter: &Painter, rect: Rect, art: Art, tint: Color32) {
     let ctx = painter.ctx();
     let ppp = ctx.pixels_per_point();
@@ -116,7 +123,7 @@ mod tests {
 
     #[test]
     fn the_art_rasterises() {
-        for (svg, mask) in [(LOGO, false), (LOGO_SMALL, false), (DOCUMENT, true)] {
+        for (svg, mask) in [(LOGO, false), (LOGO_DARK, false), (DOCUMENT, false), (DOCUMENT_SMALL, true)] {
             for px in [1, 14, 16, 32, 48, 96, 2000] {
                 let img = rasterize(svg, px, mask).unwrap();
                 let side = px.min(MAX_PX) as usize;
@@ -126,22 +133,49 @@ mod tests {
         }
     }
 
-    /// The logo is the yellow tile with its dark border, edge to edge.
+    /// The logo is the pen on a transparent ground, its body dark ink on the light theme and light
+    /// ink on the dark one, the yellow tip in both.
     #[test]
-    fn the_logo_is_the_yellow_tile() {
-        let img = rasterize(LOGO, 64, false).unwrap();
-        let at = |x: usize, y: usize| img.pixels[y * 64 + x];
-        assert_eq!(at(10, 10), Color32::from_rgb(0xff, 0xc6, 0x3d));
-        let edge = at(0, 32);
-        assert!(edge.r() < 0x30 && edge.a() == 255, "dark border: {edge:?}");
+    fn the_logo_ink_follows_the_theme() {
+        let light = rasterize(LOGO, 128, false).unwrap();
+        let dark = rasterize(LOGO_DARK, 128, false).unwrap();
+        assert_eq!(light.pixels[0], Color32::TRANSPARENT);
+        assert_eq!(dark.pixels[0], Color32::TRANSPARENT);
+        let has = |img: &ColorImage, c: Color32| img.pixels.iter().filter(|p| **p == c).count() > 50;
+        assert!(has(&light, Color32::from_rgb(0x1b, 0x18, 0x18)), "dark ink on light");
+        assert!(has(&dark, Color32::from_rgb(0xf2, 0xf2, 0xf2)), "light ink on dark");
+        assert!(!has(&dark, Color32::from_rgb(0x1b, 0x18, 0x18)), "no dark ink on dark");
+        assert!(has(&light, Color32::from_rgb(0xfe, 0xbb, 0x00)) && has(&dark, Color32::from_rgb(0xfe, 0xbb, 0x00)), "yellow tip");
     }
 
-    /// The document mark is a white mask (tinted when painted), transparent around the nib.
+    /// The texture cache keys on the theme: the dark variant is another texture.
     #[test]
-    fn the_document_mark_is_a_mask() {
-        let img = rasterize(DOCUMENT, 24, true).unwrap();
-        assert_eq!(img.pixels[0], Color32::TRANSPARENT);
-        assert!(img.pixels.iter().all(|c| c.r() == c.a() && c.g() == c.a() && c.b() == c.a()));
+    fn the_logo_texture_changes_with_the_theme() {
+        let ctx = egui::Context::default();
+        let draw = |ctx: &egui::Context| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                paint(ui.painter(), Rect::from_min_size(pos2(0.0, 0.0), vec2(20.0, 20.0)), Art::Logo, Color32::WHITE);
+            });
+            out.textures_delta.clear();
+        };
+        crate::theme::apply(&ctx, crate::theme::Tokens::light());
+        draw(&ctx);
+        assert_eq!(textures(&ctx).len(), 1);
+        crate::theme::apply(&ctx, crate::theme::Tokens::dark());
+        draw(&ctx);
+        assert_eq!(textures(&ctx).len(), 2);
+    }
+
+    /// The document mark is a white sheet with a transparent surround (full colour, never a mask).
+    #[test]
+    fn the_document_mark_is_a_white_sheet() {
+        for (svg, px) in [(DOCUMENT, 64usize), (DOCUMENT_SMALL, 24)] {
+            let img = rasterize(svg, px as u32, false).unwrap();
+            assert_eq!(img.pixels[0], Color32::TRANSPARENT);
+            assert_eq!(img.pixels[px * px - 1], Color32::TRANSPARENT);
+            let white = img.pixels.iter().filter(|c| **c == Color32::WHITE).count();
+            assert!(white * 6 > px * px, "{px}: {white} white pixels");
+        }
     }
 
     #[test]

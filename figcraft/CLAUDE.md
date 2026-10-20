@@ -51,10 +51,13 @@ code.
   `crates/ui-egui/src/icons.rs` (`icons/lucide.rs`), which maps every `Icon` to its file. A new icon
   takes the Lucide one that means the same; where Lucide has none, draw an original in its style from
   Lucide's primitives. Lucide files are copied unchanged (keep the `@license` header) and every file
-  has an `ATTRIBUTION.md` row. Everything else above still holds: no icons from any other product,
-  and never trace, copy or redraw an incumbent design tool's icons.
-- The app icon is the owner's chameleon drawing, vectorised (`assets/app-icon/README.md`); `cargo xtask icon`
-  renders the PNGs and `.ico` from `assets/app-icon/figcraft.svg`.
+  has an `ATTRIBUTION.md` row. So the icon families are: Lucide, Bootstrap Icons (MIT,
+  `assets/ui/bootstrap/`, copied unchanged, only where the owner asked for them: the alignment
+  buttons) and originals. Everything else above still holds: no icons from any other product, and
+  never trace, copy or redraw an incumbent design tool's icons.
+- The app icon is the owner's pen logo, supplied 2026-10-20 (`assets/app-icon/README.md`); `cargo xtask icon`
+  renders the PNGs, `.ico` and hicolor entries of the app icon (`figcraft.svg`) and of the `.figcraft`
+  document icon (`document.svg`, the sheet around the logo).
 - **Fonts live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts), never in this
   repo.** The app uses it only through the optional `CRAFT_FONTS_DIR` build input
   (`.cargo/config.toml` points it at `../craft-fonts` for local builds; `crates/text/build.rs`
