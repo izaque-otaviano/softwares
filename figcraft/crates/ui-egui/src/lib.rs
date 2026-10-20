@@ -164,6 +164,8 @@ mod right_panel_tests;
 #[cfg(test)]
 mod save_ui_tests;
 #[cfg(test)]
+mod scroll_bench_tests;
+#[cfg(test)]
 mod shortcut_keys_tests;
 #[cfg(test)]
 mod shortcuts_tests;

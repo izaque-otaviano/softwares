@@ -29,6 +29,7 @@ fn job(doc: &Arc<Document>, page: NodeId, view: View) -> Job {
         uid: 0,
         background: false,
         fresh: false,
+        focus: None,
     }
 }
 
