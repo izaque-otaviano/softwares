@@ -1,0 +1,71 @@
+@use 'sass:map';
+@use '../../styles/tokens' as *;
+@use '../../styles/mixins' as *;
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: $badge-h;
+  padding: 0 $sp-2;
+  border: $stroke-w solid transparent;
+  border-radius: $radius-pill;
+  font-size: $fs-label;
+  font-weight: $w-medium;
+  white-space: nowrap;
+
+  &__dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background-color: currentColor;
+  }
+
+  &__remove {
+    @include button-reset;
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    margin-right: -2px;
+    border-radius: $radius;
+    opacity: 0.7;
+    transition: opacity $dur-fast $ease;
+
+    &:hover { opacity: 1; }
+
+    &-icon { @include stroke-icon(11px); }
+  }
+
+  &__mono {
+    font-family: $f-mono;
+    font-size: $fs-caption;
+    opacity: 0.85;
+  }
+
+  // Contorno: forma reservada ao SLA, para não competir com a prioridade.
+  &--outline {
+    background-color: transparent;
+    border-color: currentColor;
+  }
+
+  // Tons: fundo tint + texto na cor cheia, para o contraste não depender do dot.
+  // O neutro é a mesma pílula quente do item ativo, sem contorno: sobre o
+  // branco da tabela o #f6f5f3 de antes só aparecia por causa da linha.
+  &--neutral { background-color: $blue-tint; color: $text-secondary; }
+  &--blue    { background-color: $blue-tint;    color: $blue-active; }
+  &--success { background-color: $success-tint; color: $success; }
+  &--away    { background-color: $away-tint;    color: $away; }
+  &--danger  { background-color: $danger-tint;  color: $danger; }
+
+  // Identidade: tint derivado da própria cor (não há hex de tint por tom —
+  // 14% sobre qualquer superfície é o mesmo "lavado" que $blue-tint faz para
+  // o azul), e o texto clareia sozinho no escuro via $identity-text.
+  @each $i, $cor in $identity-fill {
+    &--identity-#{$i} {
+      background-color: color-mix(in srgb, #{$cor} 14%, transparent);
+      color: map.get($identity-text, $i);
+    }
+  }
+}

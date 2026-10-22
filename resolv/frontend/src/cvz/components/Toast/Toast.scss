@@ -1,0 +1,137 @@
+@use '../../styles/tokens' as *;
+@use '../../styles/mixins' as *;
+
+// Cartão flutuante: é um dos três lugares onde o briefing aceita sombra
+// (menu, popover, toast). Sem borda decorativa — a antiga faixa colorida à
+// esquerda saiu; o tom semântico fica no ícone, que é onde a cor diz algo.
+
+.toast-viewport {
+  position: fixed;
+  right: $sp-4;
+  bottom: $sp-4;
+  z-index: $z-overlay;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: $sp-2;
+  width: 360px;
+  max-width: calc(100vw - #{$sp-4 * 2});
+  pointer-events: none;
+
+  @include mobile {
+    right: $sp-4;
+    left: $sp-4;
+    bottom: $sp-4;
+    width: auto;
+  }
+}
+
+.toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: $sp-3;
+  padding: $sp-3 $sp-2 $sp-3 $sp-4;
+  border-radius: $radius-card;
+  background-color: $raised;
+  box-shadow: $shadow-lg;
+  overflow: hidden;
+  pointer-events: auto;
+  font-family: $f-ui;
+  animation: toast-in $dur $ease;
+
+  &__icon {
+    flex: 0 0 auto;
+    font-size: 18px;
+    color: $text-secondary;
+  }
+
+  &--success &__icon { color: $success; }
+  &--warning &__icon { color: $away; }
+  &--danger &__icon  { color: $danger; }
+
+  &__body { flex: 1; min-width: 0; }
+
+  &__title {
+    display: block;
+    @include type($fs-body, $w-medium);
+    color: $text;
+  }
+
+  &__text {
+    margin: 2px 0 0;
+    @include type($fs-meta, $w-regular);
+    color: $text-secondary;
+  }
+
+  // A ação é o acento único (carvão no claro, claro no escuro) — nunca o
+  // laranja de link: é um verbo, e o verbo mais importante do cartão.
+  &__action {
+    @include button-reset;
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 $sp-3;
+    border-radius: $radius-pill;
+    @include type($fs-meta, $w-semibold);
+    color: $primary;
+    transition: background-color $dur $ease;
+
+    &:hover { background-color: $hover; }
+    &:focus-visible {
+      outline: $focus-w solid $primary;
+      outline-offset: 2px;
+    }
+  }
+
+  &__close {
+    @include button-reset;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    border-radius: $radius-pill;
+    color: $text-muted;
+    font-size: 16px;
+
+    &:hover { background-color: $hover; color: $text; }
+    &:focus-visible {
+      outline: $focus-w solid $primary;
+      outline-offset: 2px;
+    }
+  }
+
+  // Quanto falta para a ação valer. Encolhe no mesmo prazo do relógio e
+  // para junto quando o ponteiro/foco pausa o toast.
+  &__tempo {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background-color: $primary;
+    opacity: 0.35;
+    transform-origin: left center;
+    animation-name: toast-tempo;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  &--pausado &__tempo { animation-play-state: paused; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes toast-tempo {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+  // Sem movimento, a barra não informa nada — some. O prazo continua valendo
+  // e pausa do mesmo jeito.
+  .toast__tempo { display: none; }
+}

@@ -1,0 +1,42 @@
+# Imagem de demonstração para o Railway: um contêiner com a API.
+#
+# Este backend não serve frontend nenhum, então não há estágio de Node aqui —
+# o front é um deploy separado que fala com esta API por CORS.
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DJANGO_SETTINGS_MODULE=config.settings.demo
+
+# libmagic: validação de anexo por magic bytes (D13)
+# pango/gdk-pixbuf: PDF do WeasyPrint (exportação de relatórios)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        libmagic1 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+RUN pip install --upgrade pip && pip install ".[reports,antivirus]"
+
+COPY . .
+
+# Usuário sem privilégio, mesmo raciocínio do Dockerfile principal: o dono
+# muda ANTES do USER, senão a troca de dono roda como quem não tem permissão
+# para ela. O entrypoint faz migrate/collectstatic no boot (staticfiles fica
+# dentro de /app, coberto pelo chown -R abaixo) — precisa rodar como o dono.
+RUN mkdir -p /var/lib/resolv/media staticfiles \
+    && chmod +x deploy/entrypoint.sh \
+    && useradd --system --create-home --home-dir /home/resolv --shell /usr/sbin/nologin resolv \
+    && chown -R resolv:resolv /app /var/lib/resolv/media
+USER resolv
+
+# Railway injeta PORT; o entrypoint o respeita.
+CMD ["./deploy/entrypoint.sh"]
