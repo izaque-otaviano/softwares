@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ReactNode } from 'react';
-import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
+import { Navigate, createBrowserRouter, createMemoryRouter, type RouteObject } from 'react-router-dom';
 import { RequireSession } from '@/components/auth/RequireSession';
 import { AgentLayout } from '@/components/shell';
 import { AdminLayout } from './AdminLayout';
@@ -92,4 +92,8 @@ export const routerFuture = {
 } as const;
 
 // Adota hoje o comportamento do React Router v7 (e silencia os avisos "Future Flag" no console).
-export const router = createBrowserRouter(routes, { future: routerFuture });
+// VITE_ROUTER=memory: para hospedar a demonstração onde a URL da página não muda (ex.: página incorporada).
+export const router =
+  import.meta.env.VITE_ROUTER === 'memory'
+    ? createMemoryRouter(routes, { future: routerFuture, initialEntries: ['/agent/home'] })
+    : createBrowserRouter(routes, { future: routerFuture });
