@@ -1,0 +1,13 @@
+{
+  "tickets": [
+    {
+      "id": 6,
+      "reference": "TD-00006",
+      "subject": "Cobrança duplicada na fatura de julho",
+      "company_name": "Acme Marketing",
+      "stage_name": "Aberto"
+    }
+  ],
+  "companies": [],
+  "requesters": []
+}

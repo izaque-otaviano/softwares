@@ -1,0 +1,36 @@
+{
+  "visoes": {
+    "meus-nao-resolvidos": 0,
+    "todos": 6,
+    "sem-atendimento": 1,
+    "nao-resolvidos": 5,
+    "em-kanban": 2,
+    "nao-atribuidos": 1,
+    "resolvidos": 1,
+    "internos": 0,
+    "mencionam-voce": 0,
+    "aguardando-voce": 0
+  },
+  "abertos": {
+    "total": 5,
+    "hoje": 2,
+    "variacao_dia": 1
+  },
+  "nao_atribuidos": {
+    "total": 1,
+    "espera_mais_longa_min": 136
+  },
+  "sla_em_risco": {
+    "total": 0,
+    "estouram_em_1h": 0,
+    "por_plano": []
+  },
+  "meus": {
+    "total": 0,
+    "aguardando_voce": 0
+  },
+  "resolvidos_hoje": {
+    "total": 0,
+    "media_resolucao_min": null
+  }
+}

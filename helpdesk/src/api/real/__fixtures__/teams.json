@@ -1,0 +1,58 @@
+{
+  "count": 3,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Suporte",
+      "slug": "suporte",
+      "is_active": true,
+      "order": 1,
+      "supervisor": 2,
+      "supervisor_name": "Sofia Supervisora",
+      "visibility": "company_wide",
+      "mask_subject_for_others": true,
+      "internal_only": false,
+      "chat_calendar": 1,
+      "notification_email": "",
+      "description": "",
+      "agent_count": 2,
+      "ticket_count": 5
+    },
+    {
+      "id": 2,
+      "name": "Financeiro",
+      "slug": "financeiro",
+      "is_active": true,
+      "order": 2,
+      "supervisor": 2,
+      "supervisor_name": "Sofia Supervisora",
+      "visibility": "requester_only",
+      "mask_subject_for_others": true,
+      "internal_only": false,
+      "chat_calendar": 1,
+      "notification_email": "",
+      "description": "",
+      "agent_count": 2,
+      "ticket_count": 1
+    },
+    {
+      "id": 3,
+      "name": "Comercial",
+      "slug": "comercial",
+      "is_active": true,
+      "order": 3,
+      "supervisor": null,
+      "supervisor_name": null,
+      "visibility": "company_wide",
+      "mask_subject_for_others": true,
+      "internal_only": true,
+      "chat_calendar": 1,
+      "notification_email": "",
+      "description": "",
+      "agent_count": 0,
+      "ticket_count": 0
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Pedir mais informação",
+      "body": "Olá, {{solicitante}}! Para seguir com este ticket preciso de mais um detalhe:\n\n- \n\nAssim que você responder, retomo daqui.",
+      "chat_name": "",
+      "category": 1,
+      "category_name": "Dúvida",
+      "priority": "",
+      "assignee": null,
+      "assignee_name": null,
+      "tags": [],
+      "is_active": true,
+      "order": 1
+    },
+    {
+      "id": 2,
+      "name": "Confirmar que foi resolvido",
+      "body": "Oi, {{solicitante}}! Apliquei a correção e testei do nosso lado. Pode conferir e me dizer se ficou certo aí na {{empresa}}?",
+      "chat_name": "",
+      "category": null,
+      "category_name": null,
+      "priority": "",
+      "assignee": null,
+      "assignee_name": null,
+      "tags": [],
+      "is_active": true,
+      "order": 2
+    },
+    {
+      "id": 3,
+      "name": "Cobrança em análise",
+      "body": "Recebemos o apontamento sobre {{referencia}} e o financeiro já está conferindo. Retornamos com a posição ainda hoje.",
+      "chat_name": "",
+      "category": null,
+      "category_name": null,
+      "priority": "high",
+      "assignee": null,
+      "assignee_name": null,
+      "tags": [],
+      "is_active": true,
+      "order": 3
+    },
+    {
+      "id": 4,
+      "name": "Chat · abertura",
+      "body": "Oi, {{solicitante}}! Já estou vendo aqui. Um minuto.",
+      "chat_name": "Atendimento · {{empresa}}",
+      "category": null,
+      "category_name": null,
+      "priority": "",
+      "assignee": null,
+      "assignee_name": null,
+      "tags": [],
+      "is_active": true,
+      "order": 4
+    }
+  ]
+}

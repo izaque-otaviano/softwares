@@ -1,0 +1,95 @@
+@use '../../styles/tokens' as *;
+@use '../../styles/mixins' as *;
+
+.tabs {
+  &__list {
+    display: flex;
+    // Fio de 1px sob a barra, como sombra interna e não borda: com
+    // `overflow-x: auto` a borda ficaria fora da área visível e cortaria o
+    // traço da aba ativa, que é pintado por cima deste fio.
+    box-shadow: inset 0 (-$stroke-w) 0 $stroke;
+    // Muitas abas (Configurações tem quinze) rolam de lado em vez de
+    // quebrar o rótulo em três linhas ou sumir com a última.
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  &__tab {
+    @include button-reset;
+    @include focus-ring;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: $sp-3 $sp-4;
+    border-bottom: $marker-w solid transparent;
+    font-size: $fs-ui;
+    font-weight: $w-medium;
+    color: $text-secondary;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color $dur $ease, background-color $dur $ease;
+
+    // Anel para DENTRO: a lista rola de lado (`overflow-x`), e um anel com
+    // folga para fora era cortado em cima e embaixo.
+    &:focus-visible { outline-offset: -$focus-w; }
+
+    // `$hover`, não `$chrome`: a barra de abas fica sobre o plano, e o
+    // cromo É o plano — o hover não aparecia.
+    &:hover { background-color: $hover; color: $text; }
+
+    // Aba ativa: tinta cheia + traço de 2px no acento (carvão / quase-branco).
+    &--active {
+      color: $text;
+      border-bottom-color: $blue;
+    }
+  }
+
+  &__count {
+    font-family: $f-mono;
+    font-size: $fs-label;
+    color: $text-muted;
+  }
+
+  &__panel { padding-top: $sp-4; }
+}
+
+.accordion {
+  &__item {
+    border-bottom: $border;
+
+    &:first-child { border-top: $border; }
+  }
+
+  &__trigger {
+    @include button-reset;
+    @include focus-ring;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $sp-3;
+    width: 100%;
+    padding: $sp-3 $sp-1;
+    text-align: left;
+    font-size: $fs-ui;
+    font-weight: $w-medium;
+    color: $text;
+
+    &:hover { background-color: $hover; }
+  }
+
+  &__caret {
+    @include stroke-icon(14px);
+    color: $text-secondary;
+    transition: transform $dur $ease;
+  }
+
+  &__item--open &__caret { transform: rotate(180deg); }
+
+  &__body {
+    padding: 0 $sp-1 $sp-4;
+    font-size: $fs-ui;
+    font-weight: $w-light;
+    color: $text-secondary;
+    max-width: 70ch;
+  }
+}

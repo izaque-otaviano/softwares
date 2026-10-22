@@ -1,0 +1,222 @@
+// =============================================================================
+// cvzdesk · design tokens
+// Fonte única de verdade. Nenhum componente declara hex ou px de raio direto.
+//
+// A estrutura veio do MCP cvzdesk (get_tokens, 2026-09-04); os VALORES de cor
+// já são os do Resolv (ver _theme.scss). Mudança de valor se faz aqui/no tema,
+// não recopiando do cvzdesk — recopiar desfaria a identidade do produto.
+// =============================================================================
+
+// --- cor: marca --------------------------------------------------------------
+// A AÇÃO (`cz-btn`): carvão no claro, claro no escuro.
+$primary:         var(--cvz-primary);
+$primary-hover:   var(--cvz-primary-hover);
+$on-primary:      var(--cvz-on-primary);
+// Legado: era o laranja cheio. Hoje vale o acento — não use em código novo.
+$brand:           var(--cvz-brand);
+// `$blue` (o nome ficou) é o ACENTO único do produto — carvão no claro,
+// quase-branco no escuro: link, item ativo, aba, série de gráfico, foco.
+$blue:            var(--cvz-blue);
+$blue-hover:      var(--cvz-blue-hover);
+$blue-active:     var(--cvz-blue-active);
+
+// --- cor: superfícies --------------------------------------------------------
+$surface:         var(--cvz-surface);      // fundo do conteúdo (cards, tabelas, modais)
+$canvas:          var(--cvz-canvas);       // fundo geral atrás do conteúdo (SuperficieCvz)
+$chrome:          var(--cvz-chrome);       // sidebar e topbar
+$raised:          var(--cvz-raised);       // cards, campos, popovers
+$stroke:          var(--cvz-stroke);       // linha estrutural: tabela, card, cromo
+$field-border:    var(--cvz-field-border); // linha de CAMPO (só input/select/etc.)
+$hover:           var(--cvz-hover);        // item em hover/ativo no chrome
+$hover-soft:      var(--cvz-hover-soft);
+
+// --- cor: texto --------------------------------------------------------------
+$text:            var(--cvz-text);
+$text-hover:      var(--cvz-text-hover);   // hover do botão secundário
+$text-secondary:  var(--cvz-text-secondary);
+$text-muted:      var(--cvz-text-muted);
+$text-on-dark:    var(--cvz-text-on-color);
+$text-on-accent:  var(--cvz-text-on-accent);  // sobre $blue — muda no escuro
+// Halo do campo em foco — a borda é que leva o contraste (ver mixin field).
+$focus-ring:      var(--cvz-focus-ring);
+
+// --- cor: semântica ----------------------------------------------------------
+$danger:          var(--cvz-danger);
+$danger-hover:    var(--cvz-danger-hover);
+$success:         var(--cvz-success);
+$away:            var(--cvz-away);
+$offline:         $text-muted;
+$overlay:         var(--cvz-overlay);
+$chrome-glass:    var(--cvz-chrome-glass);
+$on-accent-soft:  var(--cvz-on-accent-soft);
+
+// --- cor: identidade ---------------------------------------------------------
+// Mapas (e não seis variáveis soltas) para os componentes iterarem:
+// `@each $i, $cor in $identity-fill`. `fill` é o avatar; `text` é o rótulo
+// sobre tint (Tag), que clareia no escuro (ver _theme.scss).
+$identity-fill: (
+  1: var(--cvz-identity-1), 2: var(--cvz-identity-2), 3: var(--cvz-identity-3),
+  4: var(--cvz-identity-4), 5: var(--cvz-identity-5), 6: var(--cvz-identity-6),
+);
+$identity-text: (
+  1: var(--cvz-identity-1-text), 2: var(--cvz-identity-2-text), 3: var(--cvz-identity-3-text),
+  4: var(--cvz-identity-4-text), 5: var(--cvz-identity-5-text), 6: var(--cvz-identity-6-text),
+);
+
+// --- stroke ------------------------------------------------------------------
+$stroke-w:        1px;
+// Sem moldura. As 44 caixas e divisórias do admin desenhavam com esta
+// variável; agora o que separa um bloco do fundo é o TOM e o espaço.
+// `$border-field` (campo de entrada) continua intacto — é a única
+// borda que o briefing mantém.
+$border:          none;
+
+// Campo de entrada tem linha PRÓPRIA, mais escura: input precisa se anunciar
+// como editável, e com a cor da linha estrutural (mais clara) o formulário
+// desaparecia dentro da página. A espessura hoje é a mesma de `$stroke-w`
+// (as duas em 1px) — a distinção é só de cor. Só input/select/textarea/
+// combobox usam isto — tabela, card, sidebar e aba continuam em `$border`.
+$field-border-w:  1px;
+$border-field:    $field-border-w solid $field-border;
+
+// Marcador de estado — aba ativa, linha selecionada, item de menu ativo, borda
+// esquerda de notificação. Mais grosso que `$stroke-w` de propósito: um
+// indicador do mesmo traço da borda estrutural se perde ao lado dela.
+$marker-w:        2px;
+$focus-w:         2px;   // espessura do anel de foco
+$tooltip-arrow:   4px;   // metade da base do triângulo do tooltip
+
+// --- raio --------------------------------------------------------------------
+// Três raios, os mesmos do console: 8 no que é controle (botão, campo, chip),
+// 12 no que é superfície (cartão, tabela, modal, popover) e cápsula no que é
+// pílula (Toggle, Tag, Progress, busca). Pílula é forma, não estilo: um
+// interruptor com trilho quase reto e bolinha redonda lia como quebrado. Só
+// forma circular de verdade (avatar, ponto de status) segue em 50%.
+$radius:          8px;   // controle — botão, campo, chip
+$radius-card:     12px;  // superfície — cartão, tabela, popover, modal
+$radius-pill:     999px;
+$radius-circle:   50%;
+
+// --- métricas do shell ------------------------------------------------------
+$sidebar-w:       56px;
+$topbar-h:        56px;
+$search-w:        420px;
+$nav-item:        40px;
+$icon:            16px;
+$avatar:          30px;
+$logo-size:       32px;   // bloco de logo da sidebar
+// --- altura de controle: escala fechada -------------------------------------
+$control-h-sm:    28px;   // barras densas, dentro de tabela, paginação
+$control-h:       34px;   // padrão
+$control-h-lg:    40px;   // destaque, alvo de toque
+$field-h:         $control-h;   // alias histórico — prefira $control-h
+
+// --- alturas que NÃO são controle -------------------------------------------
+$badge-h:         22px;   // tag, status
+$chip-h:          24px;   // chip removível
+$inline-input-h:  24px;   // input dentro de combobox, sem chrome próprio
+$search-h-topbar: 46px;   // busca da topbar, deliberadamente maior
+
+// --- colunas do detalhe de ticket (surface flush) ---------------------------
+$col-list:        300px;  // fila lateral
+$col-props:       288px;  // painel de propriedades
+$col-thread-min:  420px;  // largura mínima da conversa antes de colapsar
+
+// --- densidade de tabela ----------------------------------------------------
+$row-h-compact:   32px;   // filas longas, muitas linhas na tela
+$row-h:           40px;   // padrão
+$row-h-relaxed:   48px;   // linhas com duas informações empilhadas
+$cell-px:         12px;   // = $sp-3, fixado (evitar referência circular)
+
+// --- espaçamento -------------------------------------------------------------
+$sp-1: 4px;  $sp-2: 8px;  $sp-3: 12px;
+$sp-4: 16px; $sp-5: 24px; $sp-6: 32px;
+$sp-7: 48px; $sp-8: 64px;
+
+// --- tipografia --------------------------------------------------------------
+$f-ui: Inter, sans-serif;
+$f-mono: Inter, sans-serif;
+$f-display: Inter, sans-serif;
+
+$w-light:    300; // texto corrido
+$w-regular:  400;
+$w-medium:   500;
+$w-semibold: 600;
+
+// --- motion ------------------------------------------------------------------
+$dur-fast: 0.1s;
+$dur:      0.15s;
+$ease:     cubic-bezier(0.2, 0, 0.38, 0.9);
+
+// --- elevação ----------------------------------------------------------------
+$shadow-sm: var(--cvz-shadow-sm);
+$shadow-md: var(--cvz-shadow-md);
+$shadow-lg: var(--cvz-shadow-lg);
+
+// --- z-index -----------------------------------------------------------------
+$z-topbar:   90;
+$z-popover:  95;   // dropdown, menu de filtro, autocomplete — sobre a topbar
+$z-sidebar:  100;
+$z-tooltip:  110;
+$z-overlay:  200;
+
+// --- tints semânticos (fundo de estado) -------------------------------------
+$blue-tint:       var(--cvz-blue-tint);
+$blue-tint-hover: var(--cvz-blue-tint-hover);  // hover de linha selecionada
+$success-tint:    var(--cvz-success-tint);
+$away-tint:       var(--cvz-away-tint);
+$danger-tint:     var(--cvz-danger-tint);
+
+// --- breakpoints ---------------------------------------------------------
+// O produto nasce desktop e degrada — os mixins (_mixins.scss) são max-width.
+$bp-sm: 480px;
+$bp-md: 768px;   // mobile abaixo
+$bp-lg: 1024px;  // tablet entre md e lg
+$bp-xl: 1280px;  // desktop
+
+// =============================================================================
+// TIPOGRAFIA — escala fechada
+// Nenhum componente declara font-size ou line-height literal. Se um tamanho não
+// está aqui, ele não existe no produto.
+//
+// QUATRO tamanhos, os mesmos do console e do portal (styles/tokens.css):
+// 12 rótulo, 14 interface, 16 título de seção, 28 título de página. Os dez
+// nomes continuam para não reescrever tela nenhuma, mas caem nesses quatro —
+// a hierarquia vem do peso e do espaço, não de mais um degrau de tamanho (os
+// 9/10/11/13/15/17/20/26px de antes faziam o admin parecer outro produto).
+// =============================================================================
+$fs-micro:   12px;   // contador dentro de badge
+$fs-caption: 12px;   // overline, timestamp, legenda de coluna
+$fs-label:   12px;   // rótulo de campo, header de tabela, tag, atalho
+$fs-meta:    12px;   // texto de apoio, metadado, célula secundária
+$fs-ui:      14px;   // padrão da interface: botão, célula, item de lista
+$fs-body:    14px;   // texto corrido, item de resultado de busca
+$fs-title:   16px;   // título de painel, título de seção
+$fs-subhead: 16px;   // título de seção, assunto no detalhe do ticket
+$fs-heading: 28px;   // título de página
+$fs-display: 28px;   // número de KPI, título de tela vazia
+
+$lh-none:   1;       // só para texto de uma linha com altura controlada
+$lh-tight:  1.2;     // títulos
+$lh-snug:   1.35;    // rótulos e metadados
+$lh-normal: 1.5;     // texto corrido e bolha de conversa
+
+// =============================================================================
+// ESTADO DESABILITADO
+// =============================================================================
+$disabled-bg:      $chrome;
+$disabled-text:    $text-muted;
+$disabled-border:  $stroke;
+$disabled-opacity: 0.55;   // só para blocos compostos (card, linha, grupo)
+
+// =============================================================================
+// SEMÂNTICA DE NEGÓCIO
+// =============================================================================
+$priority-low:     $text-secondary;  // baixa    — fundo $chrome
+$priority-normal:  $blue;            // normal   — fundo $blue-tint
+$priority-high:    $away;            // alta     — fundo $away-tint
+$priority-urgent:  $danger;          // urgente  — fundo $danger-tint
+
+$sla-ok:           $success;         // no prazo
+$sla-risk:         $away;            // em risco (< 25% da janela restante)
+$sla-breached:     $danger;          // estourado

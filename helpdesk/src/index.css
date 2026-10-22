@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tokens espelhados de tailwind.config.ts (src/lib/tokens.test.ts garante a paridade). */
+:root {
+  --fg: #293239;
+  --fg-muted: #5c6970;
+  --fg-subtle: #848f99;
+  --fg-inverse: #ffffff;
+  --line: #d8dcde;
+  --line-strong: #b0b8be;
+  --surface: #ffffff;
+  --surface-1: #f8f9f9;
+  --surface-2: #e8eaec;
+  --hover: rgba(92, 105, 112, 0.08);
+  --action: #1f73b7;
+  --action-hover: #17598d;
+  --action-soft: #e8f1f8;
+  --ink: #39434b;
+  --ink-active: #293239;
+  --note-bg: #fff3e4;
+  --note-badge: #fca347;
+  --note-badge-text: #4c2c17;
+  --bubble-customer: #ecf9f9;
+  --sla-bg: #daeded;
+  --sla-text: #104b35;
+  --sla-warn: #fff1d6;
+  --sla-warn-text: #7a4b00;
+  --sla-breach: #fbe3e5;
+  --sla-breach-text: #8f1f2b;
+  --danger: #cc3340;
+  --ai: #8e5fd1;
+  --status-new: #f5a04a;
+  --status-open: #cc3340;
+  --status-hold: #8f2a35;
+  --status-pending: #1f73b7;
+  --status-solved: #39434b;
+
+  --shadow-pop: 0 4px 8px rgba(10, 13, 14, 0.16);
+  --shadow-menu: 0 20px 24px rgba(10, 13, 14, 0.16);
+  --shadow-focus: 0 0 0 3px rgba(31, 115, 183, 0.28);
+
+  --rail: 56px;
+  --rail2: 48px;
+  --props: 309px;
+  --right: 380px;
+  --topbar: 48px;
+  --bottombar: 50px;
+
+  --radius-xs: 2px;
+  --radius: 4px;
+  --radius-lg: 8px;
+  --radius-pill: 100px;
+
+  color-scheme: light;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-surface text-fg font-sans text-sm antialiased;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  * {
+    @apply border-line;
+  }
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  /* Foco visível em tudo que é interativo; componentes de campo trocam por borda action + shadow-focus. */
+  :focus-visible {
+    outline: none;
+    @apply shadow-focus;
+  }
+  ::selection {
+    background: rgba(31, 115, 183, 0.22);
+  }
+  /* Rolagem discreta nas regiões com overflow. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/* Movimento: no máximo 150 ms, só em abrir/fechar/hover. */
+@layer utilities {
+  @keyframes hd-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes hd-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes hd-pop-in {
+    from { opacity: 0; transform: translateY(-2px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes hd-slide-in-right {
+    from { transform: translateX(16px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+  .anim-fade-in { animation: hd-fade-in 120ms ease-out both; }
+  .anim-fade-out { animation: hd-fade-out 100ms ease-in both; }
+  .anim-pop-in { animation: hd-pop-in 120ms ease-out both; }
+  .anim-slide-in-right { animation: hd-slide-in-right 150ms ease-out both; }
+  .scrollbar-gutter-stable { scrollbar-gutter: stable; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Foco visível em dois níveis. O halo `shadow-focus` (28% de alpha) tem só ~1,5:1 contra surface e sozinho não atinge os
+ * 3:1 da WCAG 1.4.11; então todo controle SEM borda de foco própria ganha também um contorno de 2px em `action` (5:1).
+ * Ficam de fora: campos de texto e gatilhos de Select/Combobox (trocam a borda para `action`), itens de menu/lista (barra
+ * à esquerda, ver components/ui/optionStyles.ts) e quem se declara `data-focus-ring="custom"` (linha da Table, alça de
+ * redimensionar). Contêineres com tabindex="-1" (diálogos, <main>, o grupo da Table) recebem foco por script: sem anel.
+ * `data-focus-ring="inset"` desenha o contorno por dentro, para controles que ocupam a largura toda de uma área com rolagem.
+ * Vem depois de `@tailwind utilities` de propósito: precisa vencer o `outline-none` dos componentes.
+ */
+:where(
+    button,
+    a[href],
+    summary,
+    [role='tab'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='tabpanel'],
+    input[type='checkbox'],
+    input[type='radio'],
+    [tabindex='0']
+  ):focus-visible:not(
+    [role='combobox'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio'],
+    [role='option'],
+    [data-focus-ring='custom']
+  ) {
+  outline: 2px solid var(--action);
+  outline-offset: 1px;
+}
+
+[data-focus-ring='inset']:focus-visible {
+  outline-offset: -2px;
+}
