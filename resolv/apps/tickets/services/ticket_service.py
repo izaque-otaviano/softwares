@@ -59,13 +59,74 @@ def create_ticket(
     order_number: str = "",
     actor=None,
     with_signature: bool = False,
+    assignee=None,
+    initial_status: str | None = None,
+    initial_stage: TicketStage | None = None,
+    tags=None,
+    first_message_public: bool = True,
 ) -> Ticket:
     """Cria o ticket com a primeira mensagem, consumindo cota quando devido.
 
     `actor` é quem executa: o próprio cliente (source=WEB, consome cota) ou um
     interno abrindo em nome do cliente (source=INTERNAL, isento — F-C).
+
+    Os cinco últimos parâmetros são OPCIONAIS e só existem para o atendente
+    abrir o chamado já triado, numa chamada só (antes eram 1 a 3 chamadas
+    extras depois da criação, e uma falha no meio deixava o chamado criado
+    pela metade). Sem eles o comportamento é o de sempre: status "Novo",
+    sem responsável, sem etiquetas, primeira mensagem pública.
+
+    - `assignee`: responsável (mesmas regras de `assign`);
+    - `initial_status` / `initial_stage`: status inicial por categoria ou por
+      coluna (`stage` manda; se vierem os dois, têm de concordar). Fechado
+      fica de fora: fechar pede as datas da solução (D4);
+    - `tags`: etiquetas já existentes (mesma regra de `reclassify`);
+    - `first_message_public=False`: a primeira mensagem nasce como nota
+      INTERNA — o cliente nunca a vê. Todas as regras são conferidas ANTES de
+      gravar qualquer coisa, então uma recusa não deixa chamado pela metade.
     """
     actor = actor or requester
+    triagem = (
+        assignee is not None or initial_status is not None
+        or initial_stage is not None or bool(tags)
+    )
+    if (triagem or not first_message_public) and not actor.is_internal:
+        raise TicketRuleViolation(
+            "Responsável, status, etiquetas e nota interna na abertura são "
+            "só para usuário interno."
+        )
+    if triagem:
+        if not actor.can(Perm.TICKET_EDIT_PROPERTIES):
+            raise TicketRuleViolation(
+                "Seu papel não permite definir responsável, status ou etiquetas."
+            )
+        if assignee is not None:
+            if not assignee.is_internal:
+                raise TicketRuleViolation("Responsável deve ser um usuário interno.")
+            if not assignee.can(Perm.TICKET_BE_ASSIGNED):
+                raise TicketRuleViolation(
+                    f"{assignee.full_name} tem um papel que não pode ser "
+                    "responsável por tickets."
+                )
+    if not first_message_public and not actor.can(Perm.TICKET_ADD_INTERNAL_NOTE):
+        raise TicketRuleViolation("Seu papel não permite comentar neste ticket.")
+    status_inicial = TicketStatus.NEW
+    stage_inicial = None
+    if initial_stage is not None:
+        if not initial_stage.is_active:
+            raise TicketRuleViolation("Status inativo.")
+        if initial_status and initial_status != initial_stage.category:
+            raise TicketRuleViolation(
+                "O status informado não é o da categoria do stage escolhido."
+            )
+        status_inicial, stage_inicial = initial_stage.category, initial_stage
+    elif initial_status:
+        status_inicial = initial_status
+    if status_inicial == TicketStatus.CLOSED:
+        raise TicketRuleViolation(
+            "Não dá para abrir o chamado já fechado: fechar pede as datas da "
+            "solução. Crie e depois feche."
+        )
     if not team.is_active:
         raise TicketRuleViolation("Equipe inativa.")
     if requester.is_internal:
@@ -101,16 +162,24 @@ def create_ticket(
             source=source,
             status=TicketStatus.NEW,
             stage=stage_padrao(TicketStatus.NEW),
+            assignee=assignee,
         )
         TicketStatusEvent.objects.create(
             ticket=ticket, from_status=None, to_status=TicketStatus.NEW, changed_by=actor
         )
-        TicketMessage.objects.create(
-            ticket=ticket, author=actor, body=body, is_public=True,
+        mensagem = TicketMessage.objects.create(
+            ticket=ticket, author=actor, body=body, is_public=first_message_public,
             # agente abrindo em nome do cliente assina; o cliente não tem
-            # assinatura para pôr
-            with_signature=bool(with_signature) and actor.is_internal,
+            # assinatura para pôr. Nota interna nunca leva assinatura.
+            with_signature=(
+                bool(with_signature) and actor.is_internal and first_message_public
+            ),
         )
+        if not first_message_public:
+            # mesma porta de `add_reply`: menção só existe em nota interna
+            mentions.registrar_mencoes(message=mensagem, author=actor)
+        if tags:
+            ticket.tags.set(tags)
         if source == TicketSource.WEB:
             # levanta QuotaExceeded e desfaz tudo se o período está cheio
             quota_service.check_and_consume(ticket=ticket, actor=requester)
@@ -118,6 +187,24 @@ def create_ticket(
         ticket.save(update_fields=["last_customer_message_at"])
 
         sla.apply_sla(ticket)
+        if assignee is not None:
+            TicketStatusEvent.objects.create(
+                ticket=ticket, from_status=TicketStatus.NEW, to_status=TicketStatus.NEW,
+                changed_by=actor, note=f"atribuído a {assignee.full_name}",
+            )
+            if assignee.pk != actor.pk:
+                # o aviso empurra pelo WebSocket: só depois do commit
+                transaction.on_commit(
+                    lambda: _notificar_atribuicao(ticket, assignee, actor)
+                )
+        if status_inicial != TicketStatus.NEW:
+            # mesma mecânica de qualquer mudança de status (evento, pausa do
+            # SLA em "aguardando o cliente"), com a coluna escolhida
+            _change_status(ticket, status_inicial, actor, stage=stage_inicial)
+        elif stage_inicial is not None and ticket.stage_id != stage_inicial.pk:
+            # coluna própria da categoria "Novo": só a coluna muda
+            ticket.stage = stage_inicial
+            ticket.save(update_fields=["stage"])
         _email_support_about_new_ticket(ticket)
         _email_requester_about_new_ticket(ticket)
         # o aviso in-app sai DEPOIS do commit: ele empurra pelo WebSocket, e
@@ -503,6 +590,7 @@ def add_reply(
     resolution_ended_at: dt.datetime | None = None,
     close_note: str = "",
     with_signature: bool = False,
+    stage: TicketStage | None = None,
 ) -> TicketMessage:
     """Adiciona resposta e aplica a transição de status correspondente.
 
@@ -512,9 +600,25 @@ def add_reply(
     `close/` recebe. Responder-e-fechar é UMA chamada: dividir em duas deixaria
     a resposta gravada e o ticket aberto se a segunda falhasse.
     Cliente nunca escolhe status: as transições são automáticas.
+
+    `stage` (opcional, só agente em resposta pública) escolhe a COLUNA do novo
+    status — um status personalizado da categoria de `new_status` (inclusive
+    um "Resolvido" da categoria fechada). Sem ele vale o status de fábrica da
+    categoria, como sempre.
     """
     if not ticket.can_reply(author):
         raise TicketRuleViolation("Sem permissão para responder este ticket.")
+    if stage is not None:
+        if not author.is_internal:
+            raise TicketRuleViolation("Cliente não escolhe status.")
+        if not is_public:
+            raise TicketRuleViolation("Nota interna não muda o status do ticket.")
+        if new_status not in _AGENT_REPLY_STATUSES:
+            raise TicketRuleViolation(
+                "Para escolher o status (stage) informe também o novo status "
+                "(open, pending_customer ou closed)."
+            )
+        _validar_stage_da_categoria(stage, new_status)
 
     # nota interna é conceito de agente. `is_public` é campo de autorização, não
     # preferência de quem escreve: um cliente mandando is_public=false criaria
@@ -582,17 +686,26 @@ def add_reply(
                     resolution_ended_at=resolution_ended_at,
                     note=close_note,
                     _locked=True,
+                    stage=stage,
                 )
             elif ticket.status == TicketStatus.CLOSED:
                 # agente reabrindo passa pela MESMA reabertura do cliente:
                 # ciclo novo de SLA, closed_* limpos, contador e evento de
                 # reabertura. Antes caía no _change_status genérico e voltava
                 # "aberto" com prazo vencido e data de fechamento preenchida.
-                _reopen(ticket, author, now, automatic=False)
+                _reopen(
+                    ticket, author, now, automatic=False,
+                    stage=stage if new_status == TicketStatus.OPEN else None,
+                )
                 if new_status != TicketStatus.OPEN:
-                    _change_status(ticket, new_status, author)
+                    _change_status(ticket, new_status, author, stage=stage)
             elif new_status != ticket.status:
-                _change_status(ticket, new_status, author)
+                _change_status(ticket, new_status, author, stage=stage)
+            elif stage is not None and ticket.stage_id != stage.pk:
+                # mesma categoria, outra coluna: só a coluna muda (sem evento
+                # de status, como em `mudar_status`)
+                ticket.stage = stage
+                ticket.save(update_fields=["stage"])
             # o CLIENTE fica sabendo que respondemos — in-app e e-mail. Antes
             # ele só descobria entrando no portal por conta própria.
             _notify_requester_replied(ticket, author, com_assinatura=message.with_signature)
@@ -688,13 +801,8 @@ def assign(*, ticket: Ticket, assignee, actor) -> Ticket:
     """Atribui o ticket a um agente, com notificação in-app e e-mail
     (requisito 8) — o agente pode estar de fora do sistema quando o
     ticket cai nele."""
-    from apps.notifications.models import NotificationKind
     from apps.notifications.services import (
         broadcast_ticket_event,
-        notify,
-        quer_email,
-        queue_email,
-        ticket_url,
     )
 
     if not actor.is_internal:
@@ -720,35 +828,45 @@ def assign(*, ticket: Ticket, assignee, actor) -> Ticket:
         changed_by=actor, note=f"atribuído a {assignee.full_name if assignee else '—'}",
     )
     if assignee and assignee.pk not in (previous, actor.pk):
-        titulo = f"Ticket atribuído a você: {ticket.reference}"
-        url = ticket_url(ticket, assignee)
-        notify(
-            recipient=assignee,
-            kind=NotificationKind.TICKET_ASSIGNED,
-            title=titulo,
-            body=ticket.subject,
-            url=url,
-            ticket=ticket,
-            actor=actor,
-        )
-        if assignee.email and quer_email(assignee, NotificationKind.TICKET_ASSIGNED):
-            from django.conf import settings
-
-            queue_email(
-                to=assignee.email,
-                subject=titulo,
-                template="ticket_assigned",
-                context={
-                    "agent_name": assignee.full_name,
-                    "reference": ticket.reference,
-                    "subject": ticket.subject,
-                    "link": f"{settings.SITE_URL}{url}",
-                },
-                ticket=ticket,
-                dedupe_key=f"ticket-assigned:{ticket.pk}:{assignee.pk}:{timezone.now():%Y%m%d%H%M}",
-            )
+        _notificar_atribuicao(ticket, assignee, actor)
     broadcast_ticket_event(ticket=ticket, kind="assigned", actor=actor)
     return ticket
+
+
+def _notificar_atribuicao(ticket: Ticket, assignee, actor) -> None:
+    """Aviso in-app + e-mail de "ticket atribuído a você" (requisito 8).
+    Separado de `assign` para a criação já atribuída (`create_ticket`) avisar
+    pelo mesmo caminho, depois do commit."""
+    from apps.notifications.models import NotificationKind
+    from apps.notifications.services import notify, quer_email, queue_email, ticket_url
+
+    titulo = f"Ticket atribuído a você: {ticket.reference}"
+    url = ticket_url(ticket, assignee)
+    notify(
+        recipient=assignee,
+        kind=NotificationKind.TICKET_ASSIGNED,
+        title=titulo,
+        body=ticket.subject,
+        url=url,
+        ticket=ticket,
+        actor=actor,
+    )
+    if assignee.email and quer_email(assignee, NotificationKind.TICKET_ASSIGNED):
+        from django.conf import settings
+
+        queue_email(
+            to=assignee.email,
+            subject=titulo,
+            template="ticket_assigned",
+            context={
+                "agent_name": assignee.full_name,
+                "reference": ticket.reference,
+                "subject": ticket.subject,
+                "link": f"{settings.SITE_URL}{url}",
+            },
+            ticket=ticket,
+            dedupe_key=f"ticket-assigned:{ticket.pk}:{assignee.pk}:{timezone.now():%Y%m%d%H%M}",
+        )
 
 
 def set_owner(*, ticket: Ticket, owner, actor) -> Ticket:
@@ -1031,11 +1149,16 @@ def close_ticket(
     resolution_ended_at: dt.datetime | None,
     note: str = "",
     _locked: bool = False,
+    stage: TicketStage | None = None,
 ) -> Ticket:
     """Fecha o ticket registrando o trabalho técnico real (D4).
 
     Início/término da solução são obrigatórios e validados:
     created_at <= início <= término <= agora.
+
+    `stage` (opcional) é a coluna de fechamento: um status PERSONALIZADO da
+    categoria fechada ("Resolvido", "Cancelado"). Sem ele cai no "Fechado" de
+    fábrica, como sempre. Tem de estar ativo e ser da categoria `closed`.
     """
     if not actor.is_internal:
         raise TicketRuleViolation("Apenas usuários internos fecham tickets.")
@@ -1045,6 +1168,8 @@ def close_ticket(
         raise TicketRuleViolation(
             "Fechar exige data de início e de término da solução (D4)."
         )
+    if stage is not None:
+        _validar_stage_da_categoria(stage, TicketStatus.CLOSED)
 
     with transaction.atomic():
         if not _locked:
@@ -1072,7 +1197,7 @@ def close_ticket(
         ticket.save(update_fields=[
             "resolution_started_at", "resolution_ended_at", "closed_at", "closed_by",
         ])
-        _change_status(ticket, TicketStatus.CLOSED, actor, note=note)
+        _change_status(ticket, TicketStatus.CLOSED, actor, note=note, stage=stage)
         # o veredito do SLA sai AQUI, não só na varredura de 5 min: fechado
         # com atraso na janela entre dois scans ficava "no prazo" pra sempre
         # (o scan só olha ticket aberto). O _change_status acima já devolveu
@@ -1392,17 +1517,32 @@ def mudar_status(*, ticket: Ticket, stage: TicketStage, actor) -> Ticket:
     return ticket
 
 
+def _validar_stage_da_categoria(stage: TicketStage, categoria: str) -> None:
+    """O stage escolhido tem de estar ATIVO e ser da categoria que o ticket vai
+    assumir — senão `status` e coluna divergem (o defeito do "aberto com
+    coluna Fechado"). Chamado ANTES de qualquer gravação."""
+    if not stage.is_active:
+        raise TicketRuleViolation(f"O status \"{stage.name}\" está inativo.")
+    if stage.category != categoria:
+        raise TicketRuleViolation(
+            f"O status \"{stage.name}\" não é da categoria "
+            f"{TicketStatus(categoria).label.lower()}."
+        )
+
+
 def stage_padrao(category: str) -> TicketStage | None:
     """O status de fábrica de uma categoria — para onde o chamado vai quando
     quem mudou o status não escolheu uma coluna específica.
 
     Devolve `None` só num banco sem os stages de fábrica (migração 0016 não
     rodou): aí o chamado fica sem coluna em vez de estourar, e a categoria —
-    que é o que o maquinário lê — continua correta.
+    que é o que o maquinário lê — continua correta. Prefere o ATIVO (os de
+    fábrica não desativam mais pela API, mas um banco antigo pode tê-los
+    inativos: a reabertura não pode devolver o chamado a uma coluna escondida).
     """
     return TicketStage.objects.filter(
         category=category, is_system=True
-    ).order_by("order", "id").first()
+    ).order_by("-is_active", "order", "id").first()
 
 
 def _change_status(ticket: Ticket, to_status: str, actor, *, automatic=False,
@@ -1581,12 +1721,19 @@ def warn_stale_pending() -> int:
     return avisados
 
 
-def _reopen(ticket: Ticket, author, now, *, automatic=True):
+def _reopen(ticket: Ticket, author, now, *, automatic=True,
+            stage: TicketStage | None = None):
     """Reabertura — pelo cliente (resposta em ticket fechado, automática) ou
     pelo agente (resposta escolhendo status aberto).
 
     NÃO consome cota (P6) e NÃO reescreve first_response_at (D5); o SLA de
     resolução reinicia no novo ciclo.
+
+    A coluna acompanha a categoria: vai para o `stage` escolhido (já validado
+    como ATIVO e da categoria aberta por quem chama) ou para o status de
+    fábrica ativo de "Aberto" — nunca fica na coluna "Fechado" de um chamado
+    aberto. (O caso TD-00005 veio do seed antigo, que mudava `status` sem
+    mexer na coluna; ver a migração `0030` que repara esses chamados.)
     """
     TicketStatusEvent.objects.create(
         ticket=ticket,
@@ -1597,7 +1744,7 @@ def _reopen(ticket: Ticket, author, now, *, automatic=True):
         is_automatic=automatic,
     )
     ticket.status = TicketStatus.OPEN
-    ticket.stage = stage_padrao(TicketStatus.OPEN)
+    ticket.stage = stage if stage is not None else stage_padrao(TicketStatus.OPEN)
     ticket.reopen_count += 1
     ticket.last_reopened_at = now
     ticket.sla_cycle += 1

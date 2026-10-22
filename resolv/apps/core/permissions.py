@@ -156,3 +156,23 @@ class IsInternalReadAdminWrite(BasePermission):
         if not (user.is_authenticated and user.can(Perm.PANEL_ACCESS)):
             return False
         return request.method in SAFE_METHODS or user.can(Perm.SETTINGS_MANAGE)
+
+
+class IsInternalReadMacroManageWrite(BasePermission):
+    """Macros: interno lê (aplica no composer); escreve quem tem `macro.manage`
+    OU `settings.manage` (o admin tem as duas).
+
+    Existe porque `macro.manage` estava no catálogo e na lista do agente, mas
+    a view só olhava `settings.manage`: a permissão era anunciada em
+    `me.permissions` e negada na ação. Agora ela vale de verdade para papel
+    personalizado, e quem já administrava continua podendo."""
+
+    message = "Apenas administradores podem alterar esta configuração."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user.is_authenticated and user.can(Perm.PANEL_ACCESS)):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return user.can(Perm.MACRO_MANAGE) or user.can(Perm.SETTINGS_MANAGE)

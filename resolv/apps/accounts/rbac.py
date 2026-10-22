@@ -150,7 +150,12 @@ _AGENT_PERMS = frozenset({
     Perm.REPORT_EXPORT,
     Perm.KNOWLEDGE_VIEW,
     Perm.MACRO_USE,
-    Perm.MACRO_MANAGE,
+    # Perm.MACRO_MANAGE fica de fora de propósito: o CRUD de macros é
+    # configuração (`settings/ticket-macros/`: interno lê, admin escreve, ver
+    # GAPS.md). O agente listava `macro.manage` em `me.permissions` mas levava
+    # 403 ao criar; o front, que desenha botão pela lista, prometia o que a
+    # API negava. Quem precisar pode receber a permissão por papel
+    # personalizado — a view a respeita (`IsInternalReadMacroManageWrite`).
 })
 
 #: Supervisor = agente + enxerga a operação inteira das equipes dele.

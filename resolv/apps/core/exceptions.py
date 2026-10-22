@@ -23,7 +23,46 @@ def exception_handler(exc, context):
         # (existem dois, "Arquivo indisponível.") passa intacto — quem
         # escreveu escolheu aquele texto para ser lido.
         exc = exceptions.NotFound()
-    return drf_exception_handler(exc, context)
+    resposta = drf_exception_handler(exc, context)
+    if resposta is not None and isinstance(exc, exceptions.Throttled):
+        _explicar_espera(resposta, exc)
+    return resposta
+
+
+def _espera_por_extenso(segundos: int) -> str:
+    """"1 minuto", "37 minutos", "2 horas" — arredondado para CIMA: dizer
+    "30 segundos" para quem terá de esperar 30,4 faria a pessoa tentar cedo
+    demais e bater de novo no limite."""
+    if segundos < 60:
+        return f"{segundos} segundo{'s' if segundos != 1 else ''}"
+    minutos = -(-segundos // 60)
+    if minutos < 60:
+        return f"{minutos} minuto{'s' if minutos != 1 else ''}"
+    horas = -(-minutos // 60)
+    return f"{horas} hora{'s' if horas != 1 else ''}"
+
+
+def _explicar_espera(resposta, exc: exceptions.Throttled) -> None:
+    """429 do throttle do DRF (ex.: 20 logins/hora por IP): diz QUANTO esperar.
+
+    O texto padrão do DRF ("Pedido foi limitado... Disponível em 3598
+    segundos") é meio traduzido e fala em segundos crus; a tela mostra
+    `detail` direto, então ele precisa ser a frase pronta. O cabeçalho
+    `Retry-After` (segundos, RFC 9110) é para quem automatiza — o DRF só o
+    põe quando sabe a espera, aqui ele é sempre garantido. O LIMITE não muda;
+    só a resposta de quem o atinge.
+    """
+    espera = int(exc.wait) if exc.wait is not None else 60
+    espera = max(espera, 1)
+    resposta.data = {
+        "detail": (
+            "Muitas tentativas em pouco tempo. "
+            f"Aguarde {_espera_por_extenso(espera)} e tente de novo."
+        ),
+        "code": "throttled",
+        "retry_after": espera,
+    }
+    resposta["Retry-After"] = str(espera)
 
 
 def _e_do_django(exc: Http404) -> bool:

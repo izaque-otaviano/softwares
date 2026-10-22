@@ -68,3 +68,38 @@ def test_a_trava_e_por_par_email_ip__mesmo_email_de_outro_ip_continua_entrando(a
 
     r = api.post(LOGIN, {"email": cliente.email, "password": "errada"}, REMOTE_ADDR="10.0.0.2")
     assert r.status_code == 400
+
+
+def test_429_do_throttle_de_login_traz_retry_after_e_mensagem_com_o_tempo(
+    api, cliente, monkeypatch
+):
+    """O limite de logins por IP (throttle `login`, 20/h) devolvia o texto
+    cru do DRF e, para quem lia a resposta, nenhum tempo de espera claro. Agora
+    a resposta traz `Retry-After` e um `detail` pt-BR com a espera. O LIMITE
+    não muda: só a 3ª tentativa (com 2/h) é barrada, como antes."""
+    from apps.accounts.views import LoginThrottle
+
+    monkeypatch.setitem(LoginThrottle.THROTTLE_RATES, "login", "2/hour")
+    for _ in range(2):
+        assert api.post(LOGIN, {"email": cliente.email, "password": "errada"}).status_code == 400
+
+    r = api.post(LOGIN, {"email": cliente.email, "password": "Senha-forte-123"})
+    assert r.status_code == 429
+    espera = int(r["Retry-After"])
+    assert 3500 <= espera <= 3600
+    corpo = r.json()
+    assert "Aguarde 1 hora" in corpo["detail"]
+    assert "Muitas tentativas" in corpo["detail"]
+    assert corpo["retry_after"] == espera
+    assert corpo["code"] == "throttled"
+
+
+def test_espera_por_extenso_arredonda_para_cima():
+    from apps.core.exceptions import _espera_por_extenso
+
+    assert _espera_por_extenso(1) == "1 segundo"
+    assert _espera_por_extenso(30) == "30 segundos"
+    assert _espera_por_extenso(61) == "2 minutos"
+    assert _espera_por_extenso(3541) == "1 hora"
+    assert _espera_por_extenso(3600) == "1 hora"
+    assert _espera_por_extenso(7300) == "3 horas"

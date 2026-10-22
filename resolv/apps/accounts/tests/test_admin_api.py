@@ -319,6 +319,31 @@ class TestPasswordReset:
         agente.refresh_from_db()
         assert agente.check_password(nova_senha)
 
+    def test_senha_sorteada_sempre_passa_no_validador(self, agente):
+        """500 sorteios, nenhum recusado: a senha nasce com as 4 classes.
+        Com `token_urlsafe` ~1% saía sem maiúscula/dígito e a 2ª tentativa
+        virava 500."""
+        from django.contrib.auth.password_validation import validate_password
+
+        from apps.accounts.validators import gerar_senha_temporaria
+
+        for _ in range(500):
+            senha = gerar_senha_temporaria(agente)
+            validate_password(senha, agente)
+            assert len(senha) >= 16
+
+    def test_reset_nao_estoura_500_com_sorteio_fraco(
+        self, api, admin, agente, monkeypatch
+    ):
+        """Mesmo que o gerador antigo (`token_urlsafe`) devolvesse uma senha
+        de um tipo só, o endpoint responde 200 com senha válida."""
+        monkeypatch.setattr("secrets.token_urlsafe", lambda n=None: "aaaaaaaaaaaaaaaa")
+        resp = api(admin).post(self.URL.format(agente.pk))
+        assert resp.status_code == 200
+        agente.refresh_from_db()
+        assert agente.check_password(resp.json()["password"])
+        assert resp.json()["password"] != "aaaaaaaaaaaaaaaa"
+
     def test_works_for_a_client_user_too(self, api, admin, cliente):
         """Um endpoint só, os dois `kind` — mesmo padrão do reset-2fa."""
         resp = api(admin).post(self.URL.format(cliente.pk))

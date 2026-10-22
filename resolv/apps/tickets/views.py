@@ -51,8 +51,10 @@ from apps.tickets.serializers import (
     SLA_AT_RISK_MINUTES,
     AssignableAgentSerializer,
     BulkAssignSerializer,
+    BulkCloseItemSerializer,
     BulkCloseSerializer,
     BulkPrioritySerializer,
+    BulkResultSerializer,
     BulkStatusSerializer,
     MentionTargetSerializer,
     PresencaBatimentoSerializer,
@@ -394,6 +396,7 @@ class TicketViewSet(viewsets.GenericViewSet):
         ser = TicketDetailSerializer(ticket, context={"request": request})
         return Response(ser.data)
 
+    @extend_schema(request=TicketCreateSerializer, responses={201: TicketDetailSerializer})
     def create(self, request):
         ser = TicketCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -435,6 +438,12 @@ class TicketViewSet(viewsets.GenericViewSet):
                 order_number=data.get("order_number", ""),
                 actor=request.user,
                 with_signature=data.get("with_signature", False),
+                # abertura já triada (opcional; ver `create_ticket`)
+                assignee=data.get("assignee"),
+                initial_status=data.get("status"),
+                initial_stage=data.get("stage"),
+                tags=data.get("tags"),
+                first_message_public=data.get("is_public", True),
             )
         except QuotaExceeded as exc:
             # 422 com dados para a mensagem clara exigida pelo requisito
@@ -598,6 +607,7 @@ class TicketViewSet(viewsets.GenericViewSet):
         agentes = atribuicao.agentes_atribuiveis()
         return Response(AssignableAgentSerializer(agentes, many=True).data)
 
+    @extend_schema(request=TicketReplySerializer, responses={201: TicketDetailSerializer})
     @action(detail=True, methods=["post"],
             parser_classes=[JSONParser, MultiPartParser, FormParser])
     def reply(self, request, pk=None):
@@ -632,6 +642,7 @@ class TicketViewSet(viewsets.GenericViewSet):
                 resolution_ended_at=data.get("resolution_ended_at"),
                 close_note=data.get("close_note", ""),
                 with_signature=data.get("with_signature", False),
+                stage=data.get("stage"),
             )
         except TicketRuleViolation as exc:
             raise ValidationError({"detail": str(exc)}) from exc
@@ -844,6 +855,7 @@ class TicketViewSet(viewsets.GenericViewSet):
         out = TicketDetailSerializer(ticket, context={"request": request})
         return Response(out.data)
 
+    @extend_schema(request=TicketCloseSerializer, responses=TicketDetailSerializer)
     @action(detail=True, methods=["post"])
     def close(self, request, pk=None):
         """Fecha o ticket — o agente com o registro de trabalho técnico
@@ -862,6 +874,7 @@ class TicketViewSet(viewsets.GenericViewSet):
                     resolution_started_at=ser.validated_data["resolution_started_at"],
                     resolution_ended_at=ser.validated_data["resolution_ended_at"],
                     note=ser.validated_data.get("note", ""),
+                    stage=ser.validated_data.get("stage"),
                 )
             else:
                 ser = TicketCloseByRequesterSerializer(data=request.data)
@@ -1096,6 +1109,21 @@ class TicketViewSet(viewsets.GenericViewSet):
     # mesmo cuidado de `retrieve()` ("404 fora do escopo: não vaza
     # existência"): reportar falha nele vazaria a mesma coisa.
 
+    def _lote(self, ids, report_missing):
+        """`(tickets_visiveis, falhas_de_ausentes)` — as falhas só vêm preenchidas
+        com `report_missing`. Um id que NÃO existe e um que o usuário NÃO vê
+        recebem o MESMO motivo, então reportar não revela qual dos dois é."""
+        tickets = self._tickets_visiveis(ids)
+        if not report_missing:
+            return tickets, []
+        achados = {t.pk for t in tickets}
+        vistos, ausentes = set(), []
+        for i in ids:
+            if i not in achados and i not in vistos:
+                vistos.add(i)
+                ausentes.append({"id": i, "detail": "Ticket não encontrado."})
+        return tickets, ausentes
+
     def _tickets_visiveis(self, ids):
         """Os tickets pedidos que o usuário PODE ver — mesmo filtro que
         `tabs()` já usa (`get_queryset().filter(pk__in=ids)`). Os que saem
@@ -1281,6 +1309,7 @@ class TicketViewSet(viewsets.GenericViewSet):
             },
         })
 
+    @extend_schema(request=BulkAssignSerializer, responses=BulkResultSerializer)
     @action(detail=False, methods=["post"], url_path="bulk-assign")
     def bulk_assign(self, request):
         _exige(request.user, Perm.TICKET_BULK_ACTIONS)
@@ -1294,21 +1323,28 @@ class TicketViewSet(viewsets.GenericViewSet):
             if assignee is None:
                 raise ValidationError({"assignee_id": "Agente não encontrado."})
         updated, failed = [], []
-        for ticket in self._tickets_visiveis(ser.validated_data["ticket_ids"]):
+        tickets, ausentes = self._lote(
+            ser.validated_data["ticket_ids"], ser.validated_data["report_missing"]
+        )
+        for ticket in tickets:
             try:
                 ticket_service.assign(ticket=ticket, assignee=assignee, actor=request.user)
                 updated.append(ticket.pk)
             except TicketRuleViolation as exc:
                 failed.append({"id": ticket.pk, "detail": str(exc)})
-        return Response({"updated": updated, "failed": failed})
+        return Response({"updated": updated, "failed": failed + ausentes})
 
+    @extend_schema(request=BulkPrioritySerializer, responses=BulkResultSerializer)
     @action(detail=False, methods=["post"], url_path="bulk-priority")
     def bulk_priority(self, request):
         _exige(request.user, Perm.TICKET_BULK_ACTIONS)
         ser = BulkPrioritySerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         updated, failed = [], []
-        for ticket in self._tickets_visiveis(ser.validated_data["ticket_ids"]):
+        tickets, ausentes = self._lote(
+            ser.validated_data["ticket_ids"], ser.validated_data["report_missing"]
+        )
+        for ticket in tickets:
             try:
                 ticket_service.reclassify(
                     ticket=ticket, actor=request.user,
@@ -1317,28 +1353,62 @@ class TicketViewSet(viewsets.GenericViewSet):
                 updated.append(ticket.pk)
             except TicketRuleViolation as exc:
                 failed.append({"id": ticket.pk, "detail": str(exc)})
-        return Response({"updated": updated, "failed": failed})
+        return Response({"updated": updated, "failed": failed + ausentes})
 
+    @extend_schema(request=BulkCloseSerializer, responses=BulkResultSerializer)
     @action(detail=False, methods=["post"], url_path="bulk-close")
     def bulk_close(self, request):
+        """Fecha vários chamados. Dois formatos (ver `BulkCloseSerializer`):
+        `ticket_ids` + uma janela para todos (o de sempre) ou
+        `items:[{id, resolution_started_at, resolution_ended_at}]` com a
+        janela de CADA ticket. Ticket inválido (janela antes da criação,
+        ausente, já fechado...) vai para `failed[]` com o motivo; os demais
+        fecham."""
         _exige(request.user, Perm.TICKET_BULK_ACTIONS)
         _exige(request.user, Perm.TICKET_CLOSE)
         ser = BulkCloseSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        updated, failed = [], []
-        for ticket in self._tickets_visiveis(ser.validated_data["ticket_ids"]):
+        dados = ser.validated_data
+        padrao = {
+            "resolution_started_at": dados.get("resolution_started_at"),
+            "resolution_ended_at": dados.get("resolution_ended_at"),
+            "note": dados.get("note", ""),
+        }
+        if "items" in dados:
+            pedidos, invalidos = {}, []
+            for bruto in dados["items"]:
+                item = BulkCloseItemSerializer(data=bruto)
+                if not item.is_valid():
+                    # um item mal formado não derruba o lote: vira falha DELE
+                    motivo = "; ".join(
+                        f"{campo}: {' '.join(str(m) for m in msgs)}"
+                        for campo, msgs in item.errors.items()
+                    )
+                    ident = bruto.get("id") if isinstance(bruto, dict) else None
+                    invalidos.append({"id": ident, "detail": f"Item inválido ({motivo})."})
+                    continue
+                v = item.validated_data
+                pedidos.setdefault(v["id"], {**padrao, **v})
+        else:
+            pedidos = {i: dict(padrao) for i in dados["ticket_ids"]}
+            invalidos = []
+        updated, failed = [], list(invalidos)
+        tickets, ausentes = self._lote(list(pedidos), dados["report_missing"])
+        for ticket in tickets:
+            janela = pedidos[ticket.pk]
             try:
                 ticket_service.close_ticket(
                     ticket=ticket, actor=request.user,
-                    resolution_started_at=ser.validated_data["resolution_started_at"],
-                    resolution_ended_at=ser.validated_data["resolution_ended_at"],
-                    note=ser.validated_data.get("note", ""),
+                    resolution_started_at=janela["resolution_started_at"],
+                    resolution_ended_at=janela["resolution_ended_at"],
+                    note=janela.get("note", ""),
                 )
                 updated.append(ticket.pk)
             except TicketRuleViolation as exc:
                 failed.append({"id": ticket.pk, "detail": str(exc)})
-        return Response({"updated": updated, "failed": failed})
+        return Response({"updated": updated, "failed": failed + ausentes})
 
+    @extend_schema(request=BulkStatusSerializer, responses=BulkResultSerializer)
     @action(detail=False, methods=["post"], url_path="bulk-status")
     def bulk_status(self, request):
         """Muda o status (coluna) de vários chamados — mesma porta e mesma
@@ -1358,13 +1428,16 @@ class TicketViewSet(viewsets.GenericViewSet):
                 "stage_id": "Para encerrar, use Encerrar: fechar pede as datas da solução.",
             })
         updated, failed = [], []
-        for ticket in self._tickets_visiveis(ser.validated_data["ticket_ids"]):
+        tickets, ausentes = self._lote(
+            ser.validated_data["ticket_ids"], ser.validated_data["report_missing"]
+        )
+        for ticket in tickets:
             try:
                 ticket_service.mudar_status(ticket=ticket, stage=stage, actor=request.user)
                 updated.append(ticket.pk)
             except TicketRuleViolation as exc:
                 failed.append({"id": ticket.pk, "detail": str(exc)})
-        return Response({"updated": updated, "failed": failed})
+        return Response({"updated": updated, "failed": failed + ausentes})
 
 
 def _facetas_da_fila(contar):

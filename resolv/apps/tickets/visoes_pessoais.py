@@ -16,12 +16,13 @@ import re
 
 from django.db import transaction
 from django.db.models import Max
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from apps.core.pagination import LimitOffsetOuPagina
 from apps.core.permissions import IsInternal
 from apps.tickets import selectors
 from apps.tickets.models import SavedTicketView, TicketPriority, TicketStatus
@@ -193,8 +194,11 @@ class SavedTicketViewViewSet(
     """CRUD das visualizações pessoais de quem está logado.
 
     Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-    Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-    todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+    Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+    barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+    A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+    vira o envelope `{count, next, previous, results}` do resto da API. O
+    `count` por visão (tickets) só é calculado para as visões da página.
     """
 
     serializer_class = SavedTicketViewSerializer
@@ -204,15 +208,39 @@ class SavedTicketViewViewSet(
     def get_queryset(self):
         return SavedTicketView.objects.filter(owner=self.request.user)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "page", int, description=(
+                    "OPCIONAL. Número da página (1 = primeira). Com `page`, "
+                    "`limit` ou `offset` a resposta vira o envelope "
+                    "`{count, next, previous, results}`; sem nenhum deles é o "
+                    "array puro com todas as visões."
+                ),
+            ),
+            OpenApiParameter("limit", int, description="OPCIONAL. Visões por página (padrão 25)."),
+            OpenApiParameter("offset", int, description="OPCIONAL. Alternativa a `page`."),
+        ],
+        responses=SavedTicketViewSerializer(many=True),
+    )
     def list(self, request):
-        visoes = list(self.get_queryset())
+        paginador = LimitOffsetOuPagina()
+        pagina = None
+        if paginador.pediu_pagina(request):
+            pagina = paginador.paginate_queryset(self.get_queryset(), request, view=self)
+            visoes = list(pagina)
+        else:
+            visoes = list(self.get_queryset())
         # Uma contagem por visão, no MESMO escopo e com os MESMOS filtros da
         # listagem — é a pergunta "se eu clicar, quantos vêm". Mesmo custo
         # que o `resumo` já paga para as visões do sistema, e com teto.
         base = selectors.visible_tickets(request.user)
         for visao in visoes:
             visao.count = _aplicar_filtros(base, visao.filters, request.user).order_by().count()
-        return Response(self.get_serializer(visoes, many=True).data)
+        dados = self.get_serializer(visoes, many=True).data
+        if pagina is not None:
+            return paginador.get_paginated_response(dados)
+        return Response(dados)
 
     def perform_create(self, serializer):
         dono = self.request.user

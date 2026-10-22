@@ -394,6 +394,10 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 # a sessão vai no cookie, então o CORS precisa de credenciais — e por isso
 # mesmo `CORS_ALLOW_ALL_ORIGINS` nunca pode ser True aqui
 CORS_ALLOW_CREDENTIALS = True
+# Sem isto o navegador esconde `Retry-After` de um front em outra origem (o
+# Helpdesk em :5173 falando com a API): o 429 do limite de login chegava sem o
+# tempo de espera legível.
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 
 # --- Content-Security-Policy (django-csp) ----------------------------------
 # Vale para o que ESTE processo serve em HTML: o admin do Django e o

@@ -5,12 +5,14 @@ escreve. A EQUIPE não está aqui: ela é de `accounts` desde a fusão com o
 departamento.
 """
 
+import unicodedata
+
 from django.db.models import Count
 from django.utils.text import slugify
 from rest_framework import serializers, viewsets
 from rest_framework.exceptions import ValidationError
 
-from apps.core.permissions import IsInternalReadAdminWrite
+from apps.core.permissions import IsInternalReadAdminWrite, IsInternalReadMacroManageWrite
 from apps.core.serializer_fields import slug_unico
 from apps.core.slugs import unique_slug
 from apps.tickets.models import (
@@ -22,6 +24,16 @@ from apps.tickets.models import (
     TicketStage,
     TicketTag,
 )
+
+
+def _chave_do_nome(nome: str) -> str:
+    """Nome comparável: sem acento, sem caixa, sem espaço sobrando —
+    "Em  Análise" e "em analise" são o MESMO status para quem lê a tela."""
+    sem_acento = "".join(
+        c for c in unicodedata.normalize("NFKD", nome or "")
+        if not unicodedata.combining(c)
+    )
+    return " ".join(sem_acento.casefold().split())
 
 
 class TicketStageSerializer(serializers.ModelSerializer):
@@ -47,18 +59,70 @@ class TicketStageSerializer(serializers.ModelSerializer):
         read_only_fields = ["is_system"]
 
     def validate_category(self, value):
-        """Status de fábrica não troca de categoria.
+        """Status de fábrica não troca de categoria; o personalizado só troca
+        enquanto NENHUM chamado o usa.
 
         Trocar a categoria de "Fechado" mudaria, de uma vez, o que conta como
         resolvido em todo relatório já emitido e o que o fechamento automático
-        alcança. Status criado pelo admin pode mudar; os quatro do sistema são
-        o chão em que o resto se apoia.
+        alcança. Status criado pelo admin pode mudar — mas, com chamados nele,
+        a troca deixaria cada um com `status` de uma categoria e coluna de
+        outra (o aberto que aparece como "Resolvido", o mesmo defeito que a
+        reabertura já teve). A decisão é RECUSAR com a contagem, em vez de
+        mover os chamados em silêncio: o admin cria o status novo na categoria
+        certa e move os chamados (bulk-status) — o caminho que registra o
+        evento no histórico de cada um.
         """
-        if self.instance and self.instance.is_system and value != self.instance.category:
-            raise ValidationError(
-                "Status de fábrica não muda de categoria. Crie um novo."
-            )
+        if self.instance and value != self.instance.category:
+            if self.instance.is_system:
+                raise ValidationError(
+                    "Status de fábrica não muda de categoria. Crie um novo."
+                )
+            em_uso = self.instance.tickets.count()
+            if em_uso:
+                raise ValidationError(
+                    f"{em_uso} chamado(s) usam este status; mudar a categoria "
+                    "deixaria cada um inconsistente. Crie um status novo na "
+                    "categoria certa e mova os chamados."
+                )
         return value
+
+    def validate_is_active(self, value):
+        """Os quatro de fábrica são o chão do quadro (destino do resgate ao
+        apagar um status, coluna padrão de cada categoria): desativar "Novo"
+        deixaria ticket novo sem coluna. O DELETE já recusava; o PATCH passa a
+        recusar também."""
+        if self.instance and self.instance.is_system and value is False:
+            raise ValidationError("Status de fábrica não pode ser desativado.")
+        return value
+
+    def validate(self, data):
+        """Nome repetido (sem caixa nem acento) entre os status ATIVOS é
+        recusado: a tela mostra todos numa lista só, e dois "Em análise"
+        indistinguíveis viram coluna duplicada no quadro. Só confere quando o
+        nome muda, o status é (re)ativado ou é criação — editar a cor de um
+        status que já tem nome repetido (dado antigo) continua possível."""
+        instancia = self.instance
+        nome = data.get("name", instancia.name if instancia else "")
+        ativo = data.get("is_active", instancia.is_active if instancia else True)
+        mudou = (
+            instancia is None
+            or "name" in data and _chave_do_nome(nome) != _chave_do_nome(instancia.name)
+            or "is_active" in data and ativo and not instancia.is_active
+        )
+        if ativo and mudou:
+            chave = _chave_do_nome(nome)
+            outros = TicketStage.objects.filter(is_active=True)
+            if instancia:
+                outros = outros.exclude(pk=instancia.pk)
+            repetido = next(
+                (o for o in outros if _chave_do_nome(o.name) == chave), None
+            )
+            if repetido:
+                raise ValidationError({
+                    "name": f"Já existe o status \"{repetido.name}\". "
+                            "Escolha um nome diferente.",
+                })
+        return data
 
 
 class TicketStageViewSet(viewsets.ModelViewSet):
@@ -272,4 +336,4 @@ class TicketMacroViewSet(viewsets.ModelViewSet):
         "order", "name"
     )
     serializer_class = TicketMacroSerializer
-    permission_classes = [IsInternalReadAdminWrite]
+    permission_classes = [IsInternalReadMacroManageWrite]
