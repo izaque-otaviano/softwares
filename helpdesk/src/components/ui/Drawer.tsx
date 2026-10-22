@@ -17,6 +17,8 @@ export interface DrawerProps {
   /** Substitui o foco inicial. Por padrão vai para o primeiro campo do corpo (ou para "Fechar" se não houver). */
   onOpenAutoFocus?: (event: Event) => void;
   className?: string;
+  /** Classes do corpo rolável (padrão `px-4 py-4`). */
+  bodyClassName?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export function Drawer({
   width = 'w-right',
   onOpenAutoFocus,
   className,
+  bodyClassName,
 }: DrawerProps) {
   const { bodyRef, onOpenAutoFocus: handleOpenAutoFocus, onCloseAutoFocus } = useDialogFocus(open, onOpenAutoFocus);
 
@@ -61,7 +64,7 @@ export function Drawer({
             </div>
             <DialogCloseButton className="-mr-2 -mt-1" />
           </div>
-          <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div ref={bodyRef} className={cn('min-h-0 flex-1 overflow-y-auto', bodyClassName ?? 'px-4 py-4')}>
             {children}
           </div>
           {footer ? (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { orgsApi } from '@/api';
-import { Button, Field, Input, Modal, TagInput } from '@/components/ui';
+import { Banner, Button, Field, Input, Modal, TagInput } from '@/components/ui';
 import { toast } from '@/store/useUi';
 import type { Org } from '@/types/domain';
 
@@ -19,6 +19,7 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
   const [tags, setTags] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -26,6 +27,7 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
     setDomains([]);
     setTags([]);
     setError(undefined);
+    setApiError(null);
   }, [open]);
 
   const submit = async () => {
@@ -34,6 +36,7 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
       return;
     }
     setError(undefined);
+    setApiError(null);
     setBusy(true);
     try {
       const org = await orgsApi.createOrg({ name: name.trim(), domains, tags });
@@ -41,7 +44,7 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
       onCreated(org);
       onOpenChange(false);
     } catch {
-      toast.error('Não foi possível criar a organização. Tente novamente.');
+      setApiError('Não foi possível criar a organização. O que você digitou foi mantido.');
     } finally {
       setBusy(false);
     }
@@ -72,6 +75,11 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
           void submit();
         }}
       >
+        {apiError ? (
+          <Banner tone="error" onRetry={() => void submit()}>
+            {apiError}
+          </Banner>
+        ) : null}
         <Field label="Nome" required error={error}>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { usersApi } from '@/api';
-import { Button, Field, Input, Modal } from '@/components/ui';
+import { Banner, Button, Field, Input, Modal } from '@/components/ui';
 import type { User } from '@/types/domain';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,7 +56,11 @@ export function AddUserModal({ open, onOpenChange, onCreated }: { open: boolean;
         <Field label="E-mail" required error={errors.email}>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
-        {errors.api ? <p className="text-xs text-danger">{errors.api}</p> : null}
+        {errors.api ? (
+          <Banner tone="error" onRetry={() => void submit()}>
+            {errors.api} O que você digitou foi mantido.
+          </Banner>
+        ) : null}
       </div>
     </Modal>
   );

@@ -68,7 +68,7 @@ describe('BottomBar: macros', () => {
     const t = await openMine();
     const key = `ticket:${t.id}`;
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar macro' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Pré-visualizar Cliente não responde' }));
+    await userEvent.click(await screen.findByTitle('Pré-visualizar Cliente não responde'));
     const dialog = await screen.findByRole('dialog', { name: 'Cliente não responde' });
     expect(await within(dialog).findByText(/Categoria do status: Pendente/)).toBeInTheDocument();
     expect(within(dialog).getByRole('tab', { name: 'Resposta pública' })).toBeInTheDocument();
@@ -78,11 +78,42 @@ describe('BottomBar: macros', () => {
     expect(useFormStore.getState().forms[key]!.bodyHtml).toBe('');
 
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar macro' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Pré-visualizar Cliente não responde' }));
+    await userEvent.click(await screen.findByTitle('Pré-visualizar Cliente não responde'));
     const d2 = await screen.findByRole('dialog', { name: 'Cliente não responde' });
     await userEvent.click(await within(d2).findByRole('button', { name: 'Aplicar macro' }));
     expect(useFormStore.getState().forms[key]!.values.statusId).toBe('pending');
     expect(useTickets.getState().tickets.find((x) => x.id === t.id)!.statusId).toBe('open');
+  });
+});
+
+describe('BottomBar: atalhos', () => {
+  it('Shift+Enter na lista de macros abre a pré-visualização sem aplicar', async () => {
+    const t = await openMine();
+    await userEvent.click(screen.getByRole('button', { name: 'Aplicar macro' }));
+    const input = await screen.findByPlaceholderText('Pesquisar macros');
+    await screen.findByText('Cliente não responde');
+    await userEvent.type(input, 'Cliente não');
+    await waitFor(() => expect(screen.getByText('Shift + Enter para abrir a visualização')).toBeInTheDocument());
+    await userEvent.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(await screen.findByRole('dialog', { name: 'Cliente não responde' })).toBeInTheDocument();
+    expect(useFormStore.getState().forms[`ticket:${t.id}`]!.values.statusId).toBe('open');
+  });
+
+  it('Ctrl+Enter envia o ticket (mesmo com o foco dentro do formulário)', async () => {
+    const t = await openMine();
+    const key = `ticket:${t.id}`;
+    useFormStore.getState().patch(key, { priority: 'urgent' });
+    screen.getByRole('button', { name: 'Aplicar macro' }).focus();
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    await waitFor(() => expect(useTickets.getState().tickets.find((x) => x.id === t.id)!.priority).toBe('urgent'));
+  });
+
+  it('Cmd+Enter também envia', async () => {
+    const t = await openMine();
+    useFormStore.getState().patch(`ticket:${t.id}`, { priority: 'low' });
+    screen.getByRole('button', { name: 'Aplicar macro' }).focus();
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+    await waitFor(() => expect(useTickets.getState().tickets.find((x) => x.id === t.id)!.priority).toBe('low'));
   });
 });
 

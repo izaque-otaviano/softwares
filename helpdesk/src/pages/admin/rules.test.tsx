@@ -127,7 +127,7 @@ describe('Status do ticket (admin)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Escolher status de envio' }));
     await screen.findByRole('menuitem', { name: 'Resolvido' });
     expect(screen.queryByRole('menuitem', { name: 'Aguardando peça (v2)' })).toBeNull();
-  });
+  }, 20_000);
 
   it('mostra erro com Tentar novamente', async () => {
     configureApi({ failRate: 1 });

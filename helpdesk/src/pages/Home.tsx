@@ -87,7 +87,7 @@ export default function Home() {
         </nav>
       </SecondaryPanel>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-surface-1" aria-label="Tickets">
+      <section className="flex min-w-0 flex-1 flex-col bg-surface-1" aria-label="Tickets">
         <div className="flex min-h-0 flex-1 gap-4 overflow-y-auto p-4">
           <section className="min-w-0 flex-1 self-start rounded border border-line bg-surface" aria-label="Seus tickets">
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
@@ -215,7 +215,7 @@ export default function Home() {
             </Widget>
           </aside>
         </div>
-      </main>
+      </section>
     </div>
   );
 }

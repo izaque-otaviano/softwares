@@ -8,3 +8,6 @@ export type { SecondaryPanelProps } from './SecondaryPanel';
 export { useSearchUi } from './searchState';
 export { TopBar } from './TopBar';
 export { WorkTabs } from './WorkTabs';
+export { ShortcutsHelpDialog, SHORTCUTS } from './ShortcutsHelp';
+export { useShortcutsHelp } from './shortcuts';
+export { ErrorBoundary } from './ErrorBoundary';

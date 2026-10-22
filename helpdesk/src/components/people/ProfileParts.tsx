@@ -1,13 +1,39 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Banner, Button, EmptyState, Skeleton } from '@/components/ui';
+import { tabbableElements } from '@/components/ui/focusUtils';
 import { absoluteTime } from '@/lib/time';
 
 /** Coluna de propriedades à esquerda dos perfis (largura `props`, rolagem própria). */
 export function PropertiesAside({ label, children, footer }: { label: string; children: ReactNode; footer?: ReactNode }) {
+  const asideRef = useRef<HTMLElement>(null);
+  const footerHadFocus = useRef(false);
+  const hasFooter = Boolean(footer);
+
+  // O rodapé (Salvar/Descartar) some quando não há alterações: se o foco estava nele, leva-o ao primeiro campo em vez de perdê-lo.
+  useEffect(() => {
+    if (hasFooter || !footerHadFocus.current) return;
+    footerHadFocus.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    tabbableElements(asideRef.current ?? document)[0]?.focus();
+  }, [hasFooter]);
+
   return (
-    <aside aria-label={label} className="flex h-full w-props shrink-0 flex-col border-r border-line bg-surface-1">
+    <aside ref={asideRef} aria-label={label} className="flex h-full w-props shrink-0 flex-col border-r border-line bg-surface-1">
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">{children}</div>
-      {footer ? <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface px-4 py-3">{footer}</div> : null}
+      {footer ? (
+        <div
+          onFocusCapture={() => {
+            footerHadFocus.current = true;
+          }}
+          onBlurCapture={(e) => {
+            if (e.relatedTarget) footerHadFocus.current = false;
+          }}
+          className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface px-4 py-3"
+        >
+          {footer}
+        </div>
+      ) : null}
     </aside>
   );
 }

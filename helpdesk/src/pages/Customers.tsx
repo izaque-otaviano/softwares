@@ -132,7 +132,7 @@ export default function Customers() {
   return (
     <div className="flex h-full min-h-0 w-full">
       <CustomersPanel active={list} />
-      <main aria-label="Clientes" className="flex min-w-0 flex-1 flex-col bg-surface">
+      <section aria-label="Clientes" className="flex min-w-0 flex-1 flex-col bg-surface">
         <header className="flex flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5">
           <div className="min-w-0">
             <h1 className="text-xl font-normal text-fg">{list === 'all' ? 'Clientes' : 'Usuários suspensos'}</h1>
@@ -214,7 +214,7 @@ export default function Customers() {
             className="h-full"
           />
         </div>
-      </main>
+      </section>
       <AddCustomerModal open={adding} onOpenChange={setAdding} onCreated={() => void load()} />
     </div>
   );

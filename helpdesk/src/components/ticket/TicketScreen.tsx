@@ -1,5 +1,6 @@
 import { useEffect, type KeyboardEvent } from 'react';
 import { Banner } from '@/components/ui';
+import { useIsNarrow } from '@/lib/useMediaQuery';
 import { BottomBar } from './BottomBar';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
@@ -40,15 +41,19 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
   const entry = useFormEntry(ticketKey);
   const isNew = isNewKey(ticketKey);
   const requesterId = entry?.values.requesterId ?? null;
+  const narrow = useIsNarrow();
 
   // Ticket novo: ao escolher o solicitante, o painel direito abre no cartão do cliente (com histórico).
   useEffect(() => {
-    if (isNew && requesterId) useRightPanel.setState({ open: 'customer' });
-  }, [isNew, requesterId]);
+    // Em telas estreitas o painel é Drawer: não abre sozinho.
+    if (isNew && requesterId && !narrow) useRightPanel.setState({ open: 'customer' });
+  }, [isNew, requesterId, narrow]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    // Captura: roda antes do Tiptap, cujo Mod-Enter insere quebra de linha. Ignora portais (modais) filhos na árvore React.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.currentTarget.contains(e.target as Node)) {
       e.preventDefault();
+      e.stopPropagation();
       void useFormStore.getState().submit(ticketKey);
     }
   };
@@ -57,7 +62,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
   const commentError = entry.errors.comment;
 
   return (
-    <div onKeyDown={onKeyDown} className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" data-testid="ticket-screen">
+    <div onKeyDownCapture={onKeyDown} className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" data-testid="ticket-screen">
       <SubTabs ticketKey={ticketKey} />
       <div className="flex min-h-0 flex-1">
         <PropertiesPanel ticketKey={ticketKey} />
@@ -74,6 +79,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
           ) : null}
           {isNew ? (
             <>
+              <h1 className="sr-only">Novo ticket</h1>
               <SubjectField ticketKey={ticketKey} />
               <div className="min-h-0 flex-1" />
             </>

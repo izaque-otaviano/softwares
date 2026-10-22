@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useUi } from '@/store/useUi';
 
 export interface SecondaryPanelProps {
@@ -20,7 +21,9 @@ export interface SecondaryPanelProps {
 export function SecondaryPanel({ pageKey, width, title, footer, children }: SecondaryPanelProps) {
   const stored = useUi((s) => s.sidebarWidths[pageKey]);
   const setWidth = useUi((s) => s.setSidebarWidth);
-  const collapsed = stored === 0;
+  // Sem preferência salva, o painel começa recolhido abaixo de 1100 px para sobrar espaço ao conteúdo.
+  const compact = useMediaQuery('(max-width: 1099.98px)');
+  const collapsed = stored === undefined ? compact : stored === 0;
   const label = typeof title === 'string' ? title : 'painel lateral';
 
   const toggle = (

@@ -62,7 +62,7 @@ export function resolveVisibleIds<T>(columns: readonly ColumnDef<T>[], saved?: r
   return ids;
 }
 
-/** Ciclo do clique no cabeçalho: crescente -> decrescente -> sem ordenação (null). */
+/** Ciclo do clique no cabeçalho: ⇅ (sem ordenação, null) -> ↑ crescente -> ↓ decrescente -> ⇅. */
 export function nextSort(current: SortState | null | undefined, columnId: string): SortState | null {
   if (!current || current.columnId !== columnId) return { columnId, direction: 'asc' };
   return current.direction === 'asc' ? { columnId, direction: 'desc' } : null;

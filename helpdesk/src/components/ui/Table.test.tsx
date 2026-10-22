@@ -155,6 +155,23 @@ describe('Table: ordenação', () => {
     expect(screen.getByRole('columnheader', { name: 'Assunto' })).not.toHaveAttribute('aria-sort');
   });
 
+  it('o ícone do cabeçalho cicla ⇅ -> ↑ -> ↓ -> ⇅', async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [sort, setSort] = useState<SortState | null>(null);
+      return <Table<Ticket> id="t" aria-label="Tickets" columns={COLUMNS} rows={TICKETS} getRowId={(r) => r.id} sort={sort} onSortChange={setSort} />;
+    }
+    render(<Harness />);
+    const icon = () => screen.getByRole('button', { name: 'Assunto' }).querySelector('svg')!;
+    expect(icon()).toHaveClass('lucide-chevrons-up-down');
+    await user.click(screen.getByRole('button', { name: 'Assunto' }));
+    expect(icon()).toHaveClass('lucide-chevron-up');
+    await user.click(screen.getByRole('button', { name: 'Assunto' }));
+    expect(icon()).toHaveClass('lucide-chevron-down');
+    await user.click(screen.getByRole('button', { name: 'Assunto' }));
+    expect(icon()).toHaveClass('lucide-chevrons-up-down');
+  });
+
   it('não reordena as linhas sozinha', async () => {
     const user = userEvent.setup();
     renderTable({ sort: { columnId: 'subject', direction: 'asc' }, onSortChange: vi.fn() });

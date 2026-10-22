@@ -2,6 +2,7 @@ import { Building2, Home, Inbox, PanelLeftClose, PanelLeftOpen, Users, type Luci
 import { NavLink, useLocation } from 'react-router-dom';
 import { Tooltip } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useUi } from '@/store/useUi';
 
 interface NavItem {
@@ -19,7 +20,9 @@ export const NAV_ITEMS: NavItem[] = [
 
 /** Trilho de navegação à esquerda. Recolhido (w-rail) mostra só ícones com tooltip; expandido mostra os rótulos. */
 export function NavRail() {
-  const collapsed = useUi((s) => s.sidebarCollapsed);
+  const compact = useMediaQuery('(max-width: 1099.98px)');
+  // Abaixo de 1100 px o trilho fica só com ícones, qualquer que seja a preferência salva.
+  const collapsed = useUi((s) => s.sidebarCollapsed) || compact;
   const setCollapsed = useUi((s) => s.setSidebarCollapsed);
   const { pathname } = useLocation();
 
@@ -66,6 +69,7 @@ export function NavRail() {
           );
         })}
       </ul>
+      {compact ? null : (
       <Tooltip content={collapsed ? 'Expandir menu' : 'Recolher menu'} side="right">
         <button
           type="button"
@@ -83,6 +87,7 @@ export function NavRail() {
           {collapsed ? null : <span className="truncate">Recolher</span>}
         </button>
       </Tooltip>
+      )}
     </nav>
   );
 }

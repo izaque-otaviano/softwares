@@ -1,4 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
+import { keepFocusIfPlaced } from '@/components/ui/focusUtils';
 import { useState, type ReactElement } from 'react';
 import { cn } from '@/lib/cn';
 import { foldText } from '@/components/ui/fieldUtils';
@@ -28,7 +29,7 @@ export function EmojiPopover({ onPick, trigger }: { onPick: (emoji: string) => v
           align="start"
           sideOffset={6}
           aria-label="Emojis"
-          onCloseAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={keepFocusIfPlaced}
           className="anim-pop-in z-[80] w-72 rounded border border-line bg-surface p-2 shadow-pop"
         >
           <input

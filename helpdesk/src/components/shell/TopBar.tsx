@@ -44,9 +44,9 @@ function AgentMenu() {
       <Popover.Trigger asChild>
         <button
           type="button"
-          aria-label={`${AGENT_NAME}, ${PRESENCE_LABEL[presence]}`}
           className="inline-flex h-8 w-8 items-center justify-center rounded-pill outline-none focus-visible:shadow-focus"
         >
+          <span className="sr-only">{`${AGENT_NAME}, ${PRESENCE_LABEL[presence]}`}</span>
           <Avatar name={AGENT_NAME} size={28} presence={presence} decorative />
         </button>
       </Popover.Trigger>
@@ -54,6 +54,7 @@ function AgentMenu() {
         <Popover.Content
           align="end"
           sideOffset={6}
+          aria-label="Conta do agente"
           className="anim-pop-in z-[80] w-60 rounded border border-line bg-surface p-3 text-sm text-fg shadow-menu outline-none"
         >
           <p className="font-semibold">{AGENT_NAME}</p>
@@ -98,11 +99,10 @@ export function TopBar() {
         <button
           type="button"
           disabled
-          aria-label={`Conversas, ${CONVERSATIONS_COUNT}`}
           className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded border border-line bg-surface-2 px-2 text-sm text-fg-subtle"
         >
           <MessageSquare aria-hidden className="h-4 w-4" />
-          Conversas
+          Conversas{' '}
           <span className="rounded-pill bg-surface px-1.5 text-xs">{CONVERSATIONS_COUNT}</span>
         </button>
         <IconButton label="Telefone" icon={<Phone />} onClick={() => toast.info('Telefonia não faz parte desta versão.')} />

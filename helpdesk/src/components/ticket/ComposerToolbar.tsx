@@ -1,4 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
+import { keepFocusIfPlaced } from '@/components/ui/focusUtils';
 import type { Editor } from '@tiptap/react';
 import {
   Bold, Code, Heading2, Image as ImageIcon, IndentDecrease, IndentIncrease, Italic, Link as LinkIcon, List, ListOrdered, Mic, Minus, Paperclip,
@@ -98,7 +99,7 @@ function LinkPopover({ editor }: { editor: Editor }) {
         <ToolButton label="Link" icon={<LinkIcon />} active={editor.isActive('link')} />
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content side="top" align="start" sideOffset={6} aria-label="Inserir link" onCloseAutoFocus={(e) => e.preventDefault()} className="anim-pop-in z-[80] flex w-72 items-center gap-1 rounded border border-line bg-surface p-2 shadow-pop">
+        <Popover.Content side="top" align="start" sideOffset={6} aria-label="Inserir link" onCloseAutoFocus={keepFocusIfPlaced} className="anim-pop-in z-[80] flex w-72 items-center gap-1 rounded border border-line bg-surface p-2 shadow-pop">
           <input
             aria-label="Endereço do link"
             placeholder="https://"
@@ -139,7 +140,7 @@ export function ComposerToolbar({ editor, note, aiBusy, onAi, onFiles }: Compose
             <ToolButton label="Formatação do texto" icon={<Type />} />
           </Popover.Trigger>
           <Popover.Portal>
-            <Popover.Content side="top" align="start" sideOffset={6} onCloseAutoFocus={(e) => e.preventDefault()} className="anim-pop-in z-[80] max-w-sm rounded border border-line bg-surface p-1 shadow-pop">
+            <Popover.Content side="top" align="start" sideOffset={6} aria-label="Formatação do texto" onCloseAutoFocus={keepFocusIfPlaced} className="anim-pop-in z-[80] max-w-sm rounded border border-line bg-surface p-1 shadow-pop">
               <FormatBar editor={editor} />
             </Popover.Content>
           </Popover.Portal>

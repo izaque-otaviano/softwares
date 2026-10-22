@@ -95,7 +95,7 @@ export default function SearchPage() {
   return (
     <div className="flex h-full min-h-0 w-full">
       <SearchPanel active={type} onChange={setType} counts={counts} />
-      <main aria-label="Resultados da pesquisa" className="flex min-w-0 flex-1 flex-col bg-surface">
+      <section aria-label="Resultados da pesquisa" className="flex min-w-0 flex-1 flex-col bg-surface">
         <header className="px-6 pb-3 pt-5">
           <h1 className="min-w-0 truncate text-xl font-normal text-fg">{title}</h1>
           <form
@@ -186,7 +186,7 @@ export default function SearchPage() {
             <EmptyState illustration="box" title="Nenhuma conversa paralela nesta versão" description="Conversas paralelas não fazem parte deste protótipo." />
           )}
         </div>
-      </main>
+      </section>
 
       <FilterDrawer
         open={filterOpen}

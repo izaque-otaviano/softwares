@@ -66,7 +66,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
       toast.success(okMessage);
       return true;
     } catch {
-      toast.error('Não foi possível concluir a ação em lote.');
+      toast.error('Não foi possível concluir a ação em lote.', { action: { label: 'Tentar novamente', onClick: () => void bulk(ids, patch, okMessage) } });
       return false;
     }
   };
@@ -151,7 +151,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
         toast.success(ids.length === 1 ? `Ticket #${ids[0]} apagado` : `${ids.length} tickets apagados`);
         return true;
       } catch {
-        toast.error('Não foi possível apagar os tickets.');
+        toast.error('Não foi possível apagar os tickets.', { action: { label: 'Tentar novamente', onClick: () => void get().deleteTickets(ids) } });
         return false;
       }
     },
@@ -163,7 +163,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
         toast.success(`Tickets mesclados no #${targetId}`);
         return true;
       } catch {
-        toast.error('Não foi possível mesclar os tickets.');
+        toast.error('Não foi possível mesclar os tickets.', { action: { label: 'Tentar novamente', onClick: () => void get().mergeTickets(targetId, sourceIds) } });
         return false;
       }
     },

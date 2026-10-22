@@ -1,9 +1,11 @@
 import { ChevronDown, ChevronRight, Sparkles, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { removeKeepingFocus } from '@/components/ui/focusUtils';
 import { usersApi } from '@/api';
 import { useDirectory } from '@/components/lists/useDirectory';
 import { Avatar, Button, Combobox, Field, Select, TagInput, type ComboOption } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { useIsNarrow } from '@/lib/useMediaQuery';
 import { PRIORITY_LABEL, TYPE_LABEL } from '@/lib/status';
 import { ME_ID } from '@/mocks/clock';
 import { useTickets } from '@/store/useTickets';
@@ -242,16 +244,17 @@ function AiFields({ ticketKey, disabled, open, onToggle }: { ticketKey: string; 
 
 function SetupCard({ onStart }: { onStart: () => void }) {
   const [dismissed, setDismissed] = useState(false);
+  const ref = useRef<HTMLElement>(null);
   if (dismissed) return null;
   return (
-    <aside aria-label="Configuração em 2 minutos" className="rounded border border-line bg-surface-1 p-3">
+    <aside ref={ref} aria-label="Configuração em 2 minutos" className="rounded border border-line bg-surface-1 p-3">
       <p className="text-sm font-semibold text-fg">Configuração em 2 minutos</p>
       <p className="mt-1 text-xs text-fg-muted">Personalize as informações do seu ticket</p>
       <div className="mt-3 flex gap-2">
         <Button size="md" variant="primary" onClick={onStart}>
           Começar agora
         </Button>
-        <Button size="md" variant="ghost" onClick={() => setDismissed(true)}>
+        <Button size="md" variant="ghost" onClick={() => removeKeepingFocus(ref.current, () => setDismissed(true))}>
           Descartar
         </Button>
       </div>
@@ -259,11 +262,44 @@ function SetupCard({ onStart }: { onStart: () => void }) {
   );
 }
 
+/**
+ * Grupo de campos. Em tela larga é só um contêiner; abaixo de 1024 px vira seção de acordeão
+ * (o conteúdo fica montado, só escondido, para não perder foco nem estado).
+ */
+function PropertyGroup({ id, title, narrow, open, onToggle, children }: { id: string; title: string; narrow: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
+  if (!narrow) return <>{children}</>;
+  return (
+    <section aria-label={title} className="border-b border-line pb-2 last:border-b-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`prop-group-${id}`}
+        onClick={onToggle}
+        className="flex h-8 w-full items-center gap-1 rounded px-1 text-left text-xs font-semibold text-fg hover:bg-hover focus-visible:shadow-focus focus-visible:outline-none"
+      >
+        {open ? <ChevronDown aria-hidden="true" className="size-4 text-fg-muted" /> : <ChevronRight aria-hidden="true" className="size-4 text-fg-muted" />}
+        {title}
+      </button>
+      <div id={`prop-group-${id}`} hidden={!open} className="mt-2 space-y-3">
+        {children}
+      </div>
+    </section>
+  );
+}
+
 /** Propriedades do ticket (`w-props`, rola sozinho). Tudo que se edita aqui fica PENDENTE no formStore até o envio. */
 export function PropertiesPanel({ ticketKey }: { ticketKey: string }) {
   const entry = useFormEntry(ticketKey);
   const allTags = useTickets((s) => s.tickets);
-  const [aiOpen, setAiOpen] = useState(true);
+  const narrow = useIsNarrow();
+  const [aiOpen, setAiOpen] = useState(!narrow);
+  // Acordeão (< 1024 px): abre só o primeiro grupo; erros de validação reabrem o grupo do campo.
+  const [groups, setGroups] = useState<Record<string, boolean>>({ people: true, classify: false });
+  const toggleGroup = (id: string) => setGroups((g) => ({ ...g, [id]: !g[id] }));
+  const hasPeopleError = Boolean(entry?.errors.requester || entry?.errors.assignee);
+  useEffect(() => {
+    if (hasPeopleError) setGroups((g) => ({ ...g, people: true }));
+  }, [hasPeopleError]);
   const suggestions = useMemo(() => [...new Set(allTags.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [allTags]);
   if (!entry) return null;
   const { values } = entry;
@@ -273,19 +309,23 @@ export function PropertiesPanel({ ticketKey }: { ticketKey: string }) {
   return (
     <aside aria-label="Propriedades do ticket" className={cn('flex w-props shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-1')}>
       <div className="space-y-3 p-4">
-        <RequesterField ticketKey={ticketKey} disabled={disabled} autoFocus={entry.isNew && !values.requesterId} />
-        <AssigneeField ticketKey={ticketKey} disabled={disabled} />
-        <FollowersField ticketKey={ticketKey} disabled={disabled} />
-        <FollowerChips ticketKey={ticketKey} disabled={disabled} />
-        <Field label="Tags">
-          <TagInput value={values.tags} disabled={disabled} suggestions={suggestions} placeholder="Adicionar tag" onChange={(tags) => patch(ticketKey, { tags })} />
-        </Field>
-        <Field label="Tipo">
-          <Select value={values.type ?? NONE} options={TYPE_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { type: (v || null) as TicketType | null })} />
-        </Field>
-        <Field label="Prioridade">
-          <Select value={values.priority ?? NONE} options={PRIORITY_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { priority: (v || null) as Priority | null })} />
-        </Field>
+        <PropertyGroup id="people" title="Solicitante e atribuição" narrow={narrow} open={groups.people} onToggle={() => toggleGroup('people')}>
+          <RequesterField ticketKey={ticketKey} disabled={disabled} autoFocus={entry.isNew && !values.requesterId} />
+          <AssigneeField ticketKey={ticketKey} disabled={disabled} />
+          <FollowersField ticketKey={ticketKey} disabled={disabled} />
+          <FollowerChips ticketKey={ticketKey} disabled={disabled} />
+        </PropertyGroup>
+        <PropertyGroup id="classify" title="Classificação" narrow={narrow} open={groups.classify} onToggle={() => toggleGroup('classify')}>
+          <Field label="Tags">
+            <TagInput value={values.tags} disabled={disabled} suggestions={suggestions} placeholder="Adicionar tag" onChange={(tags) => patch(ticketKey, { tags })} />
+          </Field>
+          <Field label="Tipo">
+            <Select value={values.type ?? NONE} options={TYPE_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { type: (v || null) as TicketType | null })} />
+          </Field>
+          <Field label="Prioridade">
+            <Select value={values.priority ?? NONE} options={PRIORITY_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { priority: (v || null) as Priority | null })} />
+          </Field>
+        </PropertyGroup>
         <AiFields ticketKey={ticketKey} disabled={disabled} open={aiOpen} onToggle={() => setAiOpen((o) => !o)} />
         <SetupCard onStart={() => setAiOpen(true)} />
       </div>

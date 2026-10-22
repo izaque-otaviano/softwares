@@ -69,7 +69,7 @@ export const routes: RouteObject[] = [
       { path: '*', element: <AdminOutOfScope /> },
     ],
   },
-  { path: '*', element: lazyEl(<NotFound />) },
+  { path: '*', element: <main id="conteudo" className="h-screen bg-surface text-fg">{lazyEl(<NotFound />)}</main> },
 ];
 
 export const routerFuture = {

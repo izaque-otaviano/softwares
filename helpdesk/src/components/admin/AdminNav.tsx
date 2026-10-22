@@ -48,7 +48,7 @@ export function AdminSecondaryNav() {
       <nav aria-label={section.label} className="pb-4">
         {section.groups.map((group) => (
           <div key={group.label} className="mt-3 px-4 first:mt-1">
-            <h3 className="mb-1 border-b border-line pb-1 text-2xs font-semibold uppercase tracking-wide text-fg-subtle">{group.label}</h3>
+            <h3 className="mb-1 border-b border-line pb-1 text-2xs font-semibold uppercase tracking-wide text-fg-muted">{group.label}</h3>
             <ul className="flex flex-col gap-0.5">
               {group.items.map((item) => {
                 const active = isItemActive(pathname, item);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Field, Input, Modal, Select, StatusDot, Textarea } from '@/components/ui';
+import { Banner, Button, Field, Input, Modal, Select, StatusDot, Textarea } from '@/components/ui';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/lib/status';
 import { toast } from '@/store/useUi';
 import { useTickets } from '@/store/useTickets';
@@ -84,9 +84,9 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
     >
       <div className="flex flex-col gap-4">
         {apiError ? (
-          <p role="alert" className="text-sm text-danger">
-            {apiError}
-          </p>
+          <Banner tone="error" onRetry={() => void save()}>
+            {apiError} O que você digitou foi mantido.
+          </Banner>
         ) : null}
         <Field label="Categoria do status" required>
           <Select

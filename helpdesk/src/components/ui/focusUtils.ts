@@ -88,6 +88,14 @@ export function isFocusAdrift(): boolean {
   return active.tabIndex < 0 && !active.matches(INTERACTIVE);
 }
 
+/**
+ * Para `onCloseAutoFocus` de popovers cujo conteúdo move o foco de propósito (ex.: aplicar formatação devolve o foco ao editor):
+ * respeita o foco já colocado em um controle e, se ele ficou solto (corpo da página), deixa o Radix devolvê-lo ao gatilho.
+ */
+export function keepFocusIfPlaced(event: Event): void {
+  if (!isFocusAdrift()) event.preventDefault();
+}
+
 /** O gatilho de um conteúdo Radix (menu, select, popover), achado pelo `aria-labelledby` do próprio conteúdo. */
 export function triggerOfRadixContent(content: EventTarget | null): HTMLElement | null {
   if (!(content instanceof Element)) return null;

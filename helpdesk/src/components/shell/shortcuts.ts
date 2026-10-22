@@ -1,10 +1,34 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { create } from 'zustand';
 import { useSearchUi } from './searchState';
 
-function isTyping(target: EventTarget | null): boolean {
+/** Estado de abertura do diálogo de ajuda de atalhos (tecla "?"). */
+export const useShortcutsHelp = create<{ open: boolean; setOpen: (open: boolean) => void }>()((set) => ({
+  open: false,
+  setOpen: (open) => set({ open }),
+}));
+
+/** Foco em campo de texto, ou dentro de diálogo/menu/lista aberta: atalhos de uma tecla não valem. */
+export function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+  if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return true;
+  return target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]') !== null;
+}
+
+/** "?" abre a ajuda de atalhos. Funciona em qualquer tela (agente e administração). */
+export function useHelpShortcut(): void {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      if (e.key === '?') {
+        e.preventDefault();
+        useShortcutsHelp.getState().setOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 }
 
 /** Atalhos globais: `g` depois `h` (Início), `g` `v` (Views), `/` (busca). Ignorados quando o foco está em campo de texto. */

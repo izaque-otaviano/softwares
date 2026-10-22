@@ -68,7 +68,7 @@ export function ProfileTickets({ tableId, requested, cc, loading, error }: Profi
             ]}
           />
         ) : (
-          <h3 className="text-sm font-semibold text-fg">Tickets solicitados ({requested.length})</h3>
+          <h2 className="text-sm font-semibold text-fg">Tickets solicitados ({requested.length})</h2>
         )}
         <Button variant="outline" leadingIcon={<ListFilter />} aria-expanded={filterOpen} onClick={() => setFilterOpen((o) => !o)}>
           {activeFilters ? `Filtrar (${activeFilters})` : 'Filtrar'}

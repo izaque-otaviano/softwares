@@ -2,7 +2,7 @@ import { ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { macrosApi } from '@/api';
 import { goTo } from '@/components/shell/openTab';
-import { Button, Modal, Skeleton, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui';
+import { Banner, Button, Modal, Skeleton, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui';
 import { CATEGORY_LABEL, DEFAULT_STATUSES, PRIORITY_LABEL } from '@/lib/status';
 import { useTickets } from '@/store/useTickets';
 import type { Macro } from '@/types/domain';
@@ -28,6 +28,7 @@ export function MacroPreviewModal({ macro, onOpenChange, onApply }: Props) {
   const storeStatuses = useTickets((s) => s.statuses);
   const [loaded, setLoaded] = useState<Macro | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const id = macro?.id;
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export function MacroPreviewModal({ macro, onOpenChange, onApply }: Props) {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, attempt]);
 
   const current = loaded ?? null;
   const statuses = storeStatuses.length ? storeStatuses : DEFAULT_STATUSES;
@@ -78,9 +79,9 @@ export function MacroPreviewModal({ macro, onOpenChange, onApply }: Props) {
       }
     >
       {failed ? (
-        <p role="alert" className="text-sm text-danger">
+        <Banner tone="error" onRetry={() => setAttempt((n) => n + 1)}>
           Não foi possível carregar a macro.
-        </p>
+        </Banner>
       ) : !current ? (
         <div role="status" className="flex gap-6">
           <span className="sr-only">Carregando...</span>

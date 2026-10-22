@@ -2,7 +2,7 @@ import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { usersApi } from '@/api';
 import { openTicket, openUser } from '@/components/shell/openTab';
-import { Avatar, IconButton, StatusDot, Textarea } from '@/components/ui';
+import { Avatar, Banner, IconButton, StatusDot, Textarea } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { DEFAULT_STATUSES } from '@/lib/status';
 import { relativeTime } from '@/lib/time';
@@ -40,9 +40,12 @@ export function CustomerPanel({ ticketKey }: { ticketKey: string }) {
   const [profileOpen, setProfileOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [now, setNow] = useState(() => new Date());
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     setUser(null);
+    setLoadFailed(false);
     if (!requesterId) return;
     let alive = true;
     usersApi
@@ -52,18 +55,19 @@ export function CustomerPanel({ ticketKey }: { ticketKey: string }) {
         setUser(u);
         setNotes(u.notes ?? '');
       })
-      .catch(() => {});
+      .catch(() => alive && setLoadFailed(true));
     return () => {
       alive = false;
     };
-  }, [requesterId]);
+  }, [requesterId, attempt]);
 
+  // Se falhar, o texto digitado continua no campo; o toast oferece nova tentativa.
   const saveNotes = () => {
     if (!user || notes === (user.notes ?? '')) return;
     usersApi
       .updateUser(user.id, { notes })
       .then((u) => setUser(u))
-      .catch(() => toast.error('Não foi possível salvar as observações.'));
+      .catch(() => toast.error('Não foi possível salvar as observações.', { action: { label: 'Tentar novamente', onClick: saveNotes } }));
   };
 
   if (!requesterId) {
@@ -81,7 +85,11 @@ export function CustomerPanel({ ticketKey }: { ticketKey: string }) {
 
   return (
     <PanelShell title="Cliente">
-      {!user ? (
+      {!user && loadFailed ? (
+        <Banner tone="error" title="Não foi possível carregar o cliente" className="m-4" onRetry={() => setAttempt((n) => n + 1)}>
+          Nada do que você digitou no ticket foi perdido.
+        </Banner>
+      ) : !user ? (
         <p role="status" className="p-4 text-sm text-fg-muted">
           Carregando...
         </p>

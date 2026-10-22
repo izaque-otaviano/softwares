@@ -69,7 +69,7 @@ function AdminSearch() {
                   className="flex h-8 w-full items-center justify-between px-3 text-left text-sm text-fg outline-none hover:bg-hover focus-visible:shadow-focus"
                 >
                   {r.label}
-                  <span className="text-xs text-fg-subtle">{r.section.label}</span>
+                  <span className="text-xs text-fg-muted">{r.section.label}</span>
                 </button>
               </li>
             ))
@@ -85,7 +85,8 @@ function UserMenu() {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <button type="button" aria-label={`${ADMIN_USER}, administrador`} className="inline-flex h-8 w-8 items-center justify-center rounded-pill outline-none focus-visible:shadow-focus">
+        <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-pill outline-none focus-visible:shadow-focus">
+          <span className="sr-only">{`${ADMIN_USER}, administrador`}</span>
           <Avatar name={ADMIN_USER} size={28} decorative />
         </button>
       </MenuTrigger>

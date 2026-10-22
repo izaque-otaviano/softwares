@@ -51,13 +51,13 @@ export default function Views() {
         onNew={() => setDialog('new')}
         onRefresh={() => void useTickets.getState().refreshCounts()}
       />
-      <main className="flex min-w-0 flex-1 flex-col bg-surface" aria-label="Visualização">
+      <section className="flex min-w-0 flex-1 flex-col bg-surface" aria-label="Visualização">
         {view ? (
           <ViewContent key={view.id} view={view} dialog={dialog} setDialog={setDialog} />
         ) : (
           <div className="p-6 text-sm text-fg-muted">Visualização não encontrada.</div>
         )}
-      </main>
+      </section>
       <Modal
         open={dialog === 'new'}
         onOpenChange={(o) => !o && setDialog(null)}
@@ -120,7 +120,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const open = useCallback((t: Ticket) => openTicket(t.id), []);
 
   const exportCsv = () => {
-    downloadCsv(`${view.name.toLowerCase().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}.csv`, buildCsv(rows, columnIds, lookups));
+    downloadCsv(`${view.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}.csv`, buildCsv(rows, columnIds, lookups));
     toast.success(`${rows.length} ${rows.length === 1 ? 'ticket exportado' : 'tickets exportados'}`);
   };
 

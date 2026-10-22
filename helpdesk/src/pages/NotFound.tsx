@@ -8,6 +8,7 @@ export default function NotFound() {
       <EmptyState
         illustration="search"
         title="Nada aqui."
+        headingLevel={1}
         description="A página que você está procurando não existe ou você não tem acesso a ela."
         action={<Button onClick={() => navigate('/agent/home')}>Ir para o início</Button>}
       />

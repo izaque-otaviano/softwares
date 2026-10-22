@@ -4,7 +4,7 @@ import { Eye, Plus, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { macrosApi } from '@/api';
 import { goTo } from '@/components/shell/openTab';
-import { Button, SkeletonRows } from '@/components/ui';
+import { Banner, Button, SkeletonRows } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { OPTION_ACTIVE_CMDK } from '@/components/ui/optionStyles';
 import type { Macro } from '@/types/domain';
@@ -16,6 +16,7 @@ export function MacroPicker({ ticketKey }: { ticketKey: string }) {
   const [open, setOpen] = useState(false);
   const [macros, setMacros] = useState<Macro[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [highlight, setHighlight] = useState('');
   const [preview, setPreview] = useState<Macro | null>(null);
 
@@ -30,7 +31,7 @@ export function MacroPicker({ ticketKey }: { ticketKey: string }) {
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, attempt]);
 
   const apply = (macro: Macro) => {
     useFormStore.getState().applyMacro(ticketKey, macro);
@@ -80,11 +81,15 @@ export function MacroPicker({ ticketKey }: { ticketKey: string }) {
                   className="h-8 w-full rounded border border-line-strong bg-surface px-2 text-sm outline-none placeholder:text-fg-muted focus:border-action focus:shadow-focus"
                 />
               </div>
+              {macros === null && !failed ? (
+                <SkeletonRows rows={3} columns={1} label="Carregando macros" className="p-1" />
+              ) : null}
+              {failed ? (
+                <Banner tone="error" className="m-1" onRetry={() => setAttempt((n) => n + 1)}>
+                  Não foi possível carregar as macros.
+                </Banner>
+              ) : null}
               <Command.List aria-label="Lista de macros" className="max-h-64 overflow-y-auto p-1">
-                {macros === null && !failed ? (
-                  <SkeletonRows rows={3} columns={1} label="Carregando macros" className="p-1" />
-                ) : null}
-                {failed ? <p className="px-2 py-3 text-sm text-danger">Não foi possível carregar as macros.</p> : null}
                 {macros ? <Command.Empty className="px-2 py-3 text-sm text-fg-muted">Nenhuma macro encontrada.</Command.Empty> : null}
                 {macros?.map((m) => (
                   <Command.Item
@@ -95,9 +100,11 @@ export function MacroPicker({ ticketKey }: { ticketKey: string }) {
                     className={cn('flex min-h-8 cursor-default select-none items-center gap-2 rounded-xs px-2 py-1 outline-none', OPTION_ACTIVE_CMDK)}
                   >
                     <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                    <button
-                      type="button"
-                      aria-label={`Pré-visualizar ${m.name}`}
+                    <span
+                      title={`Pré-visualizar ${m.name}`}
+                      // Atalho só de ponteiro: dentro de uma opção não pode haver controle interativo exposto (nested-interactive).
+                      // Teclado e leitor de tela usam Shift+Enter na opção (por isso não é um <button> focável).
+                      aria-hidden="true"
                       onClick={(e) => {
                         e.stopPropagation();
                         setPreview(m);
@@ -106,7 +113,7 @@ export function MacroPicker({ ticketKey }: { ticketKey: string }) {
                       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-muted outline-none transition-colors duration-100 hover:bg-hover hover:text-fg focus-visible:shadow-focus"
                     >
                       <Eye aria-hidden className="h-4 w-4" />
-                    </button>
+                    </span>
                   </Command.Item>
                 ))}
               </Command.List>

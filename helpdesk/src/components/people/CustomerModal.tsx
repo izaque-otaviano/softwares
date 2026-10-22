@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { orgsApi, usersApi } from '@/api';
-import { Button, Combobox, Field, Input, Modal, TagInput } from '@/components/ui';
+import { Banner, Button, Combobox, Field, Input, Modal, TagInput } from '@/components/ui';
 import { toast } from '@/store/useUi';
 import type { Org, User } from '@/types/domain';
 import { EMAIL_RE } from './peopleUtils';
@@ -20,6 +20,7 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
   const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [busy, setBusy] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -28,6 +29,7 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
     setOrgId(null);
     setTags([]);
     setErrors({});
+    setApiError(null);
     orgsApi.listOrgs().then(setOrgs).catch(() => {});
   }, [open]);
 
@@ -37,6 +39,7 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
     if (!email.trim()) next.email = 'Informe o e-mail.';
     else if (!EMAIL_RE.test(email.trim())) next.email = 'Informe um e-mail válido.';
     setErrors(next);
+    setApiError(null);
     if (next.name || next.email) return;
     setBusy(true);
     try {
@@ -50,7 +53,8 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
       onCreated(user);
       onOpenChange(false);
     } catch {
-      toast.error('Não foi possível criar o cliente. Tente novamente.');
+      // Mantém o modal aberto com o que foi digitado.
+      setApiError('Não foi possível criar o cliente. O que você digitou foi mantido.');
     } finally {
       setBusy(false);
     }
@@ -81,6 +85,11 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
           void submit();
         }}
       >
+        {apiError ? (
+          <Banner tone="error" onRetry={() => void submit()}>
+            {apiError}
+          </Banner>
+        ) : null}
         <Field label="Nome" required error={errors.name}>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>

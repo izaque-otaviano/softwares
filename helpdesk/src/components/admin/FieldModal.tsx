@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { fieldsApi } from '@/api';
-import { Button, Field, Input, Modal, Select, TagInput, Textarea } from '@/components/ui';
+import { Banner, Button, Field, Input, Modal, Select, TagInput, Textarea } from '@/components/ui';
 import { toast } from '@/store/useUi';
 import type { TicketField } from '@/types/domain';
 
@@ -29,6 +29,7 @@ function FieldForm({ field, onOpenChange, onSaved }: Omit<FieldModalProps, 'open
   const [options, setOptions] = useState<string[]>(field?.options ?? []);
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const titleError = !title.trim() ? 'Informe o nome de exibição.' : undefined;
   const optionsError = type === 'dropdown' && options.length === 0 ? 'Adicione ao menos uma opção.' : undefined;
@@ -37,6 +38,7 @@ function FieldForm({ field, onOpenChange, onSaved }: Omit<FieldModalProps, 'open
     setTouched(true);
     if (titleError || optionsError) return;
     setSaving(true);
+    setApiError(null);
     try {
       const extra = { description: description.trim() || undefined, options: type === 'dropdown' ? options : undefined };
       if (field) await fieldsApi.updateField(field.id, { title: title.trim(), ...extra });
@@ -45,7 +47,7 @@ function FieldForm({ field, onOpenChange, onSaved }: Omit<FieldModalProps, 'open
       onOpenChange(false);
       onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Não foi possível salvar o campo.');
+      setApiError(`${e instanceof Error ? e.message : 'Não foi possível salvar o campo.'} O que você digitou foi mantido.`);
     } finally {
       setSaving(false);
     }
@@ -68,6 +70,11 @@ function FieldForm({ field, onOpenChange, onSaved }: Omit<FieldModalProps, 'open
       }
     >
       <div className="flex flex-col gap-4">
+        {apiError ? (
+          <Banner tone="error" onRetry={() => void submit()}>
+            {apiError}
+          </Banner>
+        ) : null}
         <Field label="Nome de exibição" required error={touched ? titleError : undefined}>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>

@@ -1,4 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
+import { keepFocusIfPlaced } from '@/components/ui/focusUtils';
 import { Send } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
 
@@ -43,7 +44,7 @@ export function AiMenu({ trigger, busy, onRun }: { trigger: ReactElement; busy: 
           align="start"
           sideOffset={6}
           aria-label="Assistente de IA"
-          onCloseAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={keepFocusIfPlaced}
           className="anim-pop-in z-[80] w-64 rounded border border-line bg-surface p-1 shadow-pop"
         >
           {AI_ACTIONS.map((a) => (
