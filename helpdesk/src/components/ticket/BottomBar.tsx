@@ -17,7 +17,7 @@ export function BottomBar({ ticketKey }: { ticketKey: string }) {
   const items = useMemo<SplitItem[]>(
     () =>
       statuses
-        .filter((s) => (isNew || s.id !== 'new') && (s.active !== false || s.id === currentId))
+        .filter((s) => (isNew || s.category !== 'new') && (s.active !== false || s.id === currentId))
         .map((s) => ({ id: s.id, label: s.agentName, leading: <StatusDot color={s.color} /> })),
     [statuses, isNew, currentId],
   );

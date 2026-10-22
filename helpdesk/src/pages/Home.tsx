@@ -9,7 +9,7 @@ import { Banner, Button, EmptyState, Menu, MenuContent, MenuItem, MenuTrigger, S
 import { cn } from '@/lib/cn';
 import { useNow } from '@/lib/useNow';
 import { useTickets } from '@/store/useTickets';
-import { ME_ID } from '@/mocks/clock';
+import { useMeId } from '@/store/useSession';
 import type { Ticket } from '@/types/domain';
 
 type SortMode = 'recommended' | 'recent' | 'oldest';
@@ -34,6 +34,7 @@ export default function Home() {
   const loading = useTickets((s) => s.loading);
   const error = useTickets((s) => s.error);
   const users = useDirectory();
+  const meId = useMeId();
   const now = useNow(60_000);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'web_form'>('all');
@@ -44,8 +45,8 @@ export default function Home() {
   }, [loaded, loading, error]);
 
   const mine = useMemo(
-    () => tickets.filter((t) => t.assigneeId === ME_ID && statuses.find((s) => s.id === t.statusId)?.category !== 'solved'),
-    [tickets, statuses],
+    () => tickets.filter((t) => t.assigneeId === meId && statuses.find((s) => s.id === t.statusId)?.category !== 'solved'),
+    [tickets, statuses, meId],
   );
   const rows = useMemo(() => {
     const filtered = mine.filter((t) => (statusFilter === 'all' || t.statusId === statusFilter) && (channelFilter === 'all' || t.channel === channelFilter));
@@ -62,9 +63,9 @@ export default function Home() {
   const solvedWeek = useMemo(() => {
     const since = now.getTime() - 7 * 86_400_000;
     return tickets.filter(
-      (t) => t.assigneeId === ME_ID && statuses.find((s) => s.id === t.statusId)?.category === 'solved' && new Date(t.updatedAt).getTime() >= since,
+      (t) => t.assigneeId === meId && statuses.find((s) => s.id === t.statusId)?.category === 'solved' && new Date(t.updatedAt).getTime() >= since,
     ).length;
-  }, [tickets, statuses, now]);
+  }, [tickets, statuses, now, meId]);
 
   const isLoading = !loaded && !error;
   const statusLabel = statusFilter === 'all' ? 'Status' : (statuses.find((s) => s.id === statusFilter)?.agentName ?? 'Status');

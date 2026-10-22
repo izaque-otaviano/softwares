@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { statuses, tickets, users } from '@/mocks';
+import { statuses, tickets, users } from '@/api/mock/data';
 import { applyFilters, buildCsv, EMPTY_FILTERS, sortTickets, type Lookups } from './viewQuery';
 
 const lk: Lookups = { statuses, users: new Map(users.map((u) => [u.id, u])) };

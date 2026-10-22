@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { statuses, tickets, views, ME_ID } from '@/mocks';
+import { statuses, tickets, views, ME_ID } from '@/api/mock/data';
 import { countView, countViews, runView } from './views';
 
 const ctx = { meId: ME_ID, now: new Date(), statuses };

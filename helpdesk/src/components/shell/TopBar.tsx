@@ -1,14 +1,15 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, ChevronDown, MessageSquare, Phone } from 'lucide-react';
+import { Bell, ChevronDown, LogOut, MessageSquare, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, IconButton, Menu, MenuContent, MenuItem, MenuTrigger, PRESENCE_LABEL, StatusDot, type Presence } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { IS_REAL } from '@/api/mode';
+import { useSession } from '@/store/useSession';
 import { toast } from '@/store/useUi';
 import { GlobalSearch } from './GlobalSearch';
 import { useAgentPresence } from './presence';
 import { WorkTabs } from './WorkTabs';
 
-export const AGENT_NAME = 'Marina Alves';
 const UNREAD_NOTIFICATIONS = 3;
 const CONVERSATIONS_COUNT = 0;
 
@@ -39,6 +40,14 @@ const PRESENCES: Presence[] = ['available', 'away', 'offline'];
 function AgentMenu() {
   const presence = useAgentPresence((s) => s.presence);
   const setPresence = useAgentPresence((s) => s.setPresence);
+  const user = useSession((s) => s.user);
+  const agentName = user?.name ?? 'Agente';
+  const roleLabel = user?.role === 'admin' ? 'Administrador' : 'Agente';
+  const navigate = useNavigate();
+  const signOut = async () => {
+    await useSession.getState().logout();
+    navigate('/login', { replace: true });
+  };
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -46,8 +55,8 @@ function AgentMenu() {
           type="button"
           className="inline-flex h-8 w-8 items-center justify-center rounded-pill outline-none focus-visible:shadow-focus"
         >
-          <span className="sr-only">{`${AGENT_NAME}, ${PRESENCE_LABEL[presence]}`}</span>
-          <Avatar name={AGENT_NAME} size={28} presence={presence} decorative />
+          <span className="sr-only">{`${agentName}, ${PRESENCE_LABEL[presence]}`}</span>
+          <Avatar name={agentName} size={28} presence={presence} decorative />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -57,8 +66,8 @@ function AgentMenu() {
           aria-label="Conta do agente"
           className="anim-pop-in z-[80] w-60 rounded border border-line bg-surface p-3 text-sm text-fg shadow-menu outline-none"
         >
-          <p className="font-semibold">{AGENT_NAME}</p>
-          <p className="mb-2 text-xs text-fg-muted">Agente</p>
+          <p className="font-semibold">{agentName}</p>
+          <p className="mb-2 text-xs text-fg-muted">{roleLabel}</p>
           <div role="radiogroup" aria-label="Status do agente" className="flex flex-col gap-0.5">
             {PRESENCES.map((p) => (
               <button
@@ -77,6 +86,19 @@ function AgentMenu() {
               </button>
             ))}
           </div>
+          {IS_REAL ? (
+            <>
+              <div role="separator" className="my-2 border-t border-line" />
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                className="flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left outline-none hover:bg-hover focus-visible:shadow-focus"
+              >
+                <LogOut aria-hidden className="h-4 w-4 text-fg-muted" />
+                Sair
+              </button>
+            </>
+          ) : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

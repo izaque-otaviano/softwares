@@ -20,6 +20,7 @@ import {
   type Lookups,
 } from '@/components/lists/viewQuery';
 import { Button, ConfirmModal, Input, Modal, type MenuItemSpec, type SortState } from '@/components/ui';
+import { statusIdByCategory } from '@/lib/status';
 import { useNow } from '@/lib/useNow';
 import { useTickets } from '@/store/useTickets';
 import { toast } from '@/store/useUi';
@@ -77,6 +78,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const views = useTickets((s) => s.views);
   const loaded = useTickets((s) => s.loaded);
   const error = useTickets((s) => s.error);
+  const viewIds = useTickets((s) => s.viewIds[viewId]);
   const users = useDirectory();
   const now = useNow(60_000);
 
@@ -99,7 +101,13 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
     const base = useTickets.getState().ticketsForView(viewId);
     return sortTickets(applyFilters(base, filters), sort, lookups, grouped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickets, statuses, views, viewId, filters, sort, lookups, grouped]);
+  }, [tickets, statuses, views, viewId, viewIds, filters, sort, lookups, grouped]);
+
+  // Visões avaliadas no servidor (modo real): busca a lista ao abrir.
+  const serverView = Boolean(view.query);
+  useEffect(() => {
+    if (serverView && loaded && viewIds === undefined) void useTickets.getState().loadView(viewId);
+  }, [serverView, loaded, viewId, viewIds]);
 
   // Remove da seleção o que saiu da lista (apagado, filtrado, mudou de view).
   useEffect(() => {
@@ -113,7 +121,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const requesters = useMemo(() => [...users.values()].filter((u) => u.role === 'end_user'), [users]);
   const tagSuggestions = useMemo(() => [...new Set(tickets.flatMap((t) => t.tags))].sort(), [tickets]);
   const activeFilters = countActiveFilters(filters);
-  const isLoading = !loaded && !error;
+  const isLoading = (!loaded && !error) || (serverView && !viewIds);
   const play = usePlayQueue();
 
   const sortState: SortState | null = sort;
@@ -127,7 +135,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const rowActions = (t: Ticket): MenuItemSpec[] => [
     { id: 'open', label: 'Abrir ticket', onSelect: () => openTicket(t.id) },
     { id: 'assign', label: 'Atribuir a mim', onSelect: () => void useTickets.getState().assignToMe([t.id]) },
-    { id: 'solve', label: 'Marcar como resolvido', onSelect: () => void useTickets.getState().setStatus([t.id], 'solved') },
+    { id: 'solve', label: 'Marcar como resolvido', onSelect: () => void useTickets.getState().setStatus([t.id], statusIdByCategory(statuses, 'solved')) },
     { id: 'delete', label: 'Apagar', tone: 'danger', onSelect: () => setDeleteId(t.id) },
   ];
 

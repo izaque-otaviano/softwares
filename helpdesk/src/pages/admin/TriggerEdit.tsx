@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { triggersApi, metaApi } from '@/api';
+import { RealModeNotice } from '@/components/shell/RealModeNotice';
 import { EditFooter, PageHeader } from '@/components/admin/PageHeader';
 import { DropdownButton } from '@/components/admin/lists/DropdownButton';
 import { useAsync } from '@/components/admin/lists/useAsync';
@@ -146,6 +147,7 @@ export default function TriggerEdit() {
 
   return (
     <div className="flex min-h-full flex-col bg-surface">
+      <RealModeNotice feature="triggers">Gatilhos ainda não existem no backend: valem somente neste navegador e NÃO disparam sobre tickets reais.</RealModeNotice>
       <PageHeader
         breadcrumb={breadcrumb}
         title={isNew ? 'Novo gatilho' : draft.name}

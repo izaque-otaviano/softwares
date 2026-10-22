@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { resetDb, db } from '@/api/db';
-import { configureApi } from '@/api/delay';
-import { macros } from '@/mocks';
+import { resetDb, db } from '@/api/mock/db';
+import { configureApi } from '@/api/mock/delay';
+import { macros } from '@/api/mock/data';
 import { useTabs } from '@/store/useTabs';
 import { useTickets } from '@/store/useTickets';
 import { useUi } from '@/store/useUi';

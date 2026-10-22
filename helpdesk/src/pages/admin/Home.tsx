@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { fieldsApi, macrosApi, membersApi, triggersApi } from '@/api';
 import { AdminBody, ProgressBar } from '@/components/admin/AdminPage';
-import { ADMIN_USER } from '@/components/admin/AdminTopBar';
+import { useAdminName } from '@/components/admin/AdminTopBar';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { useAsync } from '@/components/admin/useAsync';
 import { Banner, EmptyState, Skeleton, Table, type ColumnDef } from '@/components/ui';
@@ -42,6 +42,7 @@ const COLUMNS: ColumnDef<ResourceRow>[] = [
 ];
 
 export default function AdminHome() {
+  const adminName = useAdminName();
   const { data, loading, error, reload } = useAsync<HomeData>(async () => {
     const [licenses, fields, macros, triggers] = await Promise.all([
       membersApi.getLicenses(),
@@ -63,7 +64,7 @@ export default function AdminHome() {
 
   return (
     <>
-      <PageHeader title={`Olá, ${ADMIN_USER.split(' ')[0]}`} description="Veja o uso da sua conta e o que merece atenção." />
+      <PageHeader title={`Olá, ${adminName.split(' ')[0]}`} description="Veja o uso da sua conta e o que merece atenção." />
       <AdminBody className="flex flex-col gap-8">
         <section aria-labelledby="home-reco">
           <h2 id="home-reco" className="mb-2 text-md font-semibold">

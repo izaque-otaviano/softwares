@@ -1,3 +1,4 @@
+import { errMessage } from '@/lib/apiError';
 import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
@@ -45,8 +46,8 @@ export default function Statuses() {
     try {
       await useTickets.getState().saveStatus({ ...s, active: !isActive(s) });
       toast.success(isActive(s) ? `Status "${s.agentName}" desativado` : `Status "${s.agentName}" ativado`);
-    } catch {
-      toast.error('Não foi possível alterar o status. Tente novamente.');
+    } catch (e) {
+      toast.error(errMessage(e, 'Não foi possível alterar o status. Tente novamente.'));
     }
   };
 
@@ -71,7 +72,7 @@ export default function Statuses() {
   const rowActions = (s: TicketStatus): MenuItemSpec[] => [
     { id: 'edit', label: 'Editar', onSelect: () => setModal({ open: true, status: s }) },
     isActive(s)
-      ? { id: 'deactivate', label: 'Desativar', disabled: SYSTEM_STATUS_IDS.includes(s.id), onSelect: () => void toggleActive(s) }
+      ? { id: 'deactivate', label: 'Desativar', disabled: s.system ?? SYSTEM_STATUS_IDS.includes(s.id), onSelect: () => void toggleActive(s) }
       : { id: 'activate', label: 'Ativar', onSelect: () => void toggleActive(s) },
   ];
 

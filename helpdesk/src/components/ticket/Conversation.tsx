@@ -1,3 +1,4 @@
+import { localHint } from '@/api/capabilities';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDirectory } from '@/components/lists/useDirectory';
@@ -97,7 +98,7 @@ export function Conversation({ ticketKey }: { ticketKey: string }) {
           <section aria-label="Resumo do ticket" className="mb-4 rounded border border-line bg-surface-1 p-3 text-sm text-fg">
             <p className="mb-1 inline-flex items-center gap-1 text-xs font-semibold text-ai">
               <Sparkles aria-hidden className="h-3.5 w-3.5" />
-              Resumo gerado por IA
+              Resumo gerado por IA{localHint('aiSummary') ? ' (somente neste navegador)' : ''}
             </p>
             <p>{mockSummary(ticket, requester?.name)}</p>
           </section>

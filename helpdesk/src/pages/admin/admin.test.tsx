@@ -6,7 +6,7 @@ import { configureApi, resetDb } from '@/api';
 import { AdminLayout } from '@/app/AdminLayout';
 import { resourceRows } from './Home';
 import { TooltipProvider } from '@/components/ui';
-import { macros, triggers } from '@/mocks';
+import { macros, triggers } from '@/api/mock/data';
 import { useUi } from '@/store/useUi';
 import AdminFields from './Fields';
 import AdminGroups from './Groups';

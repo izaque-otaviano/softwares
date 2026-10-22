@@ -17,6 +17,7 @@ const ADMIN_TITLES: Record<string, string> = {
 export function routeLabel(pathname: string, search = ''): string {
   const p = pathname.replace(/\/+$/, '') || '/';
   const seg = p.split('/').filter(Boolean);
+  if (seg[0] === 'login') return 'Entrar';
   if (seg[0] === 'kit') return 'Kit de componentes';
   if (seg[0] === 'agent') {
     const area = seg[1] ?? 'home';

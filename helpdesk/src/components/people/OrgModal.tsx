@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { orgsApi } from '@/api';
-import { Banner, Button, Field, Input, Modal, TagInput } from '@/components/ui';
+import { IS_REAL } from '@/api/mode';
+import { errMessage } from '@/lib/apiError';
+import { Banner, Button, Field, Input, Modal, Select, TagInput } from '@/components/ui';
 import { toast } from '@/store/useUi';
 import type { Org } from '@/types/domain';
 
@@ -19,6 +21,8 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
   const [tags, setTags] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [plans, setPlans] = useState<{ id: string; name: string }[]>([]);
+  const [planId, setPlanId] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,6 +32,9 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
     setTags([]);
     setError(undefined);
     setApiError(null);
+    setPlanId('');
+    // O backend exige o plano da empresa (só o modo real tem planos).
+    if (IS_REAL) orgsApi.listPlans().then((l) => { setPlans(l); setPlanId(l[0]?.id ?? ''); }).catch(() => {});
   }, [open]);
 
   const submit = async () => {
@@ -39,12 +46,12 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
     setApiError(null);
     setBusy(true);
     try {
-      const org = await orgsApi.createOrg({ name: name.trim(), domains, tags });
+      const org = await orgsApi.createOrg({ name: name.trim(), domains, tags, planId: planId || undefined });
       toast.success(`Organização “${org.name}” foi criada`);
       onCreated(org);
       onOpenChange(false);
-    } catch {
-      setApiError('Não foi possível criar a organização. O que você digitou foi mantido.');
+    } catch (e) {
+      setApiError(`${errMessage(e, 'Não foi possível criar a organização.')} O que você digitou foi mantido.`);
     } finally {
       setBusy(false);
     }
@@ -86,7 +93,12 @@ export function AddOrgModal({ open, onOpenChange, onCreated }: AddOrgModalProps)
         <Field label="Domínios" hint="Ex.: empresa.com.br">
           <TagInput value={domains} onChange={setDomains} placeholder="Adicionar domínio" validate={(d) => (DOMAIN_RE.test(d) ? null : 'Informe um domínio válido.')} />
         </Field>
-        <Field label="Tags">
+        {IS_REAL && plans.length > 0 ? (
+          <Field label="Plano" required hint="O backend exige o plano da empresa.">
+            <Select value={planId} onValueChange={setPlanId} options={plans.map((p) => ({ value: p.id, label: p.name }))} />
+          </Field>
+        ) : null}
+        <Field label="Tags" hint={IS_REAL ? 'Tags de organização ficam somente neste navegador.' : undefined}>
           <TagInput value={tags} onChange={setTags} placeholder="Adicionar tag" />
         </Field>
       </form>

@@ -1,3 +1,5 @@
+import { errMessage } from '@/lib/apiError';
+import { IS_REAL } from '@/api/mode';
 import { ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -32,7 +34,7 @@ import {
 import { relativeTime } from '@/lib/time';
 import { useTabs } from '@/store/useTabs';
 import { useTickets } from '@/store/useTickets';
-import { toast } from '@/store/useUi';
+import { toast, localSaved } from '@/store/useUi';
 import type { Group, Org, User } from '@/types/domain';
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'notfound' } | { status: 'ok'; org: Org };
@@ -128,8 +130,8 @@ function OrgProfile({ org, onOrgChange }: { org: Org; onOrgChange: (o: Org) => v
       onOrgChange(updated);
       setDraft(toDraft(updated));
       toast.success('Organização atualizada');
-    } catch {
-      toast.error('Não foi possível salvar. Suas alterações foram mantidas.');
+    } catch (e) {
+      toast.error(`${errMessage(e, 'Não foi possível salvar.')} Suas alterações foram mantidas.`);
     } finally {
       setSaving(false);
     }
@@ -152,7 +154,7 @@ function OrgProfile({ org, onOrgChange }: { org: Org; onOrgChange: (o: Org) => v
     },
     { id: 'email', header: 'E-mail', label: 'E-mail', width: 260, cell: (u) => u.email },
     { id: 'tags', header: 'Tags', label: 'Tags', width: 200, cell: (u) => (u.tags.length ? <span className="flex gap-1">{u.tags.map((t) => <Pill key={t}>{t}</Pill>)}</span> : '-') },
-    { id: 'updatedAt', header: 'Data da última atualização', label: 'Data da última atualização', width: 200, cell: (u) => relativeTime(u.updatedAt) },
+    { id: 'updatedAt', header: 'Data da última atualização', label: 'Data da última atualização', width: 200, cell: (u) => (u.updatedAt ? relativeTime(u.updatedAt) : '-') },
   ];
 
   return (
@@ -172,16 +174,16 @@ function OrgProfile({ org, onOrgChange }: { org: Org; onOrgChange: (o: Org) => v
           ) : undefined
         }
       >
-        <Field label="Tags">
+        <Field label="Tags" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <TagInput value={draft.tags} onChange={(v) => set('tags', v)} placeholder="Adicionar tag" />
         </Field>
         <Field label="Domínios">
           <TagInput value={draft.domains} onChange={(v) => set('domains', v)} placeholder="Adicionar domínio" />
         </Field>
-        <Field label="Grupo">
+        <Field label="Grupo" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Select value={draft.groupId} onValueChange={(v) => set('groupId', v)} options={[{ value: '', label: '-' }, ...groups.map((g) => ({ value: g.id, label: g.name }))]} />
         </Field>
-        <Field label="Usuários">
+        <Field label="Usuários" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Select value={draft.userAccess} onValueChange={(v) => set('userAccess', v as Org['userAccess'])} options={ACCESS_OPTIONS} />
         </Field>
         <Field label="Detalhes">
@@ -256,16 +258,16 @@ function OrgProfile({ org, onOrgChange }: { org: Org; onOrgChange: (o: Org) => v
         open={dialog === 'delete'}
         onOpenChange={(o) => !o && setDialog(null)}
         title={`Apagar ${org.name}?`}
-        description="Os usuários ficarão sem organização. Esta ação não pode ser desfeita."
+        description={IS_REAL ? 'O backend não apaga empresas: a organização será DESATIVADA e some das listas.' : 'Os usuários ficarão sem organização. Esta ação não pode ser desfeita.'}
         confirmLabel="Apagar organização"
         onConfirm={async () => {
           try {
             await orgsApi.deleteOrg(org.id);
           } catch (e) {
-            toast.error('Não foi possível apagar a organização. Tente novamente.');
+            toast.error(errMessage(e, 'Não foi possível apagar a organização. Tente novamente.'));
             throw e;
           }
-          toast.success(`${org.name} foi apagada`);
+          toast.success(IS_REAL ? `${org.name} foi desativada` : `${org.name} foi apagada`);
           useTabs.getState().closeTab(tabKey);
           goTo('/agent/orgs');
         }}
@@ -292,8 +294,8 @@ function AddMemberModal({ open, onOpenChange, org, onAdded }: { open: boolean; o
       toast.success(`${u.name} foi adicionado a ${org.name}`);
       onAdded();
       onOpenChange(false);
-    } catch {
-      toast.error('Não foi possível adicionar o usuário. Tente novamente.');
+    } catch (e) {
+      toast.error(errMessage(e, 'Não foi possível adicionar o usuário. Tente novamente.'));
     } finally {
       setBusy(false);
     }
@@ -336,7 +338,7 @@ function MergeOrgModal({ open, onOpenChange, org }: { open: boolean; onOpenChang
     setBusy(true);
     try {
       const merged = await orgsApi.mergeOrgs(org.id, target);
-      toast.success(`${org.name} foi fundida em ${merged.name}`);
+      toast.success(localSaved(`${org.name} foi fundida em ${merged.name}`, 'merge'));
       useTabs.getState().closeTab(`org:${org.id}`);
       onOpenChange(false);
       openOrg(merged.id, merged.name);

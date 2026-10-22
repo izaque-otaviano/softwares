@@ -2,6 +2,7 @@ import { ListOrdered } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { triggersApi } from '@/api';
+import { RealModeNotice } from '@/components/shell/RealModeNotice';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { DropdownButton } from '@/components/admin/lists/DropdownButton';
 import { ListToolbar, matchesActive, type ActiveFilter } from '@/components/admin/lists/ListToolbar';
@@ -82,6 +83,7 @@ export default function Triggers() {
 
   return (
     <div className="flex min-h-full flex-col bg-surface">
+      <RealModeNotice feature="triggers">Gatilhos ainda não existem no backend: você pode criá-los e editá-los, mas valem somente neste navegador e NÃO disparam sobre tickets reais.</RealModeNotice>
       <PageHeader
         breadcrumb={[{ label: 'Objetos e regras' }, { label: 'Gatilhos' }]}
         title="Gatilhos"

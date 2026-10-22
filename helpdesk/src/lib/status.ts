@@ -31,6 +31,11 @@ export const DEFAULT_STATUSES: TicketStatus[] = [
   { id: 'solved', category: 'solved', agentName: 'Resolvido', agentDescription: 'Problema resolvido; o ticket pode ser reaberto pelo cliente.', endUserName: 'Resolvido', color: 'solved' },
 ];
 
+/** Id do status de uma categoria (o de sistema; senão o primeiro ativo). No backend real os ids são numéricos: nunca use 'solved'/'new' literais. */
+export function statusIdByCategory(statuses: TicketStatus[], category: StatusCategory, fallback: string = category): string {
+  return (statuses.find((s) => s.category === category && s.system) ?? statuses.find((s) => s.category === category && s.active !== false) ?? statuses.find((s) => s.category === category))?.id ?? fallback;
+}
+
 export const PRIORITY_LABEL: Record<Priority, string> = {
   low: 'Baixa',
   normal: 'Normal',

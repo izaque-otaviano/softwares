@@ -5,6 +5,7 @@ import { MAIN_ID, SkipLink } from '@/components/a11y/SkipLink';
 import { Spinner } from '@/components/ui';
 import { ShortcutsHelpDialog } from '@/components/shell/ShortcutsHelp';
 import { useHelpShortcut } from '@/components/shell/shortcuts';
+import { RealModeNotice } from '@/components/shell/RealModeNotice';
 import { AdminRail, AdminSecondaryNav } from './AdminNav';
 import { AdminTopBar } from './AdminTopBar';
 import { Copilot } from './Copilot';
@@ -17,6 +18,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface text-sm text-fg">
       <SkipLink />
+      <RealModeNotice />
       <AdminTopBar copilotOpen={copilotOpen} onCopilotToggle={() => setCopilotOpen((o) => !o)} />
       <div className="flex min-h-0 flex-1">
         <AdminRail />

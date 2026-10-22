@@ -33,6 +33,7 @@ npm run build      # tsc -b && vite build (saída em dist/)
 | Rota | Tela |
 | --- | --- |
 | `/` | Redireciona para `/agent/home` |
+| `/login` | Entrar (só no modo real; no mock redireciona) |
 | `/kit` | Catálogo vivo dos componentes e tokens |
 | `/agent/home` | Começar agora |
 | `/agent/views`, `/agent/views/:id` | Visualizações (6 views com contadores) |
@@ -52,8 +53,8 @@ npm run build      # tsc -b && vite build (saída em dist/)
 
 ```
 src/
-  api/          camada de acesso (mock): tickets, users, orgs, macros, triggers, search, meta, fields, members,
-                db.ts (estado em memória) e delay.ts (atraso e falha simulados)
+  api/          fachadas por recurso (tickets, users, orgs, macros, triggers, search, meta, fields, members, auth),
+                capabilities.ts; mock/ (db em memória, delay, dados de exemplo) e real/ (http.ts, auth.ts, refs.ts, local.ts, mappers/, leitura por recurso)
   app/          App, providers, router, AdminLayout
   components/
     ui/         componentes base (+ testes ao lado)
@@ -65,9 +66,8 @@ src/
     admin/      shell e peças da administração (+ lists/, status/, triggers/, macros/)
     a11y/       SkipLink, RouteA11y (título e foco por rota)
   lib/          cn, status, time, useNow, triggers, views, search, useMediaQuery
-  mocks/        dados de exemplo (tickets, usuários, orgs, macros, gatilhos, status, campos, views)
   pages/        uma página por rota (+ admin/ e kit/)
-  store/        useTickets, useTabs, useStatuses, useUi
+  store/        useSession, useTickets, useTabs, useStatuses, useRefData, useUi
   test/         setup do Vitest
   types/        domain.ts
 ```
@@ -101,7 +101,7 @@ src/
 - **Atalhos**: `g` `h` (Início), `g` `v` (Visualizações), `/` (busca), `?` (ajuda com a lista), `Ctrl/Cmd + Enter`
   (enviar), `Shift + Enter` na lista de macros (pré-visualizar), `Esc` (fecha menu, popover, painel ou diálogo).
   Não disparam enquanto se digita em campos.
-- **Dados em memória que zeram ao recarregar.** Tickets, status, macros, gatilhos etc. vivem em `src/api/db.ts`.
+- **Dados em memória que zeram ao recarregar (modo mock).** Tickets, status, macros, gatilhos etc. vivem em `src/api/mock/db.ts`.
   O `localStorage` guarda só tema, sidebar e colunas das tabelas. Recarregar a página volta ao estado inicial.
 
 ## Critérios de aceite (brief, seção 12)
@@ -131,7 +131,7 @@ Correção feita na verificação: o nome do CSV exportado perdia letras acentua
 - **Fora desta versão**: Conta, Canais e Espaços de trabalho (a administração mostra "Fora desta versão"), Conhecimento
   (toast), telefonia (ícone de telefone com toast), artigos na busca, importação em massa de clientes e organizações,
   "Exportar lista" dos membros.
-- **Anexos não são enviados**: arrastar, colar ou escolher arquivo mostra o chip com nome e tamanho no composer, mas o
+- **Anexos (modo mock) não são enviados**: arrastar, colar ou escolher arquivo mostra o chip com nome e tamanho no composer, mas o
   conteúdo não é guardado nem enviado.
 - **Menu ⋮ do ticket**: "Criar como macro" e "Fundir em outro ticket" só mostram toast; "Suspender usuário",
   "Marcar como spam" e "Apagar" pedem confirmação e só mostram toast (não alteram os dados). "Imprimir" usa
@@ -141,21 +141,34 @@ Correção feita na verificação: o nome do CSV exportado perdia letras acentua
 - O botão "nova visualização" só abre o modal; a view "Tickets resolvidos recentemente" usa janela de 7 dias sobre a
   data de atualização.
 
-## Ligando a um backend
+## Ligando ao backend Resolv (modo real)
 
-A camada `src/api/*` é a fronteira: páginas e stores só falam com ela (`ticketsApi`, `usersApi`, `orgsApi`,
-`macrosApi`, `triggersApi`, `searchApi`, `metaApi`, `fieldsApi`, `membersApi`), sempre por funções assíncronas que
-devolvem os tipos de `src/types/domain.ts`.
+Dois modos, escolhidos por `VITE_API_MODE` (ver `.env.example`):
 
-1. Hoje cada módulo lê e escreve em `src/api/db.ts` dentro de `simulate()` (atraso e falha de `delay.ts`).
-2. Para um backend real, troque o corpo de cada função por `fetch`, mantendo assinatura e tipos de retorno.
-3. Um cliente HTTP único (base URL, credenciais, CSRF, tempo limite, tradução de erros para `ApiError`) ficaria em
-   `src/api/http.ts`, usado por todos os módulos.
-4. Os mapeamentos entre o JSON do servidor e `domain.ts` (nomes de campos, status, datas) ficariam em adaptadores ao
-   lado de cada módulo, para o resto do app nunca ver o formato do servidor.
-5. Os stores (`useTickets`, `useStatuses`) já expõem estado de erro e recarga; basta a API lançar `ApiError`.
-6. Regras hoje locais (gatilhos em `lib/triggers.ts`, contadores das views em `lib/views.ts`) passam a vir do servidor.
-7. A simulação de tempo quase real (`startLiveUpdates`) deve ser trocada por polling, SSE ou WebSocket.
-8. Autenticação entraria em `app/providers.tsx`, que também trataria resposta 401 de forma global.
-9. Os testes de `src/api/api.test.ts` servem de contrato: rode-os contra os adaptadores novos.
-10. `db.ts`, `delay.ts` e `src/mocks/*` podem ficar só para testes e demonstração.
+| Modo | Como | O que acontece |
+| --- | --- | --- |
+| `mock` (padrão) | `npm run dev` | Dados de exemplo em memória, login automático como o agente `me`, sem tela de login. Testes rodam sempre aqui. |
+| `real` | `npm run dev:real` | Login em `/login` (e-mail e senha, 2FA opcional), sessão por cookie + CSRF contra o Resolv em `VITE_API_PROXY` (padrão `http://127.0.0.1:8000`). |
+
+- O Vite faz proxy de `/api` e `/ws` (WebSocket) para o backend: mesma origem, sem CORS. Deixe `VITE_API_URL` vazio
+  e acesse sempre por `http://127.0.0.1:5173`.
+- Só contas de agente/administrador entram; conta de cliente é recusada com mensagem. 401 em qualquer chamada volta
+  ao `/login` e, depois de entrar, ao destino anterior.
+- Estrutura: `src/api/<recurso>.ts` são fachadas que escolhem `mock/` ou `real/`; `real/http.ts` é o cliente HTTP
+  (CSRF, erros, paginação, 401); `real/<recurso>.ts` LEEM e ESCREVEM no backend (etapas 2 a 4); `real/mappers/*` são os
+  mapeadores puros: DTO do Resolv para os tipos do Helpdesk (leitura) e `outbound.ts`/`htmlToMarkdown.ts` (ida: plano de
+  chamadas, janela de fechamento, corpos, HTML do editor para markdown), todos testados com fixtures reais em
+  `real/__fixtures__`; `real/refs.ts` cacheia status, equipes, usuários e
+  empresas; `real/local.ts` guarda as alterações locais; `src/api/mock/` guarda o banco em memória e os dados de exemplo. Nada fora de `src/api` importa `mock/`
+  (garantido por `src/api/architecture.test.ts`). O usuário logado vem de `useSession` (`useMeId()`/`getMeId()`).
+- Decisão do dono: nada é escondido. O que o backend não tem continua funcionando localmente (em memória, some ao
+  recarregar) e está registrado em `src/api/PENDENTE_NO_BACKEND.md` e no objeto `capabilities` (`'real' | 'local'`).
+- Mensagens trafegam em markdown no backend; o front converte nas bordas (leitura: `marked` + `sanitizeHtml`; escrita:
+  `htmlToMarkdown`, serializador próprio do HTML do Tiptap, sem dependência nova; ida e volta testada).
+- Etapas 2 a 4 (leitura e escrita reais): Início, Visualizações, tela do ticket (criar, responder, nota interna, status,
+  fechar, atribuir, prioridade, etiquetas, seguir, macro, anexos), ações em lote, Clientes, Organizações, Busca e Admin
+  (Membros, Status, Macros) leem e gravam no Resolv. O envio do ticket orquestra de 1 a 4 chamadas sem transação, com
+  relato de falha parcial e "Tentar novamente" que não duplica o que já passou. O que o backend não tem (gatilhos, campos
+  personalizados, formulários, resumo de IA, fusão, apagar ticket, tipo, CC e seguidores arbitrários, licenças) segue
+  LOCAL e avisa "somente neste navegador" só nesses pontos. Decisões, o que escreve de verdade e o que segue local:
+  `src/api/PENDENTE_NO_BACKEND.md`.

@@ -1,3 +1,5 @@
+import { ApiError } from '../errors';
+
 const isTest = typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test';
 
 export interface ApiConfig {
@@ -15,13 +17,6 @@ export const apiConfig: ApiConfig = isTest
 
 export function configureApi(patch: Partial<ApiConfig>): void {
   Object.assign(apiConfig, patch);
-}
-
-export class ApiError extends Error {
-  constructor(message = 'Não foi possível concluir a operação. Tente novamente.') {
-    super(message);
-    this.name = 'ApiError';
-  }
 }
 
 export function delay(): Promise<void> {

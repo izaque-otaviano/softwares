@@ -8,7 +8,7 @@ import { useViewPrefs } from '@/components/lists/useViewPrefs';
 import { usePlayQueue } from '@/components/lists/usePlayQueue';
 import { useTickets } from '@/store/useTickets';
 import { useUi } from '@/store/useUi';
-import { views as seedViews } from '@/mocks';
+import { views as seedViews } from '@/api/mock/data';
 import Views from './Views';
 
 const openTicket = vi.fn();

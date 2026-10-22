@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { IS_REAL } from '@/api/mode';
+import { capabilities, type CapabilityKey } from '@/api/capabilities';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 /** Toasts ficam fora do `persist`: só tema, sidebar e colunas das tabelas vão para o localStorage. */
@@ -74,6 +76,14 @@ export const useUi = create<UiState>()(
 );
 
 /** API imperativa para disparar toasts fora de componentes. */
+/**
+ * Ressalva "somente neste navegador" SÓ para o que o backend não tem (`feature` = chave de `capabilities` ainda
+ * `'local'`: gatilhos, campos personalizados, fusão, apagar ticket, tipo, CC/seguidores arbitrários, licenças...).
+ * O que vai ao backend não leva ressalva; no mock devolve a mensagem como está.
+ */
+export const localSaved = (message: string, feature?: CapabilityKey): string =>
+  IS_REAL && feature && capabilities[feature] === 'local' ? `${message} (somente neste navegador)` : message;
+
 export const toast = {
   success: (title: string, opts: Omit<ToastItem, 'id' | 'tone' | 'title'> = {}) => useUi.getState().pushToast({ tone: 'success', title, ...opts }),
   error: (title: string, opts: Omit<ToastItem, 'id' | 'tone' | 'title'> = {}) => useUi.getState().pushToast({ tone: 'error', title, ...opts }),

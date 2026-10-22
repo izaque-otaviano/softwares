@@ -1,17 +1,44 @@
 import { create } from 'zustand';
 import * as api from '@/api/tickets';
+import { IS_REAL } from '@/api/mode';
 import { listStatuses, saveStatus as saveStatusApi } from '@/api/meta';
 import { countViews } from '@/lib/views';
 import { runView as runViewPure } from '@/lib/views';
-import { ME_ID } from '@/mocks/clock';
-import { views as seedViews } from '@/mocks/views';
+import { getMeId } from './useSession';
+import { useRefData } from './useRefData';
 import type { AuditEvent, Priority, Ticket, TicketStatus, View } from '@/types/domain';
-import { toast } from './useUi';
+import { localSaved, toast } from './useUi';
+
+const seedViews: View[] = api.initialViews;
 
 export type ViewCounts = Record<string, number | null>;
 
 function nullCounts(views: View[]): ViewCounts {
   return Object.fromEntries(views.map((v) => [v.countKey, null]));
+}
+
+/**
+ * Contadores: os do SERVIDOR (modo real) valem; o que ele não informa sai da avaliação local sobre os tickets
+ * carregados (visões do Helpdesk sem equivalente exato); visões avaliadas no servidor sem contador ficam `null`.
+ */
+export function mergeCounts(views: View[], tickets: Ticket[], c: { meId: string; now: Date; statuses: TicketStatus[] }, server: Record<string, number>): ViewCounts {
+  const out: ViewCounts = {};
+  const local = countViews(
+    views.filter((v) => !v.query),
+    tickets,
+    c,
+  );
+  for (const v of views) out[v.countKey] = server[v.countKey] ?? (v.query ? null : (local[v.countKey] ?? null));
+  return out;
+}
+
+/** Recarga da lista: o que já tinha mensagens/eventos (detalhe aberto) não os perde para a versão enxuta da lista. */
+export function keepDetails(prev: Ticket[], next: Ticket[]): Ticket[] {
+  const byId = new Map(prev.filter((t) => t.detailed).map((t) => [t.id, t]));
+  return next.map((t) => {
+    const d = byId.get(t.id);
+    return d && t.detailed === false ? { ...t, comments: d.comments, events: d.events, followerIds: d.followerIds, requesterId: t.requesterId || d.requesterId, detailed: true } : t;
+  });
 }
 
 interface TicketsState {
@@ -23,21 +50,30 @@ interface TicketsState {
   loaded: boolean;
   loading: boolean;
   error: string | null;
+  /** Só modo real: ids (na ordem do servidor) das visões avaliadas NO SERVIDOR (`view.query`), por id de visão. */
+  viewIds: Record<string, number[]>;
 
   load: () => Promise<void>;
+  /** Só modo real: carrega do servidor a lista de uma visão com `query` (visões do sistema extras e pessoais). */
+  loadView: (viewId: string) => Promise<void>;
+  /** Só modo real: traz mensagens e eventos do ticket (a lista do backend não os inclui). */
+  loadDetail: (id: number) => Promise<Ticket>;
   /** Só os status (telas de administração abertas sem passar pelas listas). */
   loadStatuses: () => Promise<void>;
   /** Cria/edita/desativa um status e publica o resultado para todas as telas na hora. */
   saveStatus: (status: Omit<TicketStatus, 'id'> & { id?: string }) => Promise<TicketStatus>;
-  /** Zera os contadores (null) e busca de novo. */
-  refreshCounts: () => Promise<void>;
+  /** Zera os contadores (null) e busca de novo. `quiet` mantém os valores atuais até chegarem os novos. */
+  refreshCounts: (quiet?: boolean) => Promise<void>;
+  /** Publica na store um ticket já gravado no servidor (resultado parcial de um envio) sem toast. */
+  applyServerTicket: (ticket: Ticket) => void;
   /** Tickets de uma view, avaliados sobre o estado atual da store. */
   ticketsForView: (viewId: string) => Ticket[];
   /** `silent: true` não dispara o toast padrão (quem chama mostra o próprio). */
-  updateTicket: (id: number, patch: api.TicketPatch, comment?: api.NewComment, opts?: { silent?: boolean }) => Promise<Ticket>;
+  updateTicket: (id: number, patch: api.TicketPatch, comment?: api.NewComment, opts?: { silent?: boolean; macroIds?: string[] }) => Promise<Ticket>;
   createTicket: (input: api.NewTicketInput, opts?: { silent?: boolean }) => Promise<Ticket>;
   /** Grava o resultado do motor de gatilhos (patch + eventos) e atualiza a store, sem toast. */
   applyAutomation: (id: number, patch: api.TicketPatch, events: AuditEvent[]) => Promise<Ticket>;
+  /** Ação em lote (servidor no modo real). `true` só se TODOS foram alterados; as falhas por ticket vão em toast. */
   assignToMe: (ids: number[]) => Promise<boolean>;
   setStatus: (ids: number[], statusId: string) => Promise<boolean>;
   setPriority: (ids: number[], priority: Priority) => Promise<boolean>;
@@ -46,29 +82,61 @@ interface TicketsState {
 }
 
 function ctx(statuses: TicketStatus[]) {
-  return { meId: ME_ID, now: new Date(), statuses };
+  return { meId: getMeId(), now: new Date(), statuses };
 }
+
+const FIELD_LABEL: Record<string, string> = { subject: 'assunto', requesterId: 'solicitante', type: 'tipo', ccIds: 'CC', customFields: 'campos personalizados', followerIds: 'seguidores' };
+
+/** Modo real: campos da edição que o backend não tem avisam "somente neste navegador" (e só eles). */
+export function localFieldsNote(t: Ticket): string {
+  if (!IS_REAL || !t.localFields?.length) return '';
+  return ` (${t.localFields.map((k) => FIELD_LABEL[k] ?? k).join(', ')}: somente neste navegador)`;
+}
+
+/** Visões do servidor em carregamento (evita pedido duplicado). */
+const viewLoads = new Set<string>();
 
 export const useTickets = create<TicketsState>()((set, get) => {
   const recompute = (tickets: Ticket[]) => {
     const { views, statuses } = get();
-    set({ tickets, counts: countViews(views, tickets, ctx(statuses)) });
+    // Modo real: os contadores vêm do servidor (alterações locais não mudam o backend, então não os mudam).
+    set(IS_REAL ? { tickets } : { tickets, counts: countViews(views, tickets, ctx(statuses)) });
   };
   const upsert = (list: Ticket[]) => {
-    const map = new Map(get().tickets.map((t) => [t.id, t]));
-    list.forEach((t) => map.set(t.id, t));
-    recompute([...map.values()].sort((a, b) => a.id - b.id));
+    const prev = new Map(get().tickets.map((t) => [t.id, t]));
+    // Versão enxuta da lista não apaga mensagens/eventos que a tela já carregou.
+    keepDetails([...prev.values()], list).forEach((t) => prev.set(t.id, t));
+    recompute([...prev.values()].sort((a, b) => a.id - b.id));
   };
-  const bulk = async (ids: number[], patch: api.TicketPatch, okMessage: string): Promise<boolean> => {
+  /** Modo real: depois de qualquer escrita os contadores do servidor mudaram. */
+  const afterWrite = () => {
+    if (IS_REAL) void get().refreshCounts(true);
+  };
+  const bulk = async (ids: number[], change: api.BulkChange, okMessage: string): Promise<boolean> => {
+    let result: api.BulkResult;
     try {
-      const updated = await Promise.all(ids.map((id) => api.updateTicket(id, patch)));
-      upsert(updated);
-      toast.success(okMessage);
-      return true;
-    } catch {
-      toast.error('Não foi possível concluir a ação em lote.', { action: { label: 'Tentar novamente', onClick: () => void bulk(ids, patch, okMessage) } });
+      result = await api.bulkUpdate(ids, change);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível concluir a ação em lote.', {
+        action: { label: 'Tentar novamente', onClick: () => void bulk(ids, change, okMessage) },
+      });
       return false;
     }
+    upsert(result.updated);
+    afterWrite();
+    if (result.failed.length === 0) {
+      toast.success(okMessage);
+      return true;
+    }
+    const failedIds = result.failed.map((f) => f.id);
+    const first = result.failed[0]!;
+    toast.error(
+      result.updated.length > 0
+        ? `${result.updated.length} de ${ids.length} tickets alterados. Não alterados: ${failedIds.map((id) => `#${id}`).join(', ')}. ${first.message}`
+        : `Nenhum ticket foi alterado. ${first.message}`,
+      { action: { label: 'Tentar novamente', onClick: () => void bulk(failedIds, change, okMessage) } },
+    );
+    return false;
   };
 
   return {
@@ -79,6 +147,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
     loaded: false,
     loading: false,
     error: null,
+    viewIds: {},
 
     load: async () => {
       set({ loading: true, error: null });
@@ -89,7 +158,16 @@ export const useTickets = create<TicketsState>()((set, get) => {
           api.listViews(),
           api.getViewCounts(),
         ]);
-        set({ tickets, statuses, views, counts, loaded: true, loading: false });
+        set({
+          tickets: keepDetails(get().tickets, tickets),
+          statuses,
+          views,
+          counts: mergeCounts(views, tickets, ctx(statuses), counts),
+          viewIds: {},
+          loaded: true,
+          loading: false,
+        });
+        void useRefData.getState().refresh();
       } catch (e) {
         set({ loading: false, error: e instanceof Error ? e.message : 'Erro ao carregar tickets.' });
       }
@@ -109,28 +187,62 @@ export const useTickets = create<TicketsState>()((set, get) => {
       return saved;
     },
 
-    refreshCounts: async () => {
-      set({ counts: nullCounts(get().views) });
-      set({ counts: await api.getViewCounts() });
+    applyServerTicket: (ticket) => {
+      upsert([ticket]);
+      afterWrite();
+    },
+
+    refreshCounts: async (quiet) => {
+      if (!quiet) set({ counts: nullCounts(get().views) });
+      const { views, tickets, statuses } = get();
+      set({ counts: mergeCounts(views, tickets, ctx(statuses), await api.getViewCounts()) });
+    },
+
+    loadView: async (viewId) => {
+      if (viewLoads.has(viewId)) return;
+      viewLoads.add(viewId);
+      try {
+        const list = await api.runView(viewId);
+        upsert(list.map((t) => get().tickets.find((x) => x.id === t.id && x.detailed && !t.detailed) ?? t));
+        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: list.map((t) => t.id) } }));
+      } catch (e) {
+        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: [] } }));
+        toast.error(e instanceof Error ? e.message : 'Não foi possível carregar a visualização.');
+      } finally {
+        viewLoads.delete(viewId);
+      }
+    },
+
+    loadDetail: async (id) => {
+      const t = await api.getTicket(id);
+      upsert([t]);
+      return t;
     },
 
     ticketsForView: (viewId) => {
       const { views, tickets, statuses } = get();
       const view = views.find((v) => v.id === viewId);
+      if (view?.query) {
+        const ids = get().viewIds[viewId];
+        const byId = new Map(tickets.map((t) => [t.id, t]));
+        return (ids ?? []).map((id) => byId.get(id)).filter((t): t is Ticket => Boolean(t));
+      }
       return view ? runViewPure(view, tickets, ctx(statuses)) : [];
     },
 
     updateTicket: async (id, patch, comment, opts) => {
-      const updated = await api.updateTicket(id, patch, comment);
+      const updated = await api.updateTicket(id, patch, comment, { macroIds: opts?.macroIds });
       upsert([updated]);
-      if (!opts?.silent) toast.success(`Ticket #${id} foi atualizado`);
+      afterWrite();
+      if (!opts?.silent) toast.success(`Ticket #${id} foi atualizado${localFieldsNote(updated)}`);
       return updated;
     },
 
     createTicket: async (input, opts) => {
       const created = await api.createTicket(input);
       upsert([created]);
-      if (!opts?.silent) toast.success(`Ticket #${created.id} foi criado`);
+      afterWrite();
+      if (!opts?.silent) toast.success(`Ticket #${created.id} foi criado${localFieldsNote(created)}`);
       return created;
     },
 
@@ -140,7 +252,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
       return updated;
     },
 
-    assignToMe: (ids) => bulk(ids, { assigneeId: ME_ID }, ids.length === 1 ? `Ticket #${ids[0]} atribuído a você` : `${ids.length} tickets atribuídos a você`),
+    assignToMe: (ids) => bulk(ids, { assigneeId: getMeId() }, ids.length === 1 ? `Ticket #${ids[0]} atribuído a você` : `${ids.length} tickets atribuídos a você`),
     setStatus: (ids, statusId) => bulk(ids, { statusId }, `Status alterado em ${ids.length} ${ids.length === 1 ? 'ticket' : 'tickets'}`),
     setPriority: (ids, priority) => bulk(ids, { priority }, `Prioridade alterada em ${ids.length} ${ids.length === 1 ? 'ticket' : 'tickets'}`),
 
@@ -148,7 +260,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
       try {
         await api.deleteTickets(ids);
         recompute(get().tickets.filter((t) => !ids.includes(t.id)));
-        toast.success(ids.length === 1 ? `Ticket #${ids[0]} apagado` : `${ids.length} tickets apagados`);
+        toast.success(localSaved(ids.length === 1 ? `Ticket #${ids[0]} apagado` : `${ids.length} tickets apagados`, 'deleteTicket'));
         return true;
       } catch {
         toast.error('Não foi possível apagar os tickets.', { action: { label: 'Tentar novamente', onClick: () => void get().deleteTickets(ids) } });
@@ -160,7 +272,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
       try {
         const { target, sources } = await api.mergeTickets(targetId, sourceIds);
         upsert([target, ...sources]);
-        toast.success(`Tickets mesclados no #${targetId}`);
+        toast.success(localSaved(`Tickets mesclados no #${targetId}`, 'merge'));
         return true;
       } catch {
         toast.error('Não foi possível mesclar os tickets.', { action: { label: 'Tentar novamente', onClick: () => void get().mergeTickets(targetId, sourceIds) } });
@@ -193,8 +305,9 @@ export function liveTick(random: () => number = Math.random): void {
 
 let timer: ReturnType<typeof setInterval> | undefined;
 
+/** Simulação de chegada de tickets: só no modo mock (no real virá do WebSocket /ws/me/). */
 export function startLiveUpdates(intervalMs = 60_000): void {
-  if (timer) return;
+  if (timer || IS_REAL) return;
   timer = setInterval(() => liveTick(), intervalMs);
 }
 

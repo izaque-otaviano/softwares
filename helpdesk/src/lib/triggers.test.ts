@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { statuses, tickets, triggers, endUsers } from '@/mocks';
+import { statuses, tickets, triggers, endUsers } from '@/api/mock/data';
 import type { Ticket, Trigger } from '@/types/domain';
 import { evaluateCondition, renderTemplate, runTriggers, triggerMatches, type TriggerContext } from './triggers';
 

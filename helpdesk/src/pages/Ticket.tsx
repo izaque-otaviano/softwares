@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isNewKey, useFormStore } from '@/components/ticket/formStore';
 import { TicketScreen } from '@/components/ticket/TicketScreen';
@@ -40,10 +40,27 @@ function ExistingTicket({ id }: { id: number }) {
     if (!loaded && !loading && !error) void load();
   }, [loaded, loading, error, load]);
 
+  // Modo real: a lista do backend não traz mensagens/eventos; busca o detalhe antes de abrir o formulário.
+  const needsDetail = ticket?.detailed === false;
+  const [detailError, setDetailError] = useState<string | null>(null);
   useEffect(() => {
-    if (ticket && !hasForm) useFormStore.getState().init(key, ticket);
-  }, [ticket, hasForm, key]);
+    if (!needsDetail) return;
+    setDetailError(null);
+    useTickets.getState().loadDetail(id).catch((e: unknown) => setDetailError(e instanceof Error ? e.message : 'Não foi possível carregar o ticket.'));
+  }, [needsDetail, id]);
 
+  useEffect(() => {
+    if (ticket && !needsDetail && !hasForm) useFormStore.getState().init(key, ticket);
+  }, [ticket, needsDetail, hasForm, key]);
+
+  if (detailError && needsDetail)
+    return (
+      <div className="p-6">
+        <Banner tone="error" title="Não foi possível carregar o ticket" onRetry={() => useTickets.getState().loadDetail(id).then(() => setDetailError(null), (e: unknown) => setDetailError(e instanceof Error ? e.message : 'Erro'))}>
+          {detailError}
+        </Banner>
+      </div>
+    );
   if (hasForm) return <TicketScreen key={key} ticketKey={key} />;
   if (error && !loaded)
     return (

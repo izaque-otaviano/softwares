@@ -1,4 +1,4 @@
-import { agents, endUsers, admins, fields, groups, macros, orgs, statuses, tickets, triggers, views } from '@/mocks';
+import { agents, endUsers, admins, fields, groups, macros, orgs, statuses, tickets, triggers, views } from './data';
 import type { Group, Macro, Org, Ticket, TicketField, TicketStatus, Trigger, User, View } from '@/types/domain';
 
 export interface RecentItem {

@@ -1,21 +1,13 @@
-import { searchAll } from '@/lib/search';
-import type { SearchResults } from '@/types/domain';
-import { simulate } from './delay';
-import { db, type RecentItem } from './db';
+import * as mock from './mock/search';
+import * as real from './real/search';
+import { IS_REAL } from './mode';
 
-export type { RecentItem };
+// Fachada: escolhe a implementação por VITE_API_MODE. As telas importam sempre daqui.
+const impl: typeof mock = IS_REAL ? real : mock;
 
-/** Busca global agrupada por tipo (assunto, #id, nome/e-mail parcial, usuários, orgs). */
-export function search(term: string): Promise<SearchResults> {
-  return simulate(() => searchAll(term, db));
-}
-
-/** Itens visualizados recentemente, do mais novo ao mais antigo. */
-export function recentViewed(limit = 8): Promise<RecentItem[]> {
-  return simulate(() => db.recent.slice(0, limit), { critical: true });
-}
-
-/** Registra uma visualização (síncrono, sem atraso). */
-export function trackViewed(item: Omit<RecentItem, 'at'>): void {
-  db.recent = [{ ...item, at: new Date().toISOString() }, ...db.recent.filter((r) => !(r.kind === item.kind && r.id === item.id))].slice(0, 20);
-}
+export const {
+  search,
+  recentViewed,
+  trackViewed,
+} = impl;
+export type { RecentItem } from './mock/search';

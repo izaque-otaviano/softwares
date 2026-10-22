@@ -1,8 +1,10 @@
 import { Suspense, lazy, type ReactNode } from 'react';
 import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
+import { RequireSession } from '@/components/auth/RequireSession';
 import { AgentLayout } from '@/components/shell';
 import { AdminLayout } from './AdminLayout';
 
+const Login = lazy(() => import('@/pages/Login'));
 const Kit = lazy(() => import('@/pages/Kit'));
 const Home = lazy(() => import('@/pages/Home'));
 const Views = lazy(() => import('@/pages/Views'));
@@ -30,10 +32,15 @@ const lazyEl = (node: ReactNode) => <Suspense fallback={null}>{node}</Suspense>;
 
 export const routes: RouteObject[] = [
   { path: '/', element: <Navigate to="/agent/home" replace /> },
+  { path: '/login', element: lazyEl(<Login />) },
   { path: '/kit', element: lazyEl(<Kit />) },
   {
     path: '/agent',
-    element: <AgentLayout />,
+    element: (
+      <RequireSession>
+        <AgentLayout />
+      </RequireSession>
+    ),
     children: [
       { index: true, element: <Navigate to="/agent/home" replace /> },
       { path: 'home', element: <Home /> },
@@ -51,7 +58,11 @@ export const routes: RouteObject[] = [
   },
   {
     path: '/admin',
-    element: <AdminLayout />,
+    element: (
+      <RequireSession>
+        <AdminLayout />
+      </RequireSession>
+    ),
     children: [
       { index: true, element: <AdminHome /> },
       { path: 'members', element: <AdminMembers /> },

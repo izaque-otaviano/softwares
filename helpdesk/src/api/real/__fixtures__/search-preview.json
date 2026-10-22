@@ -1,0 +1,14 @@
+{
+  "tickets": [],
+  "companies": [],
+  "requesters": [
+    {
+      "id": 5,
+      "full_name": "Ana Almeida",
+      "email": "ana@acme.test",
+      "company_id": 1,
+      "company_name": "Acme Marketing",
+      "is_active": true
+    }
+  ]
+}

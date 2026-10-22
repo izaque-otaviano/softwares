@@ -35,7 +35,7 @@ function sortUsers(list: User[], sort: SortState | null): User[] {
       case 'name': return norm(u.name);
       case 'email': return u.email.toLowerCase();
       case 'timezone': return u.timezone;
-      default: return new Date(u.updatedAt).getTime();
+      default: return u.updatedAt ? new Date(u.updatedAt).getTime() : 0;
     }
   };
   return [...list].sort((a, b) => {
@@ -125,7 +125,7 @@ export default function Customers() {
         ),
     },
     { id: 'timezone', header: 'Fuso horário', label: 'Fuso horário', sortable: true, width: 200, cell: (u) => timezoneLabel(u.timezone) },
-    { id: 'updatedAt', header: 'Data da última atualização', label: 'Data da última atualização', sortable: true, width: 200, cell: (u) => relativeTime(u.updatedAt, now) },
+    { id: 'updatedAt', header: 'Data da última atualização', label: 'Data da última atualização', sortable: true, width: 200, cell: (u) => (u.updatedAt ? relativeTime(u.updatedAt, now) : '-') },
   ];
 
   const total = rows.length;

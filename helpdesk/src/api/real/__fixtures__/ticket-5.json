@@ -1,0 +1,156 @@
+{
+  "id": 5,
+  "reference": "TD-00005",
+  "subject": "Logo errada no rodapé do site",
+  "order_number": "",
+  "status": "open",
+  "stage": 4,
+  "stage_name": "Fechado",
+  "stage_color": "#8A8A85",
+  "priority": "normal",
+  "source": "web",
+  "team": {
+    "id": 1,
+    "name": "Suporte",
+    "slug": "suporte",
+    "visibility": "company_wide",
+    "order": 1,
+    "internal_only": false
+  },
+  "requester_display": "Ana Almeida",
+  "assignee_name": "Samuel Suporte",
+  "assignee_avatar": null,
+  "assignee_id": 3,
+  "owner_name": null,
+  "owner_id": null,
+  "company_name": "Acme Marketing",
+  "plan": {
+    "slug": "black",
+    "name": "Black"
+  },
+  "sla": {
+    "first_response": {
+      "due_at": null,
+      "state": "none",
+      "minutes_left": null
+    },
+    "resolution": {
+      "due_at": null,
+      "state": "none",
+      "minutes_left": null
+    }
+  },
+  "category": null,
+  "category_name": null,
+  "service_name": null,
+  "is_restricted": false,
+  "content_hidden": false,
+  "restriction_reason": "",
+  "reopen_count": 1,
+  "last_reopened_at": "2026-10-21T15:09:40.742752-03:00",
+  "first_response_at": "2026-10-14T13:09:40.742752-03:00",
+  "auto_closed": false,
+  "current_status_note": null,
+  "tags": [],
+  "satisfaction": null,
+  "closed_at": "2026-10-14T13:09:40.742752-03:00",
+  "created_at": "2026-10-14T03:09:40.742752-03:00",
+  "updated_at": "2026-10-22T11:09:41.850434-03:00",
+  "messages": [
+    {
+      "id": 8,
+      "author_name": "Ana Almeida",
+      "author_avatar": null,
+      "author_is_internal": false,
+      "body": "A logo antiga ainda aparece no rodapé.",
+      "is_public": true,
+      "source": "web",
+      "is_first_response": false,
+      "created_at": "2026-10-14T03:09:40.742752-03:00",
+      "attachments": [],
+      "mentions": [],
+      "edited_at": null,
+      "is_deleted": false,
+      "can_edit": false,
+      "signature_html": ""
+    },
+    {
+      "id": 9,
+      "author_name": "Samuel Suporte",
+      "author_avatar": null,
+      "author_is_internal": true,
+      "body": "Atualizada! Limpe o cache e confira.",
+      "is_public": true,
+      "source": "web",
+      "is_first_response": true,
+      "created_at": "2026-10-14T13:09:40.742752-03:00",
+      "attachments": [],
+      "mentions": [],
+      "edited_at": null,
+      "is_deleted": false,
+      "can_edit": false,
+      "signature_html": ""
+    },
+    {
+      "id": 10,
+      "author_name": "Ana Almeida",
+      "author_avatar": null,
+      "author_is_internal": false,
+      "body": "Ainda aparece a antiga no celular!",
+      "is_public": true,
+      "source": "web",
+      "is_first_response": false,
+      "created_at": "2026-10-21T15:09:40.742752-03:00",
+      "attachments": [],
+      "mentions": [],
+      "edited_at": null,
+      "is_deleted": false,
+      "can_edit": false,
+      "signature_html": ""
+    }
+  ],
+  "events": [
+    {
+      "id": 10,
+      "from_status": null,
+      "to_status": "new",
+      "actor_name": null,
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "",
+      "created_at": "2026-10-22T11:09:41.838905-03:00"
+    },
+    {
+      "id": 11,
+      "from_status": "open",
+      "to_status": "closed",
+      "actor_name": "Samuel Suporte",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "",
+      "created_at": "2026-10-22T11:09:41.851851-03:00"
+    },
+    {
+      "id": 12,
+      "from_status": "closed",
+      "to_status": "open",
+      "actor_name": null,
+      "is_reopen": true,
+      "is_automatic": true,
+      "note": "",
+      "created_at": "2026-10-22T11:09:41.857976-03:00"
+    }
+  ],
+  "resolution_started_at": "2026-10-14T05:09:40.742752-03:00",
+  "resolution_ended_at": "2026-10-14T13:09:40.742752-03:00",
+  "sla_cycle": 2,
+  "watchers": [],
+  "requester": {
+    "id": 5,
+    "name": "Ana Almeida",
+    "email": "ana@acme.test",
+    "ui_language": "pt-br",
+    "timezone": "America/Sao_Paulo"
+  },
+  "scheduled_replies": []
+}

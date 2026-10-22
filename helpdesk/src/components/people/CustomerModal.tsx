@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { orgsApi, usersApi } from '@/api';
+import { IS_REAL } from '@/api/mode';
+import { errMessage } from '@/lib/apiError';
 import { Banner, Button, Combobox, Field, Input, Modal, TagInput } from '@/components/ui';
 import { toast } from '@/store/useUi';
 import type { Org, User } from '@/types/domain';
@@ -17,7 +19,8 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
   const [email, setEmail] = useState('');
   const [orgId, setOrgId] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
-  const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
+  const [phone, setPhone] = useState('');
+  const [errors, setErrors] = useState<{ name?: string; email?: string; org?: string; phone?: string }>({});
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [busy, setBusy] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -28,6 +31,7 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
     setEmail('');
     setOrgId(null);
     setTags([]);
+    setPhone('');
     setErrors({});
     setApiError(null);
     orgsApi.listOrgs().then(setOrgs).catch(() => {});
@@ -38,9 +42,12 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
     if (!name.trim()) next.name = 'Informe o nome.';
     if (!email.trim()) next.email = 'Informe o e-mail.';
     else if (!EMAIL_RE.test(email.trim())) next.email = 'Informe um e-mail válido.';
+    // No backend todo cliente pertence a uma organização e tem ao menos um telefone.
+    if (IS_REAL && !orgId) next.org = 'Escolha a organização do cliente.';
+    if (IS_REAL && !phone.trim()) next.phone = 'Informe um telefone.';
     setErrors(next);
     setApiError(null);
-    if (next.name || next.email) return;
+    if (next.name || next.email || next.org || next.phone) return;
     setBusy(true);
     try {
       const existing = await usersApi.listUsers({ query: email.trim() });
@@ -48,13 +55,13 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
         setErrors({ email: 'Já existe um usuário com este e-mail.' });
         return;
       }
-      const user = await usersApi.createUser({ name: name.trim(), email: email.trim(), orgId: orgId ?? undefined, tags });
+      const user = await usersApi.createUser({ name: name.trim(), email: email.trim(), orgId: orgId ?? undefined, tags, phone: phone.trim() || undefined });
       toast.success(`Cliente “${user.name}” foi criado`);
       onCreated(user);
       onOpenChange(false);
-    } catch {
+    } catch (e) {
       // Mantém o modal aberto com o que foi digitado.
-      setApiError('Não foi possível criar o cliente. O que você digitou foi mantido.');
+      setApiError(`${errMessage(e, 'Não foi possível criar o cliente.')} O que você digitou foi mantido.`);
     } finally {
       setBusy(false);
     }
@@ -96,7 +103,7 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
         <Field label="E-mail" required error={errors.email}>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
-        <Field label="Organização">
+        <Field label="Organização" required={IS_REAL} error={errors.org}>
           <Combobox
             value={orgId}
             onValueChange={setOrgId}
@@ -106,7 +113,12 @@ export function AddCustomerModal({ open, onOpenChange, onCreated }: AddCustomerM
             options={orgs.map((o) => ({ value: o.id, label: o.name }))}
           />
         </Field>
-        <Field label="Tags">
+        {IS_REAL ? (
+          <Field label="Telefone" required error={errors.phone} hint="O backend exige ao menos um telefone.">
+            <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </Field>
+        ) : null}
+        <Field label="Tags" hint={IS_REAL ? 'Tags de cliente ficam somente neste navegador.' : undefined}>
           <TagInput value={tags} onChange={setTags} placeholder="Adicionar tag" />
         </Field>
       </form>

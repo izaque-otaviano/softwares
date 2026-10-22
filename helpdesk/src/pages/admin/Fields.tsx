@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { fieldsApi } from '@/api';
 import { AdminBody, Toolbar } from '@/components/admin/AdminPage';
 import { FIELD_TYPE_LABEL, FieldModal } from '@/components/admin/FieldModal';
+import { RealModeNotice } from '@/components/shell/RealModeNotice';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { useAsync } from '@/components/admin/useAsync';
 import {
@@ -106,6 +107,7 @@ export default function Fields() {
 
   return (
     <>
+      <RealModeNotice feature="customFields">Campos personalizados ainda não existem no backend: valem somente neste navegador.</RealModeNotice>
       <PageHeader
         breadcrumb={[{ label: 'Objetos e regras' }, { label: 'Campos' }]}
         title="Campos"

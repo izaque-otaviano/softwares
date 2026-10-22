@@ -1,0 +1,361 @@
+{
+  "count": 6,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "reference": "TD-00001",
+      "subject": "Página do formulário fora do ar",
+      "order_number": "",
+      "status": "new",
+      "stage": 1,
+      "stage_name": "Novo",
+      "stage_color": "#6C4E9C",
+      "priority": "normal",
+      "source": "web",
+      "team": {
+        "id": 1,
+        "name": "Suporte",
+        "slug": "suporte",
+        "visibility": "company_wide",
+        "order": 1,
+        "internal_only": false
+      },
+      "requester_display": "Ana Almeida",
+      "assignee_name": null,
+      "assignee_avatar": null,
+      "assignee_id": null,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Acme Marketing",
+      "plan": {
+        "slug": "black",
+        "name": "Black"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        },
+        "resolution": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": false,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 0,
+      "last_reopened_at": null,
+      "first_response_at": null,
+      "auto_closed": false,
+      "current_status_note": null,
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": null,
+      "created_at": "2026-10-22T09:09:40.742752-03:00",
+      "updated_at": "2026-10-22T11:09:41.742230-03:00"
+    },
+    {
+      "id": 6,
+      "reference": "TD-00006",
+      "subject": "Cobrança duplicada na fatura de julho",
+      "order_number": "",
+      "status": "open",
+      "stage": 2,
+      "stage_name": "Aberto",
+      "stage_color": "#5A87B8",
+      "priority": "normal",
+      "source": "web",
+      "team": {
+        "id": 2,
+        "name": "Financeiro",
+        "slug": "financeiro",
+        "visibility": "requester_only",
+        "order": 2,
+        "internal_only": false
+      },
+      "requester_display": "Ana Almeida",
+      "assignee_name": "Fátima Financeiro",
+      "assignee_avatar": null,
+      "assignee_id": 4,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Acme Marketing",
+      "plan": {
+        "slug": "black",
+        "name": "Black"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        },
+        "resolution": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": true,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 0,
+      "last_reopened_at": null,
+      "first_response_at": "2026-10-22T05:09:40.742752-03:00",
+      "auto_closed": false,
+      "current_status_note": null,
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": null,
+      "created_at": "2026-10-22T01:09:40.742752-03:00",
+      "updated_at": "2026-10-22T11:09:41.866756-03:00"
+    },
+    {
+      "id": 2,
+      "reference": "TD-00002",
+      "subject": "Dúvida sobre integração com o CRM",
+      "order_number": "",
+      "status": "open",
+      "stage": 2,
+      "stage_name": "Aberto",
+      "stage_color": "#5A87B8",
+      "priority": "normal",
+      "source": "web",
+      "team": {
+        "id": 1,
+        "name": "Suporte",
+        "slug": "suporte",
+        "visibility": "company_wide",
+        "order": 1,
+        "internal_only": false
+      },
+      "requester_display": "Beto Barros",
+      "assignee_name": "Samuel Suporte",
+      "assignee_avatar": null,
+      "assignee_id": 3,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Acme Marketing",
+      "plan": {
+        "slug": "black",
+        "name": "Black"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        },
+        "resolution": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": false,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 0,
+      "last_reopened_at": null,
+      "first_response_at": "2026-10-21T07:09:40.742752-03:00",
+      "auto_closed": false,
+      "current_status_note": null,
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": null,
+      "created_at": "2026-10-21T05:09:40.742752-03:00",
+      "updated_at": "2026-10-22T11:09:41.760615-03:00"
+    },
+    {
+      "id": 3,
+      "reference": "TD-00003",
+      "subject": "Relatório mensal não chegou",
+      "order_number": "",
+      "status": "pending_customer",
+      "stage": 3,
+      "stage_name": "Aguardando retorno",
+      "stage_color": "#E9A23B",
+      "priority": "normal",
+      "source": "web",
+      "team": {
+        "id": 1,
+        "name": "Suporte",
+        "slug": "suporte",
+        "visibility": "company_wide",
+        "order": 1,
+        "internal_only": false
+      },
+      "requester_display": "Carla Costa",
+      "assignee_name": "Samuel Suporte",
+      "assignee_avatar": null,
+      "assignee_id": 3,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Bravo Educação",
+      "plan": {
+        "slug": "gold",
+        "name": "Gold"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        },
+        "resolution": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": false,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 0,
+      "last_reopened_at": null,
+      "first_response_at": "2026-10-20T12:09:40.742752-03:00",
+      "auto_closed": false,
+      "current_status_note": null,
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": null,
+      "created_at": "2026-10-20T09:09:40.742752-03:00",
+      "updated_at": "2026-10-22T11:09:41.784071-03:00"
+    },
+    {
+      "id": 4,
+      "reference": "TD-00004",
+      "subject": "Erro 500 ao exportar planilha",
+      "order_number": "",
+      "status": "closed",
+      "stage": 4,
+      "stage_name": "Fechado",
+      "stage_color": "#8A8A85",
+      "priority": "normal",
+      "source": "web",
+      "team": {
+        "id": 1,
+        "name": "Suporte",
+        "slug": "suporte",
+        "visibility": "company_wide",
+        "order": 1,
+        "internal_only": false
+      },
+      "requester_display": "Davi Dias",
+      "assignee_name": "Samuel Suporte",
+      "assignee_avatar": null,
+      "assignee_id": 3,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Cetus Contábil",
+      "plan": {
+        "slug": "platinum",
+        "name": "Platinum"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        },
+        "resolution": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": false,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 0,
+      "last_reopened_at": null,
+      "first_response_at": "2026-10-17T13:09:40.742752-03:00",
+      "auto_closed": false,
+      "current_status_note": null,
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": "2026-10-18T07:09:40.742752-03:00",
+      "created_at": "2026-10-17T11:09:40.742752-03:00",
+      "updated_at": "2026-10-22T11:09:41.826414-03:00"
+    },
+    {
+      "id": 5,
+      "reference": "TD-00005",
+      "subject": "Logo errada no rodapé do site",
+      "order_number": "",
+      "status": "open",
+      "stage": 4,
+      "stage_name": "Fechado",
+      "stage_color": "#8A8A85",
+      "priority": "normal",
+      "source": "web",
+      "team": {
+        "id": 1,
+        "name": "Suporte",
+        "slug": "suporte",
+        "visibility": "company_wide",
+        "order": 1,
+        "internal_only": false
+      },
+      "requester_display": "Ana Almeida",
+      "assignee_name": "Samuel Suporte",
+      "assignee_avatar": null,
+      "assignee_id": 3,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Acme Marketing",
+      "plan": {
+        "slug": "black",
+        "name": "Black"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        },
+        "resolution": {
+          "due_at": null,
+          "state": "none",
+          "minutes_left": null
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": false,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 1,
+      "last_reopened_at": "2026-10-21T15:09:40.742752-03:00",
+      "first_response_at": "2026-10-14T13:09:40.742752-03:00",
+      "auto_closed": false,
+      "current_status_note": null,
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": "2026-10-14T13:09:40.742752-03:00",
+      "created_at": "2026-10-14T03:09:40.742752-03:00",
+      "updated_at": "2026-10-22T11:09:41.850434-03:00"
+    }
+  ]
+}

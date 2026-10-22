@@ -1,0 +1,129 @@
+{
+  "id": 2,
+  "reference": "TD-00002",
+  "subject": "Dúvida sobre integração com o CRM",
+  "order_number": "",
+  "status": "open",
+  "stage": 2,
+  "stage_name": "Aberto",
+  "stage_color": "#5A87B8",
+  "priority": "normal",
+  "source": "web",
+  "team": {
+    "id": 1,
+    "name": "Suporte",
+    "slug": "suporte",
+    "visibility": "company_wide",
+    "order": 1,
+    "internal_only": false
+  },
+  "requester_display": "Beto Barros",
+  "assignee_name": "Samuel Suporte",
+  "assignee_avatar": null,
+  "assignee_id": 3,
+  "owner_name": null,
+  "owner_id": null,
+  "company_name": "Acme Marketing",
+  "plan": {
+    "slug": "black",
+    "name": "Black"
+  },
+  "sla": {
+    "first_response": {
+      "due_at": null,
+      "state": "none",
+      "minutes_left": null
+    },
+    "resolution": {
+      "due_at": null,
+      "state": "none",
+      "minutes_left": null
+    }
+  },
+  "category": null,
+  "category_name": null,
+  "service_name": null,
+  "is_restricted": false,
+  "content_hidden": false,
+  "restriction_reason": "",
+  "reopen_count": 0,
+  "last_reopened_at": null,
+  "first_response_at": "2026-10-21T07:09:40.742752-03:00",
+  "auto_closed": false,
+  "current_status_note": null,
+  "tags": [],
+  "satisfaction": null,
+  "closed_at": null,
+  "created_at": "2026-10-21T05:09:40.742752-03:00",
+  "updated_at": "2026-10-22T11:09:41.760615-03:00",
+  "messages": [
+    {
+      "id": 1,
+      "author_name": "Beto Barros",
+      "author_avatar": null,
+      "author_is_internal": false,
+      "body": "Como conecto o CRM de vocês ao nosso funil?",
+      "is_public": true,
+      "source": "web",
+      "is_first_response": false,
+      "created_at": "2026-10-21T05:09:40.742752-03:00",
+      "attachments": [],
+      "mentions": [],
+      "edited_at": null,
+      "is_deleted": false,
+      "can_edit": false,
+      "signature_html": ""
+    },
+    {
+      "id": 2,
+      "author_name": "Samuel Suporte",
+      "author_avatar": null,
+      "author_is_internal": true,
+      "body": "Olá! Pode me dizer qual CRM vocês usam?",
+      "is_public": true,
+      "source": "web",
+      "is_first_response": true,
+      "created_at": "2026-10-21T07:09:40.742752-03:00",
+      "attachments": [],
+      "mentions": [],
+      "edited_at": null,
+      "is_deleted": false,
+      "can_edit": false,
+      "signature_html": ""
+    }
+  ],
+  "events": [
+    {
+      "id": 2,
+      "from_status": null,
+      "to_status": "new",
+      "actor_name": null,
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "",
+      "created_at": "2026-10-22T11:09:41.764323-03:00"
+    },
+    {
+      "id": 3,
+      "from_status": "new",
+      "to_status": "open",
+      "actor_name": "Samuel Suporte",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "",
+      "created_at": "2026-10-22T11:09:41.777889-03:00"
+    }
+  ],
+  "resolution_started_at": null,
+  "resolution_ended_at": null,
+  "sla_cycle": 1,
+  "watchers": [],
+  "requester": {
+    "id": 6,
+    "name": "Beto Barros",
+    "email": "beto@acme.test",
+    "ui_language": "pt-br",
+    "timezone": "America/Sao_Paulo"
+  },
+  "scheduled_replies": []
+}

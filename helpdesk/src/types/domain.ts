@@ -10,6 +10,8 @@ export interface TicketStatus {
   color: string;
   /** Ausente = ativo. Status desativado some dos menus de escolha, mas continua pintando tickets que já o usam. */
   active?: boolean;
+  /** Status de fábrica (um por categoria): não pode ser desativado nem apagado. Ausente = usa `SYSTEM_STATUS_IDS` (mock). */
+  system?: boolean;
 }
 
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'; // Baixa, Normal, Alta, Urgente
@@ -26,12 +28,19 @@ export interface User {
   timezone: string;
   details?: string;
   notes?: string;
-  createdAt: string;
-  updatedAt: string;
+  /** Ausente quando o backend não informa (usuário do Resolv não expõe criação/atualização). */
+  createdAt?: string;
+  updatedAt?: string;
   lastSeenAt?: string;
   suspended?: boolean;
+  /** Papel detalhado do backend (admin, supervisor, agent, light_agent...). Só modo real. */
+  internalRole?: string;
+  /** Foto do usuário no backend (só modo real). */
+  avatarUrl?: string | null;
   /** Contatos adicionais ("+ adicionar contato"). */
   extraEmails?: string[];
+  /** Telefone (só modo real: o backend exige ao menos um para cliente). */
+  phone?: string;
 }
 
 export interface Org {
@@ -45,17 +54,28 @@ export interface Org {
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+  /** Só modo real: plano da empresa (obrigatório ao criar no backend). */
+  planId?: string;
+  planName?: string;
 }
 
 export interface Group {
   id: string;
   name: string;
   agentIds: string[];
+  /** Slug da equipe no backend (`me.teams` traz slugs). Só modo real. */
+  slug?: string;
+  /** Equipe inativa no backend (só modo real). */
+  inactive?: boolean;
 }
 
 export interface Attachment {
   name: string;
   size: number;
+  /** Download autenticado no backend (`/api/v1/attachments/{id}/`). Só modo real. */
+  url?: string;
+  /** Anexo ainda em varredura/quarentena: o download responde 409. Só modo real. */
+  downloadable?: boolean;
 }
 
 export interface Comment {
@@ -63,9 +83,18 @@ export interface Comment {
   authorId: string;
   public: boolean;
   bodyHtml: string;
-  channel: 'email' | 'web_form' | 'api';
+  channel: 'email' | 'web_form' | 'api' | 'chat' | 'system';
   attachments: Attachment[];
   createdAt: string;
+  /**
+   * Só modo real: o backend não manda `author_id` nas mensagens, então `authorId` é resolvido pelo nome
+   * (ver api/real/mappers/ticket.ts). Quando não há casamento seguro, `authorId` vira `name:<nome>` e a tela usa estes campos.
+   */
+  authorName?: string;
+  authorInternal?: boolean;
+  authorAvatarUrl?: string | null;
+  editedAt?: string | null;
+  deleted?: boolean;
 }
 
 export interface AuditEvent {
@@ -107,6 +136,18 @@ export interface Ticket {
   events: AuditEvent[];
   createdAt: string;
   updatedAt: string;
+  /** Só modo real: referência legível ("TD-00001"). */
+  reference?: string;
+  /** Só modo real: a lista do backend traz nomes (e não ids) de solicitante/empresa/responsável. */
+  requesterName?: string;
+  companyName?: string;
+  assigneeName?: string;
+  /** Só modo real: canal original do backend (`web`, `chat`, `internal`); `channel` é a aproximação do Helpdesk. */
+  source?: 'web' | 'chat' | 'internal';
+  /** Só modo real: `false` na lista (sem mensagens/eventos); `true` depois de `getTicket`. Ausente = mock (completo). */
+  detailed?: boolean;
+  /** Só modo real: campos da última edição que o backend não tem e valem só neste navegador (assunto, tipo, CC...). */
+  localFields?: string[];
 }
 
 export type ViewConditionField = 'assignee' | 'group' | 'status_category' | 'updated_within_hours';
@@ -132,6 +173,13 @@ export interface View {
   groupBy?: 'statusCategory';
   columns: string[];
   countKey: string;
+  /**
+   * Só modo real: parâmetros do `GET /tickets/` que definem a visão NO SERVIDOR (`{view:'sem-atendimento'}`, filtros
+   * de visão pessoal...). Com `query`, a lista vem do servidor; sem ela, `conditions` avalia no navegador.
+   */
+  query?: Record<string, string>;
+  /** Só modo real: de onde vem (sistema do backend, visão pessoal ou do Helpdesk). */
+  origin?: 'helpdesk' | 'system' | 'personal';
 }
 
 export interface MacroActions {
@@ -150,6 +198,8 @@ export interface Macro {
   active: boolean;
   usage7d: number;
   actions: MacroActions;
+  /** Só modo real: o corpo da resposta como o backend o guarda (markdown), para editar sem perder a formatação. */
+  bodyMarkdown?: string;
   createdAt?: string;
   updatedAt?: string;
 }

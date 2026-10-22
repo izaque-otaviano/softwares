@@ -1,3 +1,4 @@
+import { errMessage } from '@/lib/apiError';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useMemo, useState } from 'react';
@@ -34,8 +35,8 @@ export default function Macros() {
       setData((prev) => (prev ?? []).map((m) => saved.find((s) => s.id === m.id) ?? m));
       setSelected(new Set());
       toast.success(active ? 'Macros ativadas' : 'Macros desativadas');
-    } catch {
-      toast.error('Não foi possível alterar as macros. Tente novamente.');
+    } catch (e) {
+      toast.error(errMessage(e, 'Não foi possível alterar as macros. Tente novamente.'));
     }
   };
 
@@ -135,7 +136,7 @@ export default function Macros() {
             setSelected(new Set());
             toast.success('Macros excluídas');
           } catch (e) {
-            toast.error('Não foi possível excluir. Tente novamente.');
+            toast.error(errMessage(e, 'Não foi possível excluir. Tente novamente.'));
             throw e;
           }
         }}

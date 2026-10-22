@@ -1,3 +1,4 @@
+import { localHint } from '@/api/capabilities';
 import { useState } from 'react';
 import { ChevronDown, GitMerge, Trash2, UserCheck, X } from 'lucide-react';
 import { Button, ConfirmModal, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui';
@@ -65,7 +66,7 @@ export function BulkBar({ ids, onClear }: BulkBarProps) {
         open={confirm === 'delete'}
         onOpenChange={(o) => !o && setConfirm(null)}
         title={n === 1 ? 'Apagar ticket?' : `Apagar ${n} tickets?`}
-        description="Os tickets serão removidos das visualizações. Esta ação não pode ser desfeita."
+        description={`Os tickets serão removidos das visualizações. Esta ação não pode ser desfeita.${localHint('deleteTicket') ? ' O backend não apaga tickets: isto vale somente neste navegador.' : ''}`}
         confirmLabel="Apagar"
         onConfirm={async () => {
           done(await deleteTickets(ids));
@@ -75,7 +76,7 @@ export function BulkBar({ ids, onClear }: BulkBarProps) {
         open={confirm === 'merge'}
         onOpenChange={(o) => !o && setConfirm(null)}
         title={`Fundir ${n} tickets?`}
-        description={`Os demais tickets serão fundidos no ticket #${target} e fechados.`}
+        description={`Os demais tickets serão fundidos no ticket #${target} e fechados.${localHint('merge') ? ' O backend não tem fusão: isto vale somente neste navegador.' : ''}`}
         confirmLabel="Fundir"
         tone="primary"
         onConfirm={async () => {

@@ -2,10 +2,18 @@ import { ChevronDown, Search, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Button, Input, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui';
+import { IS_REAL } from '@/api/mode';
+import { useSession } from '@/store/useSession';
 import { ALL_NAV_ITEMS } from './nav';
 
 export const ADMIN_ACCOUNT = 'Resolv';
 export const ADMIN_USER = 'Henrique Souza';
+
+/** Nome de quem administra: no modo real, o usuário da sessão; no mock, o administrador fixo de exemplo. */
+export function useAdminName(): string {
+  const sessionName = useSession((s) => (IS_REAL ? s.user?.name : undefined));
+  return sessionName ?? ADMIN_USER;
+}
 
 function AdminSwitcher() {
   const navigate = useNavigate();
@@ -82,12 +90,13 @@ function AdminSearch() {
 
 function UserMenu() {
   const navigate = useNavigate();
+  const adminName = useAdminName();
   return (
     <Menu>
       <MenuTrigger asChild>
         <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-pill outline-none focus-visible:shadow-focus">
-          <span className="sr-only">{`${ADMIN_USER}, administrador`}</span>
-          <Avatar name={ADMIN_USER} size={28} decorative />
+          <span className="sr-only">{`${adminName}, administrador`}</span>
+          <Avatar name={adminName} size={28} decorative />
         </button>
       </MenuTrigger>
       <MenuContent align="end">

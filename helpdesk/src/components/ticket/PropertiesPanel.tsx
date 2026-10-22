@@ -1,3 +1,4 @@
+import { localHint } from '@/api/capabilities';
 import { ChevronDown, ChevronRight, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { removeKeepingFocus } from '@/components/ui/focusUtils';
@@ -7,7 +8,7 @@ import { Avatar, Button, Combobox, Field, Select, TagInput, type ComboOption } f
 import { cn } from '@/lib/cn';
 import { useIsNarrow } from '@/lib/useMediaQuery';
 import { PRIORITY_LABEL, TYPE_LABEL } from '@/lib/status';
-import { ME_ID } from '@/mocks/clock';
+import { useMeId } from '@/store/useSession';
 import { useTickets } from '@/store/useTickets';
 import type { Priority, TicketType, User } from '@/types/domain';
 import { AddUserModal } from './AddUserModal';
@@ -96,12 +97,13 @@ function AssigneeField({ ticketKey, disabled }: { ticketKey: string; disabled: b
   const entry = useFormEntry(ticketKey)!;
   const groups = useGroups();
   const users = useDirectory();
+  const meId = useMeId();
   const { assigneeGroupId, assigneeId } = entry.values;
   const accept = () => {
-    const mine = groups.find((g) => g.agentIds.includes(ME_ID));
+    const mine = groups.find((g) => g.agentIds.includes(meId));
     const current = groups.find((g) => g.id === assigneeGroupId);
-    const group = current?.agentIds.includes(ME_ID) ? current : mine;
-    useFormStore.getState().patch(ticketKey, { assigneeId: ME_ID, assigneeGroupId: group?.id ?? assigneeGroupId });
+    const group = current?.agentIds.includes(meId) ? current : mine;
+    useFormStore.getState().patch(ticketKey, { assigneeId: meId, assigneeGroupId: group?.id ?? assigneeGroupId });
   };
   return (
     <Field
@@ -109,7 +111,7 @@ function AssigneeField({ ticketKey, disabled }: { ticketKey: string; disabled: b
       required
       error={entry.errors.assignee}
       labelAction={
-        assigneeId !== ME_ID && !disabled ? (
+        assigneeId !== meId && !disabled ? (
           <button type="button" className={LINK} onClick={accept}>
             aceitar
           </button>
@@ -130,6 +132,7 @@ function AssigneeField({ ticketKey, disabled }: { ticketKey: string; disabled: b
 function FollowersField({ ticketKey, disabled }: { ticketKey: string; disabled: boolean }) {
   const entry = useFormEntry(ticketKey)!;
   const users = useDirectory();
+  const meId = useMeId();
   const { followerIds } = entry.values;
   const set = (ids: string[]) => useFormStore.getState().patch(ticketKey, { followerIds: ids });
   const options = useMemo(
@@ -139,9 +142,10 @@ function FollowersField({ ticketKey, disabled }: { ticketKey: string; disabled: 
   return (
     <Field
       label="Seguidores"
+      hint={localHint('ccFollowers', 'Só o seu "seguir" é salvo no servidor; outros seguidores ficam somente neste navegador.')}
       labelAction={
-        !followerIds.includes(ME_ID) && !disabled ? (
-          <button type="button" className={LINK} onClick={() => set([...followerIds, ME_ID])}>
+        !followerIds.includes(meId) && !disabled ? (
+          <button type="button" className={LINK} onClick={() => set([...followerIds, meId])}>
             seguir
           </button>
         ) : null
@@ -227,6 +231,7 @@ function AiFields({ ticketKey, disabled, open, onToggle }: { ticketKey: string; 
       </button>
       {open ? (
         <div id={regionId} className="mt-2 space-y-3">
+          {localHint('aiSummary') ? <p className="text-xs text-fg-muted">{localHint('aiSummary')}</p> : null}
           {READONLY_FIELDS.map((f) => (
             <ReadonlyField key={f.id} label={f.label} value={cf[f.id]} />
           ))}
@@ -319,7 +324,7 @@ export function PropertiesPanel({ ticketKey }: { ticketKey: string }) {
           <Field label="Tags">
             <TagInput value={values.tags} disabled={disabled} suggestions={suggestions} placeholder="Adicionar tag" onChange={(tags) => patch(ticketKey, { tags })} />
           </Field>
-          <Field label="Tipo">
+          <Field label="Tipo" hint={localHint('ticketType')}>
             <Select value={values.type ?? NONE} options={TYPE_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { type: (v || null) as TicketType | null })} />
           </Field>
           <Field label="Prioridade">

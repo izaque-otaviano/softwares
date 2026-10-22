@@ -1,3 +1,4 @@
+import { localHint } from '@/api/capabilities';
 import { useState } from 'react';
 import { Button, Checkbox, ConfirmModal, StatusBadge } from '@/components/ui';
 import { DEFAULT_STATUSES } from '@/lib/status';
@@ -61,7 +62,7 @@ export function MergePanel({ ticketKey }: { ticketKey: string }) {
         onOpenChange={setConfirm}
         tone="primary"
         title="Fundir tickets"
-        description={`${selected.length === 1 ? 'O ticket selecionado será fundido' : `Os ${selected.length} tickets selecionados serão fundidos`} neste ticket e marcado(s) como resolvido(s).`}
+        description={`${selected.length === 1 ? 'O ticket selecionado será fundido' : `Os ${selected.length} tickets selecionados serão fundidos`} neste ticket e marcado(s) como resolvido(s).${localHint('merge') ? ' O backend não tem fusão: isto vale somente neste navegador.' : ''}`}
         confirmLabel="Fundir"
         onConfirm={async () => {
           if (targetId === null) return;

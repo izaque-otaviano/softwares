@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Banner, Button, Field, Input, Modal, Select, StatusDot, Textarea } from '@/components/ui';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/lib/status';
+import { IS_REAL } from '@/api/mode';
 import { toast } from '@/store/useUi';
 import { useTickets } from '@/store/useTickets';
 import type { StatusCategory, TicketStatus } from '@/types/domain';
@@ -101,17 +102,17 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
         <Field label="Nome do status para o agente" required error={errors.agentName}>
           <Input value={draft.agentName} onChange={(e) => set('agentName', e.target.value)} maxLength={60} />
         </Field>
-        <Field label="Nome do status para o usuário final" required error={errors.endUserName}>
+        <Field label="Nome do status para o usuário final" required error={errors.endUserName} hint={IS_REAL ? 'Somente neste navegador: o backend usa um só nome.' : undefined}>
           <Input value={draft.endUserName} onChange={(e) => set('endUserName', e.target.value)} maxLength={60} />
         </Field>
-        <Field label="Descrição para o agente">
+        <Field label="Descrição para o agente" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Textarea value={draft.agentDescription} onChange={(e) => set('agentDescription', e.target.value)} rows={3} />
         </Field>
         <Field label="Cor">
           <Select
             value={draft.color}
             onValueChange={(v) => set('color', v)}
-            options={STATUS_COLOR_OPTIONS.map((o) => ({ value: o.value, label: o.label, icon: <StatusDot color={o.value} /> }))}
+            options={[...(STATUS_COLOR_OPTIONS.some((o) => o.value === draft.color) ? [] : [{ value: draft.color, label: `Personalizada (${draft.color})` }]), ...STATUS_COLOR_OPTIONS].map((o) => ({ value: o.value, label: o.label, icon: <StatusDot color={o.value} /> }))}
           />
         </Field>
       </div>

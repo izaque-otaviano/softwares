@@ -1,3 +1,4 @@
+import { localHint } from '@/api/capabilities';
 import { ChevronDown, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { membersApi, metaApi } from '@/api';
@@ -182,7 +183,8 @@ export default function Members() {
       header: 'Último acesso',
       label: 'Último acesso',
       width: 180,
-      cell: (m) => (m.lastSeenAt ? relativeTime(m.lastSeenAt) : <span className="text-fg-muted">Convite pendente</span>),
+      cell: (m) =>
+        m.pending ? <span className="text-fg-muted">Convite pendente</span> : m.lastSeenAt ? relativeTime(m.lastSeenAt) : <span className="text-fg-muted">-</span>,
     },
   ];
 
@@ -218,7 +220,7 @@ export default function Members() {
       />
       <AdminBody>
         <div className="mb-4 max-w-xs rounded border border-line p-4">
-          <p className="text-xs font-semibold text-fg-muted">Licenças</p>
+          <p className="text-xs font-semibold text-fg-muted">Licenças{localHint('licenses') ? ' (somente neste navegador)' : ''}</p>
           {licenses.data ? (
             <p className="mt-1 text-md">
               <span className="font-semibold">Agentes</span> {licenses.data.used} de {licenses.data.total}

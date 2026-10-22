@@ -1,4 +1,4 @@
-import { Globe, Mail, Paperclip, Webhook } from 'lucide-react';
+import { Bot, Globe, Mail, MessagesSquare, Paperclip, Webhook } from 'lucide-react';
 import { Avatar } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { absoluteTime, relativeTime } from '@/lib/time';
@@ -9,6 +9,8 @@ const CHANNEL: Record<Comment['channel'], { label: string; Icon: typeof Mail }> 
   email: { label: 'E-mail', Icon: Mail },
   web_form: { label: 'Formulário web', Icon: Globe },
   api: { label: 'API', Icon: Webhook },
+  chat: { label: 'Chat', Icon: MessagesSquare },
+  system: { label: 'Sistema', Icon: Bot },
 };
 
 export function formatSize(bytes: number): string {
@@ -21,7 +23,15 @@ export function AttachmentChip({ file, onRemove }: { file: Attachment; onRemove?
   return (
     <span className="inline-flex h-6 max-w-full items-center gap-1 rounded border border-line bg-surface px-2 text-xs text-fg">
       <Paperclip aria-hidden className="h-3 w-3 shrink-0 text-fg-muted" />
-      <span className="truncate">{file.name}</span>
+      {file.url && file.downloadable !== false ? (
+        <a href={file.url} target="_blank" rel="noopener noreferrer" className="truncate text-action hover:underline">
+          {file.name}
+        </a>
+      ) : (
+        <span className="truncate" title={file.url ? 'Em verificação: o download ainda não está liberado.' : undefined}>
+          {file.name}
+        </span>
+      )}
       <span className="shrink-0 text-fg-muted">{formatSize(file.size)}</span>
       {onRemove ? (
         <button type="button" aria-label={`Remover ${file.name}`} onClick={onRemove} className="ml-1 rounded-xs px-1 text-fg-muted outline-none hover:bg-hover focus-visible:shadow-focus">
@@ -41,7 +51,7 @@ export interface MessageBubbleProps {
 }
 
 export function MessageBubble({ comment, author, isCustomer, now, compact }: MessageBubbleProps) {
-  const name = author?.name ?? 'Usuário';
+  const name = author?.name ?? comment.authorName ?? 'Usuário';
   const { label, Icon } = CHANNEL[comment.channel];
   const internal = !comment.public;
   return (
@@ -78,7 +88,7 @@ export function MessageBubble({ comment, author, isCustomer, now, compact }: Mes
         {comment.attachments.length > 0 ? (
           <ul aria-label="Anexos" className="mt-2 flex flex-wrap gap-2">
             {comment.attachments.map((f) => (
-              <li key={f.name} className="max-w-full">
+              <li key={`${f.url ?? ''}${f.name}`} className="max-w-full">
                 <AttachmentChip file={f} />
               </li>
             ))}

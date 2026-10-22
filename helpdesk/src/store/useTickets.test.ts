@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetDb } from '@/api/db';
-import { configureApi } from '@/api/delay';
+import { resetDb } from '@/api/mock/db';
+import { configureApi } from '@/api/mock/delay';
 import { useUi } from './useUi';
 import { liveTick, startLiveUpdates, stopLiveUpdates, useTickets } from './useTickets';
 

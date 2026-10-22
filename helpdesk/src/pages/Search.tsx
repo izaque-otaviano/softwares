@@ -56,7 +56,7 @@ export default function SearchPage() {
     }
     let alive = true;
     setLoad({ state: 'loading' });
-    search(q).then(
+    search(q, { full: true }).then(
       (data) => alive && setLoad({ state: 'ok', data }),
       () => alive && setLoad({ state: 'error' }),
     );

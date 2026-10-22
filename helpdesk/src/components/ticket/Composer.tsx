@@ -1,3 +1,4 @@
+import { localHint } from '@/api/capabilities';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
@@ -9,10 +10,9 @@ import { useDirectory } from '@/components/lists/useDirectory';
 import { Input, TagInput } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { toast } from '@/store/useUi';
-import type { Attachment } from '@/types/domain';
 import { mockAiTransform } from './AiMenu';
 import { ComposerToolbar } from './ComposerToolbar';
-import { hasBodyContent, useFormEntry, useFormStore } from './formStore';
+import { useFormEntry, useFormStore } from './formStore';
 import { AttachmentChip } from './MessageBubble';
 import { ReplyModeSwitch } from './ReplyModeSwitch';
 
@@ -35,7 +35,6 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
   const users = useDirectory();
   const [focused, setFocused] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [files, setFiles] = useState<Attachment[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
   const mode = entry?.replyMode ?? 'public';
   const modeRef = useRef(mode);
@@ -64,14 +63,18 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
     lastRev.current = rev;
     const html = useFormStore.getState().forms[ticketKey]?.bodyHtml ?? '';
     editor.commands.setContent(html, false);
-    if (!hasBodyContent(html)) setFiles([]);
   }, [rev, editor, ticketKey]);
 
   useEffect(() => () => clearTimeout(aiTimer.current), []);
 
-  const addFiles = useCallback((list: File[]) => {
-    if (list.length) setFiles((prev) => [...prev, ...list.map((f) => ({ name: f.name, size: f.size }))]);
-  }, []);
+  // Os arquivos moram no formulário (File de verdade): o modo real os envia em multipart junto com a mensagem.
+  const files = entry?.files ?? [];
+  const addFiles = useCallback(
+    (list: File[]) => {
+      if (list.length) useFormStore.getState().addFiles(ticketKey, list);
+    },
+    [ticketKey],
+  );
 
   const runAi = (action: string) => {
     if (!editor) return;
@@ -159,7 +162,7 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
       </div>
       {mode === 'public' && entry.ccOpen ? (
         <div className="mb-2 flex items-start gap-2">
-          <span className="pt-1.5 text-sm text-fg-muted">CC</span>
+          <span className="pt-1.5 text-sm text-fg-muted">CC{localHint('ccFollowers') ? ' (somente neste navegador)' : ''}</span>
           <div className="min-w-0 flex-1">
             <TagInput
               aria-label="CC (e-mails)"
@@ -184,7 +187,7 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
           <ul aria-label="Anexos" className="flex flex-wrap gap-2 px-3 pb-2">
             {files.map((f, i) => (
               <li key={`${f.name}-${i}`} className="max-w-full">
-                <AttachmentChip file={f} onRemove={() => setFiles((prev) => prev.filter((_, j) => j !== i))} />
+                <AttachmentChip file={{ name: f.name, size: f.size }} onRemove={() => useFormStore.getState().removeFile(ticketKey, i)} />
               </li>
             ))}
           </ul>

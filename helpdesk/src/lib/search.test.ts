@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orgs, tickets, users } from '@/mocks';
+import { orgs, tickets, users } from '@/api/mock/data';
 import { normalize, searchAll } from './search';
 
 const data = { tickets, users, orgs };

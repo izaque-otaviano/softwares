@@ -6,6 +6,7 @@ import { startLiveUpdates, stopLiveUpdates, useTickets } from '@/store/useTicket
 import { ErrorBoundary } from './ErrorBoundary';
 import { NavRail } from './NavRail';
 import { registerNavigate } from './openTab';
+import { RealModeNotice } from './RealModeNotice';
 import { RightRail, showsRightRail } from './RightRail';
 import { ShortcutsHelpDialog } from './ShortcutsHelp';
 import { useGlobalShortcuts, useHelpShortcut } from './shortcuts';
@@ -36,6 +37,7 @@ export function AgentLayout() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface text-sm text-fg">
       <SkipLink />
+      <RealModeNotice />
       <TopBar />
       <div className="flex min-h-0 flex-1">
         <NavRail />

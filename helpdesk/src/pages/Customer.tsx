@@ -1,3 +1,5 @@
+import { errMessage } from '@/lib/apiError';
+import { IS_REAL } from '@/api/mode';
 import { Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -27,7 +29,7 @@ import {
 } from '@/components/ui';
 import { useTabs } from '@/store/useTabs';
 import { useTickets } from '@/store/useTickets';
-import { toast } from '@/store/useUi';
+import { toast, localSaved } from '@/store/useUi';
 import type { Org, User } from '@/types/domain';
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'notfound' } | { status: 'ok'; user: User };
@@ -149,8 +151,8 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
       setDraft(toDraft(updated));
       useTabs.getState().updateTab(tabKey, { title: updated.name, subtitle: updated.email });
       toast.success('Cliente atualizado');
-    } catch {
-      toast.error('Não foi possível salvar. Suas alterações foram mantidas.');
+    } catch (e) {
+      toast.error(`${errMessage(e, 'Não foi possível salvar.')} Suas alterações foram mantidas.`);
     } finally {
       setSaving(false);
     }
@@ -161,8 +163,8 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
       const updated = await usersApi.updateUser(user.id, { suspended: !user.suspended });
       onUserChange(updated);
       toast.success(updated.suspended ? `${user.name} foi suspenso` : `${user.name} foi reativado`);
-    } catch {
-      toast.error('Não foi possível alterar o acesso. Tente novamente.');
+    } catch (e) {
+      toast.error(errMessage(e, 'Não foi possível alterar o acesso. Tente novamente.'));
     }
   };
 
@@ -189,7 +191,7 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
           ) : undefined
         }
       >
-        <Field label="Tipo de usuário">
+        <Field label="Tipo de usuário" hint={IS_REAL ? 'O tipo vem do backend e não é alterado aqui.' : undefined}>
           <Select value={draft.role} onValueChange={(v) => set('role', v as User['role'])} options={ROLE_OPTIONS} />
         </Field>
         <Field label="Acesso">
@@ -210,7 +212,7 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
         <button type="button" className="inline-flex items-center gap-1 rounded text-sm text-action hover:text-action-hover hover:underline focus-visible:shadow-focus focus-visible:outline-none" onClick={() => set('extraEmails', [...draft.extraEmails, ''])}>
           <Plus aria-hidden className="h-4 w-4" /> adicionar contato
         </button>
-        <Field label="Tags">
+        <Field label="Tags" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <TagInput value={draft.tags} onChange={(v) => set('tags', v)} placeholder="Adicionar tag" />
         </Field>
         <Field label="Org.">
@@ -223,16 +225,16 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
             options={orgs.map((o) => ({ value: o.id, label: o.name }))}
           />
         </Field>
-        <Field label="Idioma">
+        <Field label="Idioma" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Select value={draft.language} onValueChange={(v) => set('language', v)} options={withCurrent(LANGUAGE_OPTIONS, draft.language)} />
         </Field>
-        <Field label="Fuso horário">
+        <Field label="Fuso horário" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Select value={draft.timezone} onValueChange={(v) => set('timezone', v)} options={withCurrent(TIMEZONE_OPTIONS, draft.timezone)} />
         </Field>
         <Field label="Detalhes">
           <Textarea minRows={3} value={draft.details} onChange={(e) => set('details', e.target.value)} />
         </Field>
-        <Field label="Observações">
+        <Field label="Observações" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Textarea minRows={3} value={draft.notes} onChange={(e) => set('notes', e.target.value)} />
         </Field>
         <Stamps
@@ -304,16 +306,16 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
         open={dialog === 'delete'}
         onOpenChange={(o) => !o && setDialog(null)}
         title={`Apagar ${user.name}?`}
-        description="O cliente será removido permanentemente. Esta ação não pode ser desfeita."
+        description={IS_REAL ? 'O backend não apaga usuários: o cliente será DESATIVADO (sai das listas e não entra mais).' : 'O cliente será removido permanentemente. Esta ação não pode ser desfeita.'}
         confirmLabel="Apagar"
         onConfirm={async () => {
           try {
             await usersApi.deleteUser(user.id);
           } catch (e) {
-            toast.error('Não foi possível apagar o cliente. Tente novamente.');
+            toast.error(errMessage(e, 'Não foi possível apagar o cliente. Tente novamente.'));
             throw e;
           }
-          toast.success(`${user.name} foi apagado`);
+          toast.success(IS_REAL ? `${user.name} foi desativado` : `${user.name} foi apagado`);
           useTabs.getState().closeTab(tabKey);
           goTo('/agent/customers');
         }}
@@ -339,7 +341,7 @@ function MergeModal({ open, onOpenChange, user }: { open: boolean; onOpenChange:
     setBusy(true);
     try {
       const merged = await usersApi.mergeUsers(user.id, target);
-      toast.success(`${user.name} foi fundido em ${merged.name}`);
+      toast.success(localSaved(`${user.name} foi fundido em ${merged.name}`, 'merge'));
       void useTickets.getState().load();
       useTabs.getState().closeTab(`user:${user.id}`);
       onOpenChange(false);

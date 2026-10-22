@@ -1,0 +1,55 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Novo",
+      "slug": "new",
+      "category": "new",
+      "category_label": "Novo",
+      "color": "#6C4E9C",
+      "order": 0,
+      "is_system": true,
+      "is_active": true,
+      "ticket_count": 1
+    },
+    {
+      "id": 2,
+      "name": "Aberto",
+      "slug": "open",
+      "category": "open",
+      "category_label": "Aberto",
+      "color": "#5A87B8",
+      "order": 1,
+      "is_system": true,
+      "is_active": true,
+      "ticket_count": 2
+    },
+    {
+      "id": 3,
+      "name": "Aguardando retorno",
+      "slug": "pending_customer",
+      "category": "pending_customer",
+      "category_label": "Aguardando retorno",
+      "color": "#E9A23B",
+      "order": 2,
+      "is_system": true,
+      "is_active": true,
+      "ticket_count": 1
+    },
+    {
+      "id": 4,
+      "name": "Fechado",
+      "slug": "closed",
+      "category": "closed",
+      "category_label": "Fechado",
+      "color": "#8A8A85",
+      "order": 3,
+      "is_system": true,
+      "is_active": true,
+      "ticket_count": 2
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { macrosApi } from '@/api';
+import { IS_REAL } from '@/api/mode';
 import { EditFooter, PageHeader } from '@/components/admin/PageHeader';
 import { useAsync } from '@/components/admin/lists/useAsync';
 import { AVAILABLE_TO_LABEL, htmlToText, textToHtml } from '@/components/admin/macros/macroText';
@@ -32,7 +33,8 @@ const fromMacro = (m: Macro): Draft => ({
   status: m.actions.status ?? '',
   priority: m.actions.priority ?? '',
   tags: m.actions.addTags ?? [],
-  publicReply: htmlToText(m.actions.publicReply ?? ''),
+  // Modo real: o backend guarda markdown; edita-se o texto como ele é (nada de formatação perdida).
+  publicReply: IS_REAL && m.bodyMarkdown !== undefined ? m.bodyMarkdown : htmlToText(m.actions.publicReply ?? ''),
   internalNote: htmlToText(m.actions.internalNote ?? ''),
 });
 
@@ -71,6 +73,7 @@ export default function MacroEdit() {
       await macrosApi.saveMacro({
         ...(loaded ?? { usage7d: 0 }),
         id: loaded?.id,
+        ...(IS_REAL ? { bodyMarkdown: draft.publicReply.trim() } : {}),
         name: draft.name.trim(),
         description: draft.description.trim() || undefined,
         availableTo: draft.availableTo,
@@ -129,10 +132,10 @@ export default function MacroEdit() {
         <Field label="Nome da macro" required error={nameError}>
           <Input value={draft.name} onChange={(e) => set({ name: e.target.value })} maxLength={120} />
         </Field>
-        <Field label="Descrição">
+        <Field label="Descrição" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Textarea minRows={2} value={draft.description} onChange={(e) => set({ description: e.target.value })} />
         </Field>
-        <Field label="Disponível para">
+        <Field label="Disponível para" hint={IS_REAL ? 'Somente neste navegador: no backend toda macro vale para todos os agentes.' : undefined}>
           <Select
             className="w-80"
             value={draft.availableTo}
@@ -145,7 +148,7 @@ export default function MacroEdit() {
         <h2 className="mt-2 text-md font-semibold text-fg">Ações</h2>
         <p className="-mt-3 text-sm text-fg-muted">Ao aplicar a macro, estas alterações são feitas no ticket antes do envio.</p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Definir status">
+          <Field label="Definir status" hint={IS_REAL ? 'Somente neste navegador: o backend não tem esta ação.' : undefined}>
             <Select
               value={draft.status}
               onValueChange={(v) => set({ status: v })}
@@ -163,10 +166,10 @@ export default function MacroEdit() {
         <Field label="Adicionar tags">
           <TagInput value={draft.tags} onChange={(tags) => set({ tags })} placeholder="Digite e pressione Enter" />
         </Field>
-        <Field label="Resposta pública" hint="Parágrafos separados por uma linha em branco.">
+        <Field label="Resposta pública" hint={IS_REAL ? 'Markdown: **negrito**, _itálico_, listas com "- " e links [texto](https://...). Use {{solicitante}}, {{empresa}} e {{referencia}} para preencher dados do ticket.' : 'Parágrafos separados por uma linha em branco.'}>
           <Textarea minRows={5} value={draft.publicReply} onChange={(e) => set({ publicReply: e.target.value })} />
         </Field>
-        <Field label="Nota interna">
+        <Field label="Nota interna" hint={IS_REAL ? 'Somente neste navegador: o backend não tem nota interna na macro.' : undefined}>
           <Textarea minRows={3} value={draft.internalNote} onChange={(e) => set({ internalNote: e.target.value })} />
         </Field>
       </div>
