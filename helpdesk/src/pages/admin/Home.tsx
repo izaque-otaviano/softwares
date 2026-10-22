@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { localHint } from '@/api/capabilities';
 import { fieldsApi, macrosApi, membersApi, triggersApi } from '@/api';
 import { AdminBody, ProgressBar } from '@/components/admin/AdminPage';
 import { useAdminName } from '@/components/admin/AdminTopBar';
@@ -20,25 +21,45 @@ export interface ResourceRow {
   id: string;
   name: string;
   active: number;
-  runs24h: number;
-  unused30d: number;
+  /** null = backend não informa uso (ex.: macros no Resolv). */
+  runs24h: number | null;
+  unused30d: number | null;
 }
 
-/** Execuções em 24 h estimadas a partir do uso em 7 dias; "sem uso" = ativos sem nenhuma execução. */
+/**
+ * Uso de macros/gatilhos. Quando nenhum item tem contador de uso (>0), devolve null
+ * nas colunas de execução (típico do modo real: o backend não expõe usage7d/fired7d).
+ */
 export function resourceRows(macros: Macro[], triggers: Trigger[]): ResourceRow[] {
   const activeM = macros.filter((m) => m.active);
   const activeT = triggers.filter((t) => t.active);
+  const macrosTracked = macros.some((m) => m.usage7d > 0);
+  const triggersTracked = triggers.some((t) => t.fired7d > 0);
   return [
-    { id: 'macros', name: 'Macros', active: activeM.length, runs24h: Math.round(activeM.reduce((n, m) => n + m.usage7d, 0) / 7), unused30d: activeM.filter((m) => m.usage7d === 0).length },
-    { id: 'triggers', name: 'Gatilhos', active: activeT.length, runs24h: Math.round(activeT.reduce((n, t) => n + t.fired7d, 0) / 7), unused30d: activeT.filter((t) => t.fired7d === 0).length },
+    {
+      id: 'macros',
+      name: 'Macros',
+      active: activeM.length,
+      runs24h: macrosTracked ? Math.round(activeM.reduce((n, m) => n + m.usage7d, 0) / 7) : null,
+      unused30d: macrosTracked ? activeM.filter((m) => m.usage7d === 0).length : null,
+    },
+    {
+      id: 'triggers',
+      name: 'Gatilhos',
+      active: activeT.length,
+      runs24h: triggersTracked ? Math.round(activeT.reduce((n, t) => n + t.fired7d, 0) / 7) : null,
+      unused30d: triggersTracked ? activeT.filter((t) => t.fired7d === 0).length : null,
+    },
   ];
 }
+
+const dash = (n: number | null) => (n === null ? '—' : n.toLocaleString('pt-BR'));
 
 const COLUMNS: ColumnDef<ResourceRow>[] = [
   { id: 'name', header: 'Recurso', label: 'Recurso', cell: (r) => <span className="font-semibold">{r.name}</span>, width: 220 },
   { id: 'active', header: 'Ativos', label: 'Ativos', cell: (r) => r.active, width: 140 },
-  { id: 'runs', header: 'Execuções (24 h)', label: 'Execuções (24 h)', cell: (r) => r.runs24h.toLocaleString('pt-BR'), width: 180 },
-  { id: 'unused', header: 'Sem uso (30 d)', label: 'Sem uso (30 d)', cell: (r) => r.unused30d, width: 180 },
+  { id: 'runs', header: 'Execuções (24 h)', label: 'Execuções (24 h)', cell: (r) => dash(r.runs24h), width: 180 },
+  { id: 'unused', header: 'Sem uso (30 d)', label: 'Sem uso (30 d)', cell: (r) => dash(r.unused30d), width: 180 },
 ];
 
 export default function AdminHome() {
@@ -56,9 +77,27 @@ export default function AdminHome() {
   const rows = useMemo(() => (data ? resourceRows(data.macros, data.triggers) : []), [data]);
   const usage = data
     ? [
-        { id: 'agents', label: 'Agentes', value: data.licenses.used, max: data.licenses.total },
-        { id: 'fields', label: 'Campos personalizados', value: data.fields.filter((f) => !f.system && f.active).length, max: LIMITS.fields },
-        { id: 'triggers', label: 'Gatilhos ativos', value: data.triggers.filter((t) => t.active).length, max: LIMITS.triggers },
+        {
+          id: 'agents',
+          label: 'Agentes',
+          value: data.licenses.used,
+          max: Math.max(data.licenses.total, data.licenses.used),
+          hint: localHint('licenses', 'Agentes ativos no diretório; o teto é local (o backend não expõe cotas de licença).'),
+        },
+        {
+          id: 'fields',
+          label: 'Campos personalizados',
+          value: data.fields.filter((f) => !f.system && f.active).length,
+          max: Math.max(LIMITS.fields, data.fields.filter((f) => !f.system && f.active).length),
+          hint: 'Limite operacional sugerido da conta.',
+        },
+        {
+          id: 'triggers',
+          label: 'Gatilhos ativos',
+          value: data.triggers.filter((t) => t.active).length,
+          max: Math.max(LIMITS.triggers, data.triggers.filter((t) => t.active).length),
+          hint: 'Limite operacional sugerido da conta.',
+        },
       ]
     : [];
 
@@ -99,6 +138,7 @@ export default function AdminHome() {
                       {u.value} de {u.max}
                     </p>
                     <ProgressBar value={u.value} max={u.max} label={`${u.label}: ${u.value} de ${u.max}`} />
+                    {u.hint ? <p className="mt-2 text-xs text-fg-muted">{u.hint}</p> : null}
                   </li>
                 ))}
           </ul>
@@ -109,6 +149,9 @@ export default function AdminHome() {
           <h2 id="home-recursos" className="mb-2 text-md font-semibold">
             Uso de recursos
           </h2>
+          <p className="mb-2 text-sm text-fg-muted">
+            Execuções e “sem uso” usam contadores de 7 dias quando existem; se o backend não os envia, a coluna mostra —.
+          </p>
           <Table
             id="admin-home-resources"
             aria-label="Uso de recursos"

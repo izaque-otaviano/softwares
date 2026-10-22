@@ -15,8 +15,8 @@ Detalhes técnicos de cada ponto de integração: `src/api/PENDENTE_NO_BACKEND.m
 ## Decisões técnicas tomadas
 
 - **Fachada de API** `mock | real` por `VITE_API_MODE`. Os testes rodam sempre em mock.
-- **Carregar todos os tickets paginados** e filtrar no cliente (volume pequeno). Revisar se o volume real for grande.
-- **Fechar ticket sem diálogo.** Janela de resolução = sugestão do backend: início na primeira abertura do ciclo (senão criação), fim agora. Entra na franquia de horas de manutenção da empresa.
+- **Lista inicial = 1ª página global (100 tickets)**; cada visão do servidor pagina por conta própria (100 por vez, "Carregar mais"). A Home busca a visão "mine" além disso e a tela do ticket busca por id quando o ticket não está na lista. Telas que contam tickets a partir da store (Clientes, Organizações, histórico no painel do cliente, tags sugeridas) só enxergam o que já foi carregado: ver "No front", item 3.
+- **Fechar ticket (modo real):** pelo ticket abre o diálogo `CloseResolutionModal` com início/término editáveis (pré-preenchidos com a sugestão D4; valida criação <= início <= término <= agora, no minuto, igual ao backend). **Fechar em lote ("Mudar status" > Fechado) NÃO abre diálogo**: usa a sugestão D4 por ticket, e a janela entra na franquia de horas.
 - **Ordem das chamadas ao salvar:** macro, propriedades, seguir, mensagem ou fechamento, status customizado. A mensagem vai por último porque duplica se repetida.
 - **Falha parcial** informa o que foi e o que não foi aplicado, mantém o texto e o "Tentar novamente" reenvia só o que falta.
 - **Motor local de gatilhos desligado no modo real**, para não gravar eventos falsos em tickets reais. Os gatilhos continuam editáveis, com aviso.
@@ -41,32 +41,20 @@ Detalhes técnicos de cada ponto de integração: `src/api/PENDENTE_NO_BACKEND.m
 10. Usuário do Resolv não tem `created_at` nem `updated_at`.
 11. `/ticket-views/` devolve array puro, sem envelope de paginação.
 
-12. **Redefinição de senha pode falhar de forma aleatória** (`resolv/apps/accounts/admin_api.py`, ação de redefinir): sorteia uma senha com `secrets.token_urlsafe(9)`, tenta de novo uma única vez se ela não passar na regra de "três tipos de caractere" e, se o segundo sorteio também falhar, o erro sobe sem tratamento. É raro, mas aconteceu numa rodada da suíte (`test_old_password_stops_working`). Correção: sortear em laço até passar, ou montar a senha garantindo os tipos.
-
 ### Funcionalidades que existem só no front (a criar no backend)
 
 Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA, fusão (ticket, usuário, organização), apagar ticket, tipo de ticket, CC e seguidores de terceiros, licenças. Também: assunto e solicitante editados num ticket existente, e campos de status, macro, cliente e organização sem equivalente no backend.
 
 ### No front
 
-1. **Diálogo de fechamento** com os dois horários editáveis (hoje usa a janela automática).
-2. **Tempo real por WebSocket** (`/ws/me/`); hoje o front faz atualização local simulada e no modo real ela fica desligada.
-3. **Volume:** só foi testado com o seed (6 tickets). Medir o carregamento de tudo com milhares de tickets.
-4. **Tablist das abas de trabalho:** única violação de acessibilidade restante (botão "Fechar aba" dentro do `role=tablist`).
-5. **Menu ⋮ do ticket:** criar macro, fundir, suspender, spam e apagar só mostram toast no modo mock.
-6. **Início do admin:** "execuções 24 h" é estimada, e os limites do cartão de uso são valores provisórios.
-7. **Conta, Canais e Espaços de trabalho** abrem "Fora desta versão".
-
-### Resolv (visual, após juntar a linha do Codex)
-
-Em `resolv/`, a mesclagem manteve o Quadro e as abas tipo navegador (nossos) e adotou o acabamento do Codex nas demais telas. Falta o dono validar e ajustar:
-
-1. Contraste de estilo entre o Quadro (cores fortes) e as telas em estilo Material compacto do Codex.
-2. Na lista de tickets, os filtros agora quebram em duas linhas ("Mais filtros" desce) e o nome da visão selecionada na lateral é cortado.
-3. Detalhe do ticket: o botão "Enviar e reabrir" avança cerca de 10 px além da borda do compositor.
-4. Chat: a coluna "Atalhos" (Início, Menções, Com estrela) veio do Codex com dois itens desabilitados ("Em breve"); a área de mensagens ficou mais estreita.
-5. O botão "Novo ticket" da barra lateral e o sino ficaram contornados (estilo Codex) em vez do círculo preto anterior.
-6. As branches `claude/project-manager-app-briefing-y8a73s` e `claude/resolv-to-edesk-copy-4fg2oa` (set/2026) do repositório antigo não foram trazidas.
+1. **Diálogo de fechamento: feito, com ressalva.** `CloseResolutionModal` (modo real, só pela tela do ticket). Verificado no navegador com o backend real, inclusive em fuso -03:00: valores gravados em `resolution_started_at`/`resolution_ended_at` conferem. Fechamento em lote segue sem diálogo (sugestão D4).
+2. **Tempo real por WebSocket (`/ws/me/`): feito.** `api/real/ws.ts` + `startLiveUpdates`. Verificado: um evento de outro usuário atualiza propriedades do ticket aberto (formulário sem edições pendentes), contadores e as listas por visão já abertas, sem recarregar; reconexão com backoff após queda (simulada fechando o socket) e uma só conexão por aba. 4401/4403 não reconectam. Limite do backend: o evento só vai a quem é solicitante/responsável/dono/seguidor e **não há evento de ticket novo** (`kind`: assigned, owner, updated, closed, reply). Eventos perdidos durante uma queda não são reenviados: ao reconectar só os contadores são revalidados.
+3. **Paginação por visão: feito, com ressalva importante.** Visões com `query` (6 do Helpdesk menos `recent`/`solved-recent`, as do sistema e as pessoais) paginam de 100 em 100 com "Carregar mais" (verificado com 156 tickets: 100 de 149, depois 149, sem duplicados). **Ressalva:** a store só carrega a 1ª página global; `recent` e `solved-recent` (locais), Clientes/Organizações, histórico do cliente e tags sugeridas contam apenas tickets já carregados e podem ficar incompletos com mais de 100 tickets. Filtros da gaveta numa visão paginada atuam só nas linhas carregadas. Seleção em lote atinge só linhas carregadas.
+4. **Abas de trabalho: `role=group` + `aria-current`, em vez de `tablist`/`tab`.** Trade-off: o brief 5.1 pedia `tablist` (e a violação `aria-required-children` do botão "Fechar aba" dentro do `tablist` era a única conhecida). Com `group` some a violação, mas as abas deixam de ter semântica de aba (sem "aba 1 de 3" nem `aria-selected`; a ordem de Tab continua a mesma). Não rodei axe (não está instalado); só inspecionei os papéis no navegador.
+5. **Menu ⋮ do ticket: feito, com ressalvas.** Criar macro vai ao backend (recusa nome repetido); fundir e apagar são **só locais** (avisados "somente neste navegador"; apagar e spam pedem confirmação). Suspender usa `PATCH /settings/users/{id}/` e depende do backend (nos dados de DEV os clientes sem telefone são recusados com "Informe ao menos um telefone"; o caminho de sucesso não foi verificado). Spam = suspender (se falhar, avisa que NÃO suspendeu) + remover localmente; não existe spam no backend.
+6. **Início do admin: feito.** Execuções/sem uso mostram — quando o backend não envia contadores. Os "tetos" de assentos (5), campos (20) e gatilhos (10) são locais e vêm sinalizados; no modo real a Visão geral da conta mostra só "N agentes ativos".
+7. **Conta, Canais e Espaços: páginas informativas** (sem edição). Conta = sessão + agentes ativos; Canais = texto explicativo; Espaços = layouts (texto) + atalhos reais. Marca/cobrança/SSO seguem fora.
+8. **Visualizações pessoais: feito.** Criar/editar/clonar/apagar via `/ticket-views/` e filtros da gaveta (prioridade, status, assunto, solicitante, período) gravados e reidratados ao reabrir; verificado com curl. Tipo e tags não têm par no backend e não são gravados. Clonar visão do Helpdesk/sistema grava `{view: slug}`.
 
 ## Decisão em aberto
 

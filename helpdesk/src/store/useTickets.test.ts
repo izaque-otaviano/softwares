@@ -67,4 +67,16 @@ describe('useTickets', () => {
     vi.useRealTimers();
     expect(useUi.getState().toasts.length).toBeGreaterThan(1);
   });
+  it('editar a query de uma visão pessoal descarta a lista acumulada (o offset do "Carregar mais" deixou de valer)', async () => {
+    const view = await useTickets.getState().createPersonalView('Minha', {});
+    expect(view).not.toBeNull();
+    useTickets.setState((st) => ({
+      viewIds: { ...st.viewIds, [view!.id]: [1, 2, 3] },
+      viewMeta: { ...st.viewMeta, [view!.id]: { total: 10, loaded: 3, hasMore: true } },
+    }));
+    await useTickets.getState().updatePersonalView(view!.id, 'Minha', { priority: 'urgent' }, { silent: true });
+    expect(useTickets.getState().viewIds[view!.id]).toBeUndefined();
+    expect(useTickets.getState().viewMeta[view!.id]).toBeUndefined();
+    expect(useTickets.getState().views.find((v) => v.id === view!.id)?.query).toEqual({ priority: 'urgent' });
+  });
 });

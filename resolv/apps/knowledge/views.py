@@ -32,6 +32,7 @@ from apps.knowledge.serializers import (
     ArticleListSerializer,
 )
 
+
 #: Palavras que não dizem nada sobre o assunto — sem tirá-las, "não consigo
 #: emitir a nota" casaria com todo artigo que tem "não" no corpo. Lista
 #: curta de propósito: é o que aparece num assunto de chamado, não um
@@ -159,9 +160,7 @@ class ArticleViewSet(viewsets.ReadOnlyModelViewSet):
             .filter(relevancia__gt=0)
             .order_by("-relevancia", Lower("title"))[:limite]
         )
-        return Response(
-            ArticleListSerializer(artigos, many=True, context={"request": request}).data
-        )
+        return Response(ArticleListSerializer(artigos, many=True, context={"request": request}).data)
 
     @action(detail=False, methods=["get"])
     def categories(self, request):

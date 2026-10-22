@@ -44,6 +44,14 @@ export default function Home() {
     if (!loaded && !loading && !error) void useTickets.getState().load();
   }, [loaded, loading, error]);
 
+  // Modo real: a store só traz a 1ª página global (HOME_PAGE); os tickets do agente podem estar além dela. A visão
+  // "mine" tem par no servidor (`query`): buscá-la garante que o "Seu trabalho" não fique incompleto.
+  const mineIsServerView = useTickets((s) => Boolean(s.views.find((v) => v.id === 'mine')?.query));
+  const mineLoaded = useTickets((s) => s.viewIds.mine !== undefined);
+  useEffect(() => {
+    if (loaded && mineIsServerView && !mineLoaded) void useTickets.getState().loadView('mine');
+  }, [loaded, mineIsServerView, mineLoaded]);
+
   const mine = useMemo(
     () => tickets.filter((t) => t.assigneeId === meId && statuses.find((s) => s.id === t.statusId)?.category !== 'solved'),
     [tickets, statuses, meId],

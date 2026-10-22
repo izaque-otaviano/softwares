@@ -132,23 +132,18 @@ describe('real/tickets: lista', () => {
     expect(calls.some((c) => c.path === '/api/v1/users/')).toBe(true);
   });
 
-  it('pagina em paralelo quando há mais que uma página (limit=500) e respeita o teto', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('lista inicial carrega só a 1ª página (HOME_PAGE) e marca truncated se o total for maior', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     opts.ticketCount = 1200;
     await realTickets.listTickets();
-    const pages = calls.filter((c) => c.path === '/api/v1/tickets/').map((c) => c.query.get('offset') ?? '0').sort();
-    expect(pages).toEqual(['0', '1000', '500']);
-    expect(calls.filter((c) => c.path === '/api/v1/tickets/').every((c) => c.query.get('limit') === '500')).toBe(true);
-    // o servidor de mentira devolve 6 por página, então "carregados" < total => truncado e avisado
-    expect(realTickets.loadInfo).toMatchObject({ total: 1200, loaded: 18, truncated: true });
-    expect(warn).toHaveBeenCalled();
-
-    calls = [];
-    resetRealCache();
-    opts.ticketCount = 9000; // acima do teto: só as primeiras MAX_TICKETS (10 páginas de 500)
-    await realTickets.listTickets();
-    expect(calls.filter((c) => c.path === '/api/v1/tickets/')).toHaveLength(realTickets.MAX_TICKETS / 500);
-    warn.mockRestore();
+    const ticketCalls = calls.filter((c) => c.path === '/api/v1/tickets/');
+    expect(ticketCalls).toHaveLength(1);
+    expect(ticketCalls[0]!.query.get('limit')).toBe(String(realTickets.HOME_PAGE));
+    expect(ticketCalls[0]!.query.get('offset') ?? '0').toBe('0');
+    // o servidor de mentira devolve 6 por página
+    expect(realTickets.loadInfo).toMatchObject({ total: 1200, loaded: 6, truncated: true });
+    expect(info).toHaveBeenCalled();
+    info.mockRestore();
   });
 
   it('filtros do facade (solicitante, responsável, texto sem acento)', async () => {
@@ -178,6 +173,8 @@ describe('real/tickets: visões', () => {
     opts.personalViews = [{ id: 4, name: 'Urgentes', filters: { priority: 'urgent' }, position: 1, count: 3 }];
     const views = await realTickets.listViews();
     expect(views.slice(0, 6).map((v) => v.id)).toEqual(['mine', 'unassigned', 'all-unsolved', 'recent', 'pending', 'solved-recent']);
+    expect(views.find((v) => v.id === 'mine')?.query).toEqual({ view: 'meus-nao-resolvidos' });
+    expect(views.find((v) => v.id === 'recent')?.query).toBeUndefined();
     expect(views.find((v) => v.id === 'pv:4')).toMatchObject({ name: 'Urgentes', query: { priority: 'urgent' }, origin: 'personal' });
     expect(views.find((v) => v.id === 'sys:aguardando-voce')?.query).toEqual({ view: 'aguardando-voce' });
   });
@@ -194,10 +191,20 @@ describe('real/tickets: visões', () => {
     await expect(realTickets.getViewCounts()).resolves.toEqual({});
   });
 
-  it('visão do sistema com query é avaliada no servidor; visão do Helpdesk, no navegador', async () => {
+  it('visões com query (sistema e Helpdesk com par no servidor) vão ao REST; locais avaliam no navegador', async () => {
     expect((await realTickets.runView('sys:sem-atendimento')).map((t) => t.id)).toEqual([1]);
     expect(calls.some((c) => c.query.get('view') === 'sem-atendimento')).toBe(true);
-    expect((await realTickets.runView('unassigned')).map((t) => t.id)).toEqual([1]);
+    calls = [];
+    // unassigned agora tem query view=nao-atribuidos
+    await realTickets.runView('unassigned');
+    expect(calls.some((c) => c.query.get('view') === 'nao-atribuidos')).toBe(true);
+    expect(realTickets.viewPageMeta.unassigned?.hasMore).toBeDefined();
+    // recent continua local (sem query): avalia sobre a lista global já em cache. Agora que as visões do servidor não
+    // carregam mais a lista global como efeito colateral, o cache é aquecido explicitamente (como o boot da store faz).
+    await realTickets.listTickets();
+    calls = [];
+    await realTickets.runView('recent');
+    expect(calls.filter((c) => c.path === '/api/v1/tickets/')).toHaveLength(0);
     await expect(realTickets.runView('nao-existe')).rejects.toBeInstanceOf(ApiError);
   });
 });

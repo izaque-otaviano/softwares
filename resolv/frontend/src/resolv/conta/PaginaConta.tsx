@@ -61,7 +61,7 @@ export function PaginaConta() {
   const secoes = SECOES.filter((s) => interno || !s.soInterno)
 
   return (
-    <div className="conta-pagina mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <header className="flex items-center gap-4">
         {me && <Avatar nome={me.full_name} urlFoto={urlDoAvatar(me.avatar_url)} tamanho="lg" />}
         <div className="min-w-0 flex-1">

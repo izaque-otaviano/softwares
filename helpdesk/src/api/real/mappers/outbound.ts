@@ -233,7 +233,9 @@ const floorMinute = (ms: number): number => Math.floor(ms / MINUTE) * MINUTE;
  *  - término = agora (no minuto).
  * Início nunca antes da criação (no minuto) e término nunca antes do início.
  */
-export function resolutionWindow(dto: Pick<TicketDetailDto, 'created_at' | 'events'>, now: Date = new Date()): { started: string; ended: string } {
+export type ResolutionWindow = { started: string; ended: string };
+
+export function resolutionWindow(dto: Pick<TicketDetailDto, 'created_at' | 'events'>, now: Date = new Date()): ResolutionWindow {
   const created = floorMinute(Date.parse(dto.created_at));
   const events = [...(dto.events ?? [])].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   let lastClosed = -1;
@@ -247,6 +249,29 @@ export function resolutionWindow(dto: Pick<TicketDetailDto, 'created_at' | 'even
   started = Math.max(created, Math.min(started, ended0));
   const ended = Math.max(started, ended0);
   return { started: new Date(started).toISOString(), ended: new Date(ended).toISOString() };
+}
+
+/**
+ * Valida a janela escolhida pelo agente (mesmas regras do backend D4, no minuto):
+ * criação <= início <= término <= agora.
+ * `createdAt` e os horários podem ser ISO; o relógio do navegador adiantado >1 min gera o mesmo erro do backend.
+ */
+export function validateResolutionWindow(
+  window: ResolutionWindow,
+  createdAt: string,
+  now: Date = new Date(),
+): string | null {
+  const created = floorMinute(Date.parse(createdAt));
+  const started = floorMinute(Date.parse(window.started));
+  const ended = floorMinute(Date.parse(window.ended));
+  const nowM = floorMinute(now.getTime());
+  if (Number.isNaN(created) || Number.isNaN(started) || Number.isNaN(ended)) {
+    return 'Informe início e término válidos da solução.';
+  }
+  if (started < created) return 'O início da solução não pode ser anterior à criação do ticket.';
+  if (ended < started) return 'O término da solução não pode ser anterior ao início.';
+  if (ended > nowM + MINUTE) return 'Término no futuro: ajuste o horário do computador ou o término da solução.';
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

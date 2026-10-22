@@ -25,7 +25,7 @@ edição (`Ticket.localFields`).
 | Chave | Situação | De onde vem |
 | --- | --- | --- |
 | `auth` | real | `/auth/login/`, `/auth/2fa/`, `/auth/me/`, `/auth/logout/`. |
-| `tickets` | real (leitura) | `GET /tickets/` (lista inteira, paginada) e `GET /tickets/{id}/` (detalhe sob demanda). |
+| `tickets` | real (leitura) | `GET /tickets/` (só a 1ª página, `HOME_PAGE`=100, no boot; o resto vem por visão) e `GET /tickets/{id}/` (detalhe sob demanda, também quando o ticket não está na lista). |
 | `views` | real (leitura) | `GET /tickets/resumo/` (contadores), `GET /ticket-views/` (pessoais), `GET /tickets/?view=<slug>` (visões do sistema extras e pessoais, avaliadas no servidor). |
 | `statuses` | real (leitura) | `GET /settings/statuses/` (stages; a categoria `closed` = Resolvido, `pending_customer` = Pendente). |
 | `groups` | real (leitura) | `GET /settings/teams/roster/` (cai em `/teams/` sem permissão). |
@@ -61,7 +61,7 @@ tipo, CC, campos personalizados e seguidores de outras pessoas num ticket (camad
 para o usuário final e descrição; descrição, "disponível para", ação de status e nota interna da macro; tags, grupo
 padrão e "acesso dos usuários" da organização; tags, notas, contatos extras, idioma e fuso do cliente; apagar e fundir
 ticket, usuário e organização; gatilhos, campos, formulários, resumo de IA, licenças. Visões pessoais (criar/editar/
-ordenar), abas abertas e itens recentes seguem como antes.
+apagar) vão ao backend (`/ticket-views/`); abas abertas e itens recentes seguem locais.
 
 ### Decisões das escritas (etapas 3 e 4)
 
@@ -73,11 +73,11 @@ ordenar), abas abertas e itens recentes seguem como antes.
   ticket criado a meio vira a aba do ticket real e a repetição atualiza, nunca cria outro). Resposta perdida (rede/5xx)
   na mensagem: confere o ticket antes de permitir repetir. Toast de sucesso: "Ticket #N foi atualizado".
 - **Fechar (D4).** O backend exige `resolution_started_at`/`resolution_ended_at` (criação <= início <= fim <= agora, no
-  minuto) e soma a janela na franquia de horas de manutenção da empresa. O Helpdesk não tem esses campos e NÃO abre
-  diálogo: usa a sugestão que o próprio backend documenta (D4): início = primeira transição para "Aberto" do ciclo atual
-  (depois da última reabertura), senão a criação; fim = agora no minuto. Em lote cada ticket tem a sua janela (`close/`
+  minuto) e soma a janela na franquia de horas de manutenção da empresa. Pela tela do ticket o Helpdesk abre o diálogo
+  `CloseResolutionModal`; no fechamento em lote NÃO abre diálogo e usa a sugestão que o próprio backend documenta (D4):
+  início = primeira transição para "Aberto" do ciclo atual (depois da última reabertura), senão a criação; fim = agora no minuto. Em lote cada ticket tem a sua janela (`close/`
   por ticket). Se o relógio do navegador estiver adiantado em mais de 1 min o backend responde "Término no futuro" e a
-  mensagem aparece. Próximo passo possível: diálogo de confirmação com os dois horários editáveis.
+  mensagem aparece. Diálogo de confirmação (`CloseResolutionModal`) com início/término editáveis; a sugestão D4 pré-preenche os campos (verificado no navegador contra o backend real).
 - **Reabrir** só por resposta pública: mudar de "resolvido" para outro status sem mensagem é recusado ANTES de qualquer
   chamada, com a explicação. Responder publicamente num ticket fechado reabre (`new_status:open`).
 - **Descrição como observação interna** em ticket novo não existe (o `POST` publica o corpo): é recusado antes de criar,
@@ -119,15 +119,16 @@ ordenar), abas abertas e itens recentes seguem como antes.
 
 ### Decisões da leitura real (etapa 2)
 
-- **Carregar tudo x filtrar no servidor.** A store do Helpdesk guarda todos os tickets (Home, painel do cliente,
-  Clientes/Organizações e contadores dependem disso), então a lista é carregada inteira: `limit=500`, a 1ª página traz o
-  `count` e as demais vão em paralelo, com teto de 5000 (`MAX_TICKETS`; acima disso um aviso no console e
-  `loadInfo.truncated`). As 6 visões do Helpdesk são avaliadas no navegador sobre essa lista (`conditions`); o que o
+- **Paginação por visão (substitui o "carregar tudo").** No boot a store carrega SÓ a 1ª página global (`HOME_PAGE`=100;
+  `loadInfo.truncated` se houver mais). Home, painel do cliente, Clientes/Organizações e tags sugeridas leem a store, logo
+  ficam incompletos com mais de 100 tickets (a Home busca a visão `mine` e a tela do ticket busca por id para mitigar;
+  o resto é pendência). Visões com `query` buscam página a página (`VIEW_PAGE`=100, "Carregar mais"); `recent` e
+  `solved-recent` seguem locais sobre o que estiver carregado. Contadores vêm do servidor. O que o
   servidor sabe contar exato (`meus-nao-resolvidos`, `nao-atribuidos`, `nao-resolvidos`, "pendentes") vem dele, e as
   demais ("atualizados recentemente", "resolvidos recentemente": o backend não filtra por `updated_at`, o `periodo` é
   por abertura) são contadas localmente. As visões do sistema sem par (`todos`, `sem-atendimento`, `aguardando-voce`,
   `mencionam-voce`, `resolvidos`, `internos`, `em-kanban`) e as pessoais têm `View.query` e a lista vem do servidor
-  (`runView`) só ao abrir a visão. Para milhares de tickets o próximo passo é paginar por visão em vez de carregar tudo.
+  (`runView`) só ao abrir a visão. Tempo real: `/ws/me/` só avisa (`ticket_event` com `kind` assigned/owner/updated/closed/reply) quem é solicitante, responsável, dono ou seguidor; não há evento de ticket novo nem reenvio de eventos perdidos.
 - **Custo medido (dados do seed, 6 tickets).** Home = 9 chamadas à API (tickets 1, status 1, visões 1, resumo 1,
   clientes 1, agentes 1, empresas 1, contagem de "pendentes" 1, roster 1) e 0 chamadas ao detalhe; abrir um ticket =
   1 a 2 `GET /tickets/{id}/`; abrir uma visão do servidor = 1 `GET /tickets/?view=`.
@@ -191,7 +192,7 @@ canal "e-mail" não existe (tudo vira "Formulário web"; `chat` e `system` têm 
 | `licenses` | Licenças de agente (`AGENT_SEATS`) | Valor fixo | Cotas são por empresa cliente. |
 
 Também locais por natureza: abas abertas (`tickets/tabs` existe, etapa 5), itens recentes e a simulação de
-chegada de tickets (`startLiveUpdates`, desligada no modo real; virá do WebSocket `/ws/me/`). O motor de gatilhos está
+chegada de tickets no mock; no real, WebSocket `/ws/me/` (`api/real/ws.ts`). O motor de gatilhos está
 DESLIGADO no modo real (ver "Decisões das escritas").
 
 ## Pedidos opcionais ao backend (etapa 8, não bloqueiam)

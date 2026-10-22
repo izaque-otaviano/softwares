@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Columns3, ListFilter, Play, Square } from 'lucide-react';
 import { openTicket } from '@/components/shell/openTab';
 import { BulkBar } from '@/components/lists/BulkBar';
@@ -16,7 +16,9 @@ import {
   buildCsv,
   countActiveFilters,
   downloadCsv,
+  serverFiltersToView,
   sortTickets,
+  viewFiltersToServer,
   type Lookups,
 } from '@/components/lists/viewQuery';
 import { Button, ConfirmModal, Input, Modal, type MenuItemSpec, type SortState } from '@/components/ui';
@@ -28,6 +30,7 @@ import type { Ticket, View } from '@/types/domain';
 
 type Dialog = null | 'new' | 'edit' | 'clone';
 
+
 export default function Views() {
   const { id } = useParams();
   const views = useTickets((s) => s.views);
@@ -35,7 +38,9 @@ export default function Views() {
   const loaded = useTickets((s) => s.loaded);
   const loading = useTickets((s) => s.loading);
   const error = useTickets((s) => s.error);
+  const navigate = useNavigate();
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [newName, setNewName] = useState('');
   const viewId = id ?? views[0]?.id ?? 'mine';
   const view = views.find((v) => v.id === viewId);
 
@@ -49,7 +54,7 @@ export default function Views() {
         views={views}
         counts={counts}
         activeId={viewId}
-        onNew={() => setDialog('new')}
+        onNew={() => { setNewName(''); setDialog('new'); }}
         onRefresh={() => void useTickets.getState().refreshCounts()}
       />
       <section className="flex min-w-0 flex-1 flex-col bg-surface" aria-label="Visualização">
@@ -61,12 +66,35 @@ export default function Views() {
       </section>
       <Modal
         open={dialog === 'new'}
-        onOpenChange={(o) => !o && setDialog(null)}
+        onOpenChange={(o) => {
+          if (!o) setDialog(null);
+        }}
         title="Nova visualização"
-        description="A criação de visualizações personalizadas ainda não está disponível neste protótipo."
+        description="Cria uma visão pessoal salva no servidor. Depois você pode filtrar a lista e editar a visão para gravar os filtros."
         size="sm"
-        footer={<Button variant="outline" onClick={() => setDialog(null)}>Fechar</Button>}
-      />
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDialog(null)}>Cancelar</Button>
+            <Button
+              variant="primary"
+              disabled={newName.trim() === ''}
+              onClick={() => {
+                void (async () => {
+                  const view = await useTickets.getState().createPersonalView(newName.trim(), {});
+                  setDialog(null);
+                  setNewName('');
+                  if (view) navigate(`/agent/views/${view.id}`);
+                })();
+              }}
+            >
+              Criar
+            </Button>
+          </>
+        }
+      >
+        <label className="mb-1 block text-xs font-semibold text-fg-muted" htmlFor="new-view-name">Nome</label>
+        <Input id="new-view-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex.: Urgentes meus" />
+      </Modal>
     </div>
   );
 }
@@ -79,6 +107,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const loaded = useTickets((s) => s.loaded);
   const error = useTickets((s) => s.error);
   const viewIds = useTickets((s) => s.viewIds[viewId]);
+  const viewMeta = useTickets((s) => s.viewMeta[viewId]);
   const users = useDirectory();
   const now = useNow(60_000);
 
@@ -92,7 +121,10 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteViewOpen, setDeleteViewOpen] = useState(false);
   const [name, setName] = useState(view.name);
+  const isPersonal = view.origin === 'personal' || viewId.startsWith('pv:');
+  const navigate = useNavigate();
 
   const lookups = useMemo<Lookups>(() => ({ statuses, users }), [statuses, users]);
 
@@ -108,6 +140,14 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   useEffect(() => {
     if (serverView && loaded && viewIds === undefined) void useTickets.getState().loadView(viewId);
   }, [serverView, loaded, viewId, viewIds]);
+
+  // Visão pessoal: hidrata a gaveta a partir dos filtros salvos no servidor (só se ainda não houver prefs).
+  useEffect(() => {
+    if (!isPersonal || !view.query) return;
+    const prefs = useViewPrefs.getState();
+    if (prefs.filters[viewId]) return;
+    prefs.setFilters(viewId, serverFiltersToView(view.query, statuses));
+  }, [isPersonal, viewId, view.query, statuses]);
 
   // Remove da seleção o que saiu da lista (apagado, filtrado, mudou de view).
   useEffect(() => {
@@ -155,6 +195,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
           onExport={exportCsv}
           onEdit={() => { setName(view.name); setDialog('edit'); }}
           onClone={() => { setName(`${view.name} (cópia)`); setDialog('clone'); }}
+          onDelete={isPersonal ? () => setDeleteViewOpen(true) : undefined}
           onResetColumns={() => prefs.resetColumns(viewId)}
           onPlay={startPlay}
           canPlay={rows.length > 0}
@@ -174,7 +215,11 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
           </button>
         ) : null}
         <p className="text-sm text-fg-muted" aria-live="polite">
-          {isLoading ? 'Carregando tickets…' : `${rows.length} ${rows.length === 1 ? 'ticket' : 'tickets'} · Última atualização agora mesmo`}
+          {isLoading
+            ? 'Carregando tickets…'
+            : viewMeta && viewMeta.total > rows.length
+              ? `${rows.length} de ${viewMeta.total} tickets`
+              : `${rows.length} ${rows.length === 1 ? 'ticket' : 'tickets'}`}
         </p>
       </div>
 
@@ -206,13 +251,28 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
           onOpen={open}
           rowActions={rowActions}
         />
+        {serverView && viewMeta?.hasMore ? (
+          <div className="flex shrink-0 justify-center border-t border-line px-6 py-3">
+            <Button
+              variant="outline"
+              onClick={() => void useTickets.getState().loadMoreView(viewId)}
+            >
+              Carregar mais ({viewMeta.loaded} de {viewMeta.total})
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <FilterDrawer
         open={filterOpen}
         onOpenChange={setFilterOpen}
         value={filters}
-        onApply={(f) => prefs.setFilters(viewId, f)}
+        onApply={(f) => {
+          prefs.setFilters(viewId, f);
+          if (isPersonal) {
+            void useTickets.getState().updatePersonalView(viewId, view.name, viewFiltersToServer(f, statuses), { silent: true });
+          }
+        }}
         statuses={statuses}
         requesters={requesters}
         tagSuggestions={tagSuggestions}
@@ -231,11 +291,24 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
         }}
       />
 
+      <ConfirmModal
+        open={deleteViewOpen}
+        onOpenChange={setDeleteViewOpen}
+        title={`Apagar visualização “${view.name}”?`}
+        description="A visão pessoal será removida do servidor. Os tickets não são apagados."
+        confirmLabel="Apagar visualização"
+        onConfirm={async () => {
+          const ok = await useTickets.getState().deletePersonalView(viewId);
+          setDeleteViewOpen(false);
+          if (ok) navigate('/agent/views');
+        }}
+      />
+
       <Modal
         open={dialog === 'edit' || dialog === 'clone'}
         onOpenChange={(o) => !o && setDialog(null)}
         title={dialog === 'clone' ? 'Clonar visualização' : 'Editar visualização'}
-        description="No protótipo só o nome pode ser alterado; as condições seguem as da visualização original."
+        description="Visões pessoais: nome e filtros atuais da tela são gravados no servidor. Demais visões: use Clonar para criar uma pessoal."
         size="sm"
         footer={
           <>
@@ -244,8 +317,23 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
               variant="primary"
               disabled={name.trim() === ''}
               onClick={() => {
-                toast.success(dialog === 'clone' ? `Visualização “${name.trim()}” clonada` : 'Visualização atualizada');
-                setDialog(null);
+                void (async () => {
+                  const filters = viewFiltersToServer(filtersOf(useViewPrefs.getState(), viewId), statuses);
+                  if (dialog === 'clone') {
+                    const created = await useTickets.getState().createPersonalView(name.trim(), view.query ?? filters);
+                    setDialog(null);
+                    if (created) navigate(`/agent/views/${created.id}`);
+                    return;
+                  }
+                  // edit: personal only on server; helpdesk rename is local toast
+                  if (view.origin === 'personal' || viewId.startsWith('pv:')) {
+                    await useTickets.getState().updatePersonalView(viewId, name.trim(), filters);
+                    setDialog(null);
+                  } else {
+                    toast.info('Visões do sistema e do Helpdesk não podem ser renomeadas no servidor. Clone para criar uma pessoal.');
+                    setDialog(null);
+                  }
+                })();
               }}
             >
               Salvar

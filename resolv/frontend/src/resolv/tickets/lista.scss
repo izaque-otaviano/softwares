@@ -1,34 +1,12 @@
 // ============================================================================
 // Lista de tickets — um plano só (o do shell), fios de 1px entre as partes,
-// branco contínuo na área de atendimento. Corpo de
+// branco só no que é superfície de verdade (tabela, cartão, campo). Corpo de
 // letra 28/16/14/12, raio 8 (controle) / 12 (superfície) / 999 (pílula e
 // busca). Sombra só no que flutua (popover de filtro, diálogo). Um acento só
 // (--accent, carvão no claro); cor apenas para estado.
 // ============================================================================
 
 .lista-tickets {
-  // Paleta fornecida pelo projeto; adapta-se ao tema existente.
-  --f-ui: 'Segoe UI', Inter, system-ui, sans-serif;
-  --f-mono: var(--f-ui);
-  --surface-canvas: light-dark(#f6f5f3, #1a1a19);
-  --surface-card: light-dark(#ffffff, #2a2a29);
-  --surface-alt: light-dark(#f5f5f5, #343433);
-  --text-primary: light-dark(#242424, #f5f5f5);
-  --text-secondary: light-dark(#616161, #c7c7c7);
-  --text-muted: var(--text-secondary);
-  --stroke: light-dark(#d8dee4, #46515d);
-  --fila-painel: light-dark(#f7f9fb, #252d35);
-  --borda-campo: light-dark(#d4d4d4, #666663);
-  --primario: light-dark(#242424, #ebebeb);
-  --primario-sobre: light-dark(#ffffff, #242424);
-  --primario-hover: light-dark(#3b3b3b, #ffffff);
-  --accent: light-dark(#2563eb, #93baff);
-  --sidebar-hover: light-dark(#f0f4f8, #303c47);
-  --sidebar-ativo: light-dark(#eaf2ff, #233c56);
-  --raio: 8px;
-  --raio-cartao: 12px;
-  font-family: var(--f-ui);
-  background: var(--surface-canvas);
   display: flex;
   flex: 1;
   min-height: 0;
@@ -39,7 +17,7 @@
   &__views {
     width: 256px;
     flex-shrink: 0;
-    background: var(--fila-painel);
+    background: transparent;
     border-right: 1px solid var(--stroke);
     display: flex;
     flex-direction: column;
@@ -65,9 +43,8 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: 0;
-    gap: 0;
-    background: var(--surface-card);
+    padding: 24px;
+    gap: 16px;
     container-type: inline-size;
     container-name: fila;
   }
@@ -75,7 +52,6 @@
   // Título e ações lado a lado; `flex-wrap` para o título não virar uma
   // coluna de uma palavra por linha quando a coluna aperta.
   &__header {
-    padding: 20px 24px 16px;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -89,8 +65,8 @@
   }
 
   &__titulo {
-    font-size: 22px;
-    line-height: 1.3;
+    font-size: 28px;
+    line-height: 1.2;
     font-weight: 600;
     color: var(--text-primary);
     letter-spacing: -0.02em;
@@ -214,17 +190,14 @@
       }
     }
     &:focus-within {
-      box-shadow:
-        inset 0 0 0 1px var(--accent),
-        var(--anel-foco);
+      box-shadow: inset 0 0 0 1px var(--accent), var(--anel-foco);
     }
   }
 
   &__dica {
-    padding: 8px 24px;
     font-size: 12px;
     color: var(--text-secondary);
-    margin-top: 0;
+    margin-top: -8px;
   }
 
   // ---------------------------------------------------------------- botões
@@ -377,7 +350,6 @@
     font-variant-numeric: tabular-nums;
   }
   &__filtros-resumo {
-    padding: 12px 24px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -388,7 +360,6 @@
   // ---------------------------------------------------------------- lote
   // Barra de seleção: superfície branca (é onde se age), sem cor de marca.
   &__lote {
-    margin: 12px 24px;
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
@@ -458,7 +429,6 @@
   // Resumo da ação em lote. A cor diz o desfecho: ok (tudo mudou), neutro
   // (parte mudou, parte foi ignorada com motivo), perigo (nada mudou).
   &__aviso {
-    margin: 12px 24px;
     display: flex;
     align-items: flex-start;
     gap: 8px;
@@ -552,8 +522,6 @@
 
   // ---------------------------------------------------------------- paginação
   &__paginacao {
-    padding: 12px 24px;
-    border-top: 1px solid var(--stroke);
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -683,9 +651,7 @@
       color-scheme: inherit;
       &:focus {
         outline: none;
-        box-shadow:
-          inset 0 0 0 1px var(--accent),
-          var(--anel-foco);
+        box-shadow: inset 0 0 0 1px var(--accent), var(--anel-foco);
       }
       &[aria-invalid='true'] {
         box-shadow: inset 0 0 0 1px var(--danger);
@@ -787,9 +753,7 @@
       font-size: 14px;
       &:focus {
         outline: none;
-        box-shadow:
-          inset 0 0 0 1px var(--accent),
-          var(--anel-foco);
+        box-shadow: inset 0 0 0 1px var(--accent), var(--anel-foco);
       }
     }
   }
@@ -838,9 +802,7 @@
       }
     }
     &:focus-within {
-      box-shadow:
-        inset 0 0 0 1px var(--accent),
-        var(--anel-foco);
+      box-shadow: inset 0 0 0 1px var(--accent), var(--anel-foco);
     }
     &--folha {
       margin-bottom: 8px;
@@ -897,15 +859,11 @@
     &:hover {
       background: var(--sidebar-hover);
     }
-    // A visão aberta ganha o contraste de navegação da referência.
+    // O mesmo pill da sidebar: é o mesmo tipo de escolha ("onde estou").
     &--ativo,
     &--ativo:hover {
-      background: var(--primario);
-      color: var(--primario-sobre);
+      background: var(--sidebar-ativo);
       font-weight: 500;
-      .views-panel__contagem {
-        color: inherit;
-      }
     }
     &:focus-visible {
       outline: 2px solid var(--foco);
@@ -982,11 +940,8 @@
 // Barra de filtros
 // ============================================================================
 .barra-filtros {
-  padding: 12px 24px;
-  border-top: 1px solid var(--stroke);
-  border-bottom: 1px solid var(--stroke);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px 16px;
   flex-wrap: wrap;
@@ -1017,7 +972,7 @@
   .lista-tickets__search {
     flex: 0 1 220px;
     min-width: 160px;
-    height: 50px;
+    height: 32px;
     margin-right: 4px;
   }
 
@@ -1164,9 +1119,7 @@
     font-size: 14px;
     &:focus {
       outline: none;
-      box-shadow:
-        inset 0 0 0 1px var(--accent),
-        var(--anel-foco);
+      box-shadow: inset 0 0 0 1px var(--accent), var(--anel-foco);
     }
   }
 
@@ -1441,8 +1394,8 @@
     min-height: 0;
     overflow: auto;
     background: var(--surface-card);
-    border-radius: 0;
-    box-shadow: none;
+    border-radius: var(--raio-cartao);
+    box-shadow: inset 0 0 0 1px var(--stroke);
   }
 
   // Cabeçalho fixo ao rolar: o fundo precisa ser opaco (branco da tabela)
@@ -1467,7 +1420,7 @@
       height: 48px;
     }
     tbody td {
-      height: 80px;
+      height: 68px;
     }
   }
 
@@ -1499,7 +1452,7 @@
 
   tbody td {
     padding: 0 12px;
-    height: 64px;
+    height: 56px;
     color: var(--text-primary);
     vertical-align: middle;
     border-bottom: 1px solid var(--stroke);
@@ -1508,7 +1461,9 @@
   tbody tr {
     cursor: pointer;
     outline: none;
-
+    &:last-child td {
+      border-bottom: none;
+    }
     &:hover td {
       background: var(--sidebar-hover);
     }
@@ -1639,8 +1594,7 @@
   }
   &__assunto {
     display: block;
-    font-weight: 600;
-    line-height: 1.43;
+    font-weight: 500;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -1702,9 +1656,9 @@
     white-space: nowrap;
   }
   &__status-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     flex-shrink: 0;
   }
   &__just {
@@ -1776,8 +1730,8 @@
   padding: 0;
   list-style: none;
   background: var(--surface-card);
-  border-radius: 0;
-  box-shadow: none;
+  border-radius: var(--raio-cartao);
+  box-shadow: inset 0 0 0 1px var(--stroke);
   overflow: hidden;
 }
 
@@ -1789,6 +1743,9 @@
   border-bottom: 1px solid var(--stroke);
   cursor: pointer;
   outline: none;
+  &:last-child {
+    border-bottom: none;
+  }
   &:hover {
     background: var(--sidebar-hover);
   }
@@ -1848,7 +1805,6 @@
   }
 
   &__meta {
-    order: 2;
     font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
@@ -1900,114 +1856,21 @@
   }
 }
 
-// Hierarquia da fila: filtros, cabeçalho da tabela e seleção.
-.lista-tickets {
-  .barra-filtros {
-    background: var(--fila-painel);
-    padding: 12px 24px;
-  }
-  .views-panel__grupo {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .views-panel__item {
-    border-radius: 6px;
-  }
-  .views-panel__item--ativo {
-    background: var(--controle-primario, var(--primario));
-    color: var(--primario-sobre);
-  }
-  .lista-tickets__densidade {
-    border: 1px solid var(--stroke);
-    border-radius: 6px;
-    background: var(--surface-card);
-  }
-  .lista-tickets__lote {
-    background: var(--sidebar-ativo);
-    border-radius: 6px;
-  }
-  .lista-tickets__paginacao {
-    background: var(--fila-painel);
-  }
-  .filtro--ativo .filtro__pilula {
-    color: var(--accent);
-    background: var(--sidebar-ativo);
-  }
-  .tickets-tabela thead th {
-    background: var(--fila-painel);
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .tickets-tabela tbody tr.is-selecionada td:first-child {
-    box-shadow: inset 3px 0 0 var(--accent);
-  }
-  .tickets-tabela tbody tr.is-selecionada:focus-visible td:first-child {
-    box-shadow:
-      inset 3px 0 0 var(--accent),
-      inset 0 2px 0 var(--foco),
-      inset 0 -2px 0 var(--foco);
-  }
-  .tickets-tabela__ref {
-    font-weight: 500;
-  }
-  .tickets-tabela__status {
-    font-size: 13px;
-  }
-  .cartao-ticket {
-    padding: 16px 16px 16px 12px;
-  }
-  .cartao-ticket.is-selecionada {
-    box-shadow: inset 3px 0 0 var(--accent);
-  }
-  .cartao-ticket.is-selecionada:focus-visible {
-    box-shadow: inset 0 0 0 2px var(--foco);
-  }
-  .cartao-ticket__corpo {
-    gap: 6px;
-  }
-  .cartao-ticket__estado {
-    margin-top: 2px;
-  }
-}
-
 // ============================================================================
 // Celular
 // ============================================================================
 @media (max-width: 767px) {
   .lista-tickets {
     &__main {
-      padding: 0;
-      gap: 0;
-    }
-    &__header {
-      padding: 20px 16px 12px;
-    }
-    &__main > &__search {
-      margin: 0 16px 12px;
-      height: 50px;
-    }
-    &__barra-mobile {
-      padding: 0 16px 12px;
-    }
-    &__filtros-resumo {
-      margin: 0;
-      padding: 0 16px 12px;
-    }
-    &__paginacao {
-      padding: 12px 16px;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    &__lote,
-    &__aviso {
-      margin: 12px 16px;
+      padding: 16px;
+      gap: 12px;
     }
     // A busca é filha direta da coluna (flex vertical): sem `flex: none`
     // ela cresceria na ALTURA.
     &__main > &__search {
       flex: none;
       max-width: none;
-      height: 50px;
+      height: 40px;
     }
     &__lote {
       flex-wrap: wrap;

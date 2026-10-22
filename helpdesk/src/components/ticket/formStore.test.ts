@@ -53,6 +53,18 @@ describe('formStore: dirty e edição', () => {
     expect(F().forms['ticket:x']!.values.tags).toEqual(['a']);
   });
 
+  it('rebase (tempo real): formulário intocado adota o servidor; com edição pendente, preserva', () => {
+    const t = useTickets.getState().tickets[0]!;
+    F().init('ticket:r', t);
+    F().rebase('ticket:r', { ...t, priority: 'urgent' });
+    expect(F().forms['ticket:r']!.values.priority).toBe('urgent');
+    expect(F().isDirty('ticket:r')).toBe(false);
+    F().patch('ticket:r', { tags: ['minha'] });
+    F().rebase('ticket:r', { ...t, priority: 'low' });
+    expect(F().forms['ticket:r']!.values.priority).toBe('urgent');
+    expect(F().forms['ticket:r']!.values.tags).toEqual(['minha']);
+  });
+
   it('aplicar macro altera status, tags e texto no modo atual, sem enviar', () => {
     const t = useTickets.getState().tickets.find((x) => x.assigneeId === 'me')!;
     const key = `ticket:${t.id}`;

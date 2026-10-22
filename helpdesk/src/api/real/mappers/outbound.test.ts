@@ -6,7 +6,7 @@ import ticket5 from '../__fixtures__/ticket-5.json';
 import type { TicketStatus } from '@/types/domain';
 import { mapStatus } from './status';
 import type { StatusDto, TicketDetailDto } from './dto';
-import { createTicketBody, planTicketUpdate, replyStatusFor, resolutionWindow, resolveTagIds, slugify, statusColorToHex, toFormData } from './outbound';
+import { createTicketBody, planTicketUpdate, replyStatusFor, resolutionWindow, resolveTagIds, slugify, statusColorToHex, toFormData, validateResolutionWindow } from './outbound';
 
 const statuses: TicketStatus[] = [
   ...(statusesFx.results as StatusDto[]).map(mapStatus),
@@ -31,6 +31,23 @@ describe('resolutionWindow (fechamento: janela da solução com fixtures reais)'
     const future = { created_at: '2026-10-22T19:00:00Z', events: [] } as unknown as TicketDetailDto;
     const w = resolutionWindow(future, now);
     expect(Date.parse(w.ended)).toBeGreaterThanOrEqual(Date.parse(w.started));
+  });
+});
+
+describe('validateResolutionWindow', () => {
+  const now = new Date('2026-10-22T18:30:00Z');
+  const created = '2026-10-22T14:00:00.000Z';
+  it('aceita janela dentro dos limites', () => {
+    expect(validateResolutionWindow({ started: '2026-10-22T15:00:00.000Z', ended: '2026-10-22T18:00:00.000Z' }, created, now)).toBeNull();
+  });
+  it('rejeita início antes da criação', () => {
+    expect(validateResolutionWindow({ started: '2026-10-22T13:00:00.000Z', ended: '2026-10-22T18:00:00.000Z' }, created, now)).toMatch(/criação/);
+  });
+  it('rejeita término antes do início', () => {
+    expect(validateResolutionWindow({ started: '2026-10-22T16:00:00.000Z', ended: '2026-10-22T15:00:00.000Z' }, created, now)).toMatch(/anterior ao início/);
+  });
+  it('rejeita término no futuro (>1 min)', () => {
+    expect(validateResolutionWindow({ started: '2026-10-22T15:00:00.000Z', ended: '2026-10-22T19:00:00.000Z' }, created, now)).toMatch(/futuro/);
   });
 });
 

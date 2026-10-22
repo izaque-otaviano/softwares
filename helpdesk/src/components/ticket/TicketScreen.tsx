@@ -2,6 +2,7 @@ import { useEffect, type KeyboardEvent } from 'react';
 import { Banner } from '@/components/ui';
 import { useIsNarrow } from '@/lib/useMediaQuery';
 import { BottomBar } from './BottomBar';
+import { CloseResolutionModal } from './CloseResolutionModal';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
 import { isNewKey, useFormEntry, useFormStore } from './formStore';
@@ -91,6 +92,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
         <TicketRightRail ticketKey={ticketKey} />
       </div>
       <BottomBar ticketKey={ticketKey} />
+      <CloseResolutionModal />
     </div>
   );
 }

@@ -21,5 +21,10 @@ export const {
   simulateIncomingTicket,
   simulateCustomerReply,
   initialViews,
+  suggestResolutionWindow,
+  viewPageMeta,
+  createPersonalView,
+  updatePersonalView,
+  deletePersonalView,
 } = impl;
 export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult } from './mock/tickets';
