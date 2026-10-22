@@ -49,8 +49,28 @@ function ExistingTicket({ id }: { id: number }) {
     useTickets.getState().loadDetail(id).catch((e: unknown) => setDetailError(e instanceof Error ? e.message : 'Não foi possível carregar o ticket.'));
   }, [needsDetail, id]);
 
+  // A store só tem a 1ª página global (modo real): link direto, F5 ou resultado de busca podem apontar para um ticket
+  // fora dela. Antes de dizer "não encontrado", pergunta ao servidor pelo id (404 = não existe mesmo).
+  const [lookup, setLookup] = useState<'idle' | 'loading' | 'missing'>('idle');
+  const absent = loaded && !ticket && Number.isFinite(id);
+  useEffect(() => {
+    if (!absent) return;
+    let alive = true;
+    setLookup('loading');
+    useTickets
+      .getState()
+      .loadDetail(id)
+      .then(() => alive && setLookup('idle'))
+      .catch(() => alive && setLookup('missing'));
+    return () => {
+      alive = false;
+    };
+  }, [absent, id]);
+
   useEffect(() => {
     if (ticket && !needsDetail && !hasForm) useFormStore.getState().init(key, ticket);
+    // Atualização vinda do servidor (WebSocket): propriedades intocadas acompanham o ticket.
+    else if (ticket && !needsDetail && hasForm) useFormStore.getState().rebase(key, ticket);
   }, [ticket, needsDetail, hasForm, key]);
 
   if (detailError && needsDetail)
@@ -70,7 +90,7 @@ function ExistingTicket({ id }: { id: number }) {
         </Banner>
       </div>
     );
-  if (loaded && !ticket)
+  if (loaded && !ticket && (lookup === 'missing' || !Number.isFinite(id)))
     return (
       <EmptyState
         illustration="search"

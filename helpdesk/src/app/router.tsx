@@ -27,6 +27,9 @@ const AdminTriggerEdit = lazy(() => import('@/pages/admin/TriggerEdit'));
 const AdminMacros = lazy(() => import('@/pages/admin/Macros'));
 const AdminMacroEdit = lazy(() => import('@/pages/admin/MacroEdit'));
 const AdminOutOfScope = lazy(() => import('@/pages/admin/OutOfScope'));
+const AdminAccountOverview = lazy(() => import('@/pages/admin/AccountOverview'));
+const AdminChannelsInfo = lazy(() => import('@/pages/admin/ChannelsInfo'));
+const AdminWorkspaceInfo = lazy(() => import('@/pages/admin/WorkspaceInfo'));
 
 const lazyEl = (node: ReactNode) => <Suspense fallback={null}>{node}</Suspense>;
 
@@ -76,6 +79,9 @@ export const routes: RouteObject[] = [
       { path: 'macros', element: <AdminMacros /> },
       { path: 'macros/new', element: <AdminMacroEdit /> },
       { path: 'macros/:id', element: <AdminMacroEdit /> },
+      { path: 'conta/visao-geral', element: <AdminAccountOverview /> },
+      { path: 'canais/:slug', element: <AdminChannelsInfo /> },
+      { path: 'espacos/:slug', element: <AdminWorkspaceInfo /> },
       { path: 'fora-desta-versao/:slug', element: <AdminOutOfScope /> },
       { path: '*', element: <AdminOutOfScope /> },
     ],

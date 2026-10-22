@@ -67,15 +67,16 @@ describe('WorkTabs', () => {
       openTicket(6, { title: 'Outro' });
       openTicket(5, { title: 'Erro no login' });
     });
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(useTabs.getState().tabs).toHaveLength(2);
     expect(useTabs.getState().activeTabId).toBe('ticket:5');
+    expect(screen.getByRole('button', { name: /^Erro no login/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByTestId('loc')).toHaveTextContent('/agent/tickets/5');
   });
 
   it('ativar uma aba navega para a rota dela', async () => {
     useTabs.setState({ tabs: [tab(1), tab(2)], activeTabId: 'ticket:1' });
     setup(<WorkTabs />);
-    await userEvent.click(screen.getByRole('tab', { name: /Ticket 2/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Ticket 2/ }));
     expect(screen.getByTestId('loc')).toHaveTextContent('/agent/tickets/2');
   });
 
@@ -114,7 +115,8 @@ describe('rotas e abas', () => {
   it('abrir a URL do ticket abre a aba correspondente', () => {
     setup(<WorkTabs />, '/agent/tickets/9');
     expect(useTabs.getState().activeTabId).toBe('ticket:9');
-    expect(screen.getAllByRole('tab')).toHaveLength(1);
+    expect(useTabs.getState().tabs).toHaveLength(1);
+    expect(screen.getByRole('group', { name: 'Abas de trabalho' })).toBeInTheDocument();
   });
 });
 
@@ -194,7 +196,7 @@ describe('GlobalSearch', () => {
 
     await userEvent.keyboard('{Enter}');
     expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(['search:ana']);
-    expect(screen.getByRole('tab', { name: /Pesquisar ana/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Pesquisar ana/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByTestId('loc')).toHaveTextContent('/agent/search?q=ana');
     expect(useSearchUi.getState().open).toBe(false);
   });

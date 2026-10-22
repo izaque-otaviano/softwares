@@ -45,7 +45,7 @@ describe('Views', () => {
     await screen.findByText(/Categoria do status: Aberto/);
     expect(screen.getByText(/Categoria do status: Pendente/)).toBeInTheDocument();
     const count = useTickets.getState().counts['all-unsolved'];
-    expect(screen.getByText(new RegExp(`^${count} tickets · Última atualização agora mesmo`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`^${count} tickets$`))).toBeInTheDocument();
   });
 
   it('ordena por assunto (asc depois desc) e abre o ticket ao clicar na linha', async () => {

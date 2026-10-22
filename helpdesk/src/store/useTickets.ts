@@ -52,10 +52,17 @@ interface TicketsState {
   error: string | null;
   /** Só modo real: ids (na ordem do servidor) das visões avaliadas NO SERVIDOR (`view.query`), por id de visão. */
   viewIds: Record<string, number[]>;
+  /** Só modo real: paginação por visão do servidor (total no servidor, quantos já vieram, se há mais). */
+  viewMeta: Record<string, { total: number; loaded: number; hasMore: boolean }>;
 
   load: () => Promise<void>;
   /** Só modo real: carrega do servidor a lista de uma visão com `query` (visões do sistema extras e pessoais). */
-  loadView: (viewId: string) => Promise<void>;
+  loadView: (viewId: string, opts?: { limit?: number }) => Promise<void>;
+  loadMoreView: (viewId: string) => Promise<void>;
+  reloadViews: () => Promise<void>;
+  createPersonalView: (name: string, filters?: Record<string, string>) => Promise<View | null>;
+  updatePersonalView: (viewId: string, name: string, filters?: Record<string, string>, opts?: { silent?: boolean }) => Promise<View | null>;
+  deletePersonalView: (viewId: string) => Promise<boolean>;
   /** Só modo real: traz mensagens e eventos do ticket (a lista do backend não os inclui). */
   loadDetail: (id: number) => Promise<Ticket>;
   /** Só os status (telas de administração abertas sem passar pelas listas). */
@@ -69,7 +76,7 @@ interface TicketsState {
   /** Tickets de uma view, avaliados sobre o estado atual da store. */
   ticketsForView: (viewId: string) => Ticket[];
   /** `silent: true` não dispara o toast padrão (quem chama mostra o próprio). */
-  updateTicket: (id: number, patch: api.TicketPatch, comment?: api.NewComment, opts?: { silent?: boolean; macroIds?: string[] }) => Promise<Ticket>;
+  updateTicket: (id: number, patch: api.TicketPatch, comment?: api.NewComment, opts?: { silent?: boolean; macroIds?: string[]; resolutionWindow?: { started: string; ended: string } }) => Promise<Ticket>;
   createTicket: (input: api.NewTicketInput, opts?: { silent?: boolean }) => Promise<Ticket>;
   /** Grava o resultado do motor de gatilhos (patch + eventos) e atualiza a store, sem toast. */
   applyAutomation: (id: number, patch: api.TicketPatch, events: AuditEvent[]) => Promise<Ticket>;
@@ -148,6 +155,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
     loading: false,
     error: null,
     viewIds: {},
+    viewMeta: {},
 
     load: async () => {
       set({ loading: true, error: null });
@@ -164,6 +172,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
           views,
           counts: mergeCounts(views, tickets, ctx(statuses), counts),
           viewIds: {},
+          viewMeta: {},
           loaded: true,
           loading: false,
         });
@@ -198,18 +207,121 @@ export const useTickets = create<TicketsState>()((set, get) => {
       set({ counts: mergeCounts(views, tickets, ctx(statuses), await api.getViewCounts()) });
     },
 
-    loadView: async (viewId) => {
+    loadView: async (viewId, opts) => {
       if (viewLoads.has(viewId)) return;
       viewLoads.add(viewId);
       try {
-        const list = await api.runView(viewId);
+        const list = await api.runView(viewId, { offset: 0, limit: opts?.limit });
         upsert(list.map((t) => get().tickets.find((x) => x.id === t.id && x.detailed && !t.detailed) ?? t));
-        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: list.map((t) => t.id) } }));
+        const meta = api.viewPageMeta[viewId];
+        set((s) => ({
+          viewIds: { ...s.viewIds, [viewId]: list.map((t) => t.id) },
+          viewMeta: {
+            ...s.viewMeta,
+            [viewId]: meta
+              ? { total: meta.total, loaded: meta.loaded, hasMore: meta.hasMore }
+              : { total: list.length, loaded: list.length, hasMore: false },
+          },
+        }));
       } catch (e) {
-        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: [] } }));
+        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: [] }, viewMeta: { ...s.viewMeta, [viewId]: { total: 0, loaded: 0, hasMore: false } } }));
         toast.error(e instanceof Error ? e.message : 'Não foi possível carregar a visualização.');
       } finally {
         viewLoads.delete(viewId);
+      }
+    },
+
+    loadMoreView: async (viewId) => {
+      if (viewLoads.has(viewId)) return;
+      const meta = get().viewMeta[viewId];
+      if (!meta?.hasMore) return;
+      viewLoads.add(viewId);
+      try {
+        const offset = get().viewIds[viewId]?.length ?? 0;
+        const list = await api.runView(viewId, { offset });
+        upsert(list.map((t) => get().tickets.find((x) => x.id === t.id && x.detailed && !t.detailed) ?? t));
+        const next = api.viewPageMeta[viewId];
+        set((s) => {
+          const prevIds = s.viewIds[viewId] ?? [];
+          const seen = new Set(prevIds);
+          const added = list.map((t) => t.id).filter((id) => !seen.has(id));
+          return {
+            viewIds: { ...s.viewIds, [viewId]: [...prevIds, ...added] },
+            viewMeta: {
+              ...s.viewMeta,
+              [viewId]: next
+                ? { total: next.total, loaded: prevIds.length + added.length, hasMore: next.hasMore }
+                : { total: prevIds.length + added.length, loaded: prevIds.length + added.length, hasMore: false },
+            },
+          };
+        });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível carregar mais tickets.');
+      } finally {
+        viewLoads.delete(viewId);
+      }
+    },
+
+
+    reloadViews: async () => {
+      const views = await api.listViews();
+      const counts = await api.getViewCounts();
+      set((s) => ({
+        views,
+        counts: mergeCounts(views, s.tickets, ctx(s.statuses), counts),
+      }));
+    },
+
+    createPersonalView: async (name, filters) => {
+      try {
+        const view = await api.createPersonalView({ name, filters });
+        await get().reloadViews();
+        toast.success(`Visualização “${view.name}” criada`);
+        return view;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível criar a visualização.');
+        return null;
+      }
+    },
+
+    updatePersonalView: async (viewId, name, filters, opts) => {
+      try {
+        const view = await api.updatePersonalView(viewId, { name, filters });
+        await get().reloadViews();
+        // A query do servidor mudou: a lista acumulada (e o offset do "Carregar mais") deixou de valer. Sem ids, a
+        // tela da visão busca a 1ª página de novo.
+        set((s) => {
+          const { [viewId]: _ids, ...viewIds } = s.viewIds;
+          const { [viewId]: _meta, ...viewMeta } = s.viewMeta;
+          return { viewIds, viewMeta };
+        });
+        delete api.viewPageMeta[viewId];
+        if (!opts?.silent) toast.success(`Visualização “${view.name}” atualizada`);
+        return view;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível atualizar a visualização.');
+        return null;
+      }
+    },
+
+    deletePersonalView: async (viewId) => {
+      try {
+        await api.deletePersonalView(viewId);
+        set((s) => {
+          const { [viewId]: _ids, ...viewIds } = s.viewIds;
+          const { [viewId]: _meta, ...viewMeta } = s.viewMeta;
+          return {
+            views: s.views.filter((v) => v.id !== viewId),
+            viewIds,
+            viewMeta,
+          };
+        });
+        void get().refreshCounts(true);
+        toast.success('Visualização apagada');
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível apagar a visualização.');
+        return false;
       }
     },
 
@@ -231,7 +343,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
     },
 
     updateTicket: async (id, patch, comment, opts) => {
-      const updated = await api.updateTicket(id, patch, comment, { macroIds: opts?.macroIds });
+      const updated = await api.updateTicket(id, patch, comment, { macroIds: opts?.macroIds, resolutionWindow: opts?.resolutionWindow });
       upsert([updated]);
       afterWrite();
       if (!opts?.silent) toast.success(`Ticket #${id} foi atualizado${localFieldsNote(updated)}`);
@@ -304,14 +416,108 @@ export function liveTick(random: () => number = Math.random): void {
 }
 
 let timer: ReturnType<typeof setInterval> | undefined;
+let wsStarted = false;
 
-/** Simulação de chegada de tickets: só no modo mock (no real virá do WebSocket /ws/me/). */
+let viewsReload: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Listas por visão (modo real) guardam só ids; um evento do servidor pode tirar um ticket da visão ou pôr outro nela.
+ * Rebusca as visões já abertas mantendo o tamanho acumulado (páginas do "Carregar mais" não se perdem).
+ */
+function reloadOpenViews(): void {
+  if (viewsReload) clearTimeout(viewsReload);
+  viewsReload = setTimeout(() => {
+    viewsReload = undefined;
+    const { viewIds, viewMeta } = useTickets.getState();
+    for (const viewId of Object.keys(viewIds)) {
+      const keep = Math.min(500, Math.max(100, viewMeta[viewId]?.loaded ?? viewIds[viewId]?.length ?? 0));
+      void useTickets.getState().loadView(viewId, { limit: keep });
+    }
+  }, 800);
+}
+
+/** Debounce de revalidação por ticket (vários eventos no mesmo segundo). */
+const pendingRefresh = new Map<number, ReturnType<typeof setTimeout>>();
+
+async function refreshTicketFromServer(ticketId: number, kind?: string): Promise<void> {
+  try {
+    const ticket = await api.getTicket(ticketId);
+    useTickets.getState().applyServerTicket(ticket);
+    void useTickets.getState().refreshCounts(true);
+    void reloadOpenViews();
+    // `kind` vem do backend (broadcast_ticket_event): assigned | owner | updated | closed | reply.
+    if (kind === 'reply' || kind === 'assigned') {
+      toast.info(kind === 'assigned' ? `Ticket #${ticketId} atribuído a você` : `Nova resposta no ticket #${ticketId}`, {
+        description: ticket.subject,
+      });
+    }
+  } catch {
+    // Sem rede / 404: ignora; a próxima abertura do ticket ou o load geral corrige.
+  }
+}
+
+function scheduleTicketRefresh(ticketId: number, kind?: string): void {
+  const prev = pendingRefresh.get(ticketId);
+  if (prev) clearTimeout(prev);
+  pendingRefresh.set(
+    ticketId,
+    setTimeout(() => {
+      pendingRefresh.delete(ticketId);
+      void refreshTicketFromServer(ticketId, kind);
+    }, 300),
+  );
+}
+
+function startRealLiveUpdates(): void {
+  if (wsStarted) return;
+  wsStarted = true;
+  // Import estático evitado nos testes mock: carrega só em runtime real.
+  void import('@/api/real/ws').then(({ getMeSocket }) => {
+    const sock = getMeSocket();
+    let opened = false;
+    sock.setHandlers({
+      // Reconexão: eventos perdidos durante a queda não voltam; revalida os contadores (REST é a verdade).
+      onOpen: () => {
+        if (opened) void useTickets.getState().refreshCounts(true);
+        opened = true;
+      },
+      onTicketEvent: (ev) => scheduleTicketRefresh(ev.ticket_id, ev.kind),
+      onNotification: (ev) => {
+        const title = ev.title || (ev.kind === 'chat_message' ? 'Nova mensagem de chat' : 'Notificação');
+        const description = ev.body || ev.preview || undefined;
+        toast.info(title, description ? { description: String(description) } : undefined);
+        if (typeof ev.ticket_id === 'number') scheduleTicketRefresh(ev.ticket_id, ev.kind);
+      },
+    });
+    sock.start();
+  });
+}
+
+function stopRealLiveUpdates(): void {
+  if (!wsStarted) return;
+  wsStarted = false;
+  for (const t of pendingRefresh.values()) clearTimeout(t);
+  pendingRefresh.clear();
+  if (viewsReload) clearTimeout(viewsReload);
+  viewsReload = undefined;
+  void import('@/api/real/ws').then(({ stopMeSocket }) => stopMeSocket());
+}
+
+/** Mock: intervalo simulando chegada. Real: WebSocket `/ws/me/`. */
 export function startLiveUpdates(intervalMs = 60_000): void {
-  if (timer || IS_REAL) return;
+  if (IS_REAL) {
+    startRealLiveUpdates();
+    return;
+  }
+  if (timer) return;
   timer = setInterval(() => liveTick(), intervalMs);
 }
 
 export function stopLiveUpdates(): void {
+  if (IS_REAL) {
+    stopRealLiveUpdates();
+    return;
+  }
   if (timer) clearInterval(timer);
   timer = undefined;
 }

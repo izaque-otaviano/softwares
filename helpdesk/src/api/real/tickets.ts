@@ -9,7 +9,7 @@ import { layers, mirror, upsertInDb, withLocalTicketFields } from './local';
 import { HELPDESK_VIEWS, SYSTEM_EXTRA_VIEWS, countsFromSummary, mapPersonalView, mapTicketDetail, mapTicketListItem, matchRequesterId, personalViewId, type PersonalViewDto, type SummaryDto, type TicketDetailDto, type TicketDto, type ViewDef } from './mappers';
 import { getClients, getGroups, getOrgs, getStaff, getStatuses, getTags, memo } from './refs';
 import { ensureTags } from './tags';
-import { LOCAL_ONLY_KEYS, labelOf, createTicketBody, planTicketUpdate, resolutionWindow, toFormData, type PlanStep, type TicketPlan } from './mappers/outbound';
+import { LOCAL_ONLY_KEYS, labelOf, createTicketBody, planTicketUpdate, resolutionWindow, toFormData, type PlanStep, type ResolutionWindow, type TicketPlan } from './mappers/outbound';
 import { htmlToMarkdown } from './mappers/htmlToMarkdown';
 import { resolveStatusId } from './mappers/status';
 import { statusIdByCategory } from '@/lib/status';
@@ -18,18 +18,23 @@ import { db } from '../mock/db';
 /**
  * TICKETS (leitura real).
  *
- * Estratégia: a store do Helpdesk guarda TODOS os tickets (Home, painel do cliente, contadores e telas de pessoas
- * dependem disso), então a lista é carregada inteira e paginada (`limit=500`; a 1a página diz o `count` e as demais
- * vêm em paralelo, teto de MAX_TICKETS) e as visões do Helpdesk são avaliadas no navegador sobre ela. O que o servidor
- * já sabe contar (resumo/visões do sistema) vem dele; visões do sistema extras e pessoais são avaliadas NO SERVIDOR
- * (`?view=`, filtros) e só os ids/tickets de cada uma são buscados quando a visão é aberta.
+ * Estratégia (paginação por visão):
+ * - Carga inicial (`loadAll`): só a 1ª página da lista global (HOME_PAGE), não milhares de tickets.
+ * - Visões com `query` (Helpdesk com par no servidor, sistema e pessoais): `runView` busca página a página
+ *   (VIEW_PAGE) e a store acumula ids em `viewIds`; "Carregar mais" pede o próximo offset.
+ * - Visões só locais (`recent`, `solved-recent`): avaliam `conditions` sobre o que já está na store.
+ * - Contadores vêm do servidor (`/tickets/resumo/` + counts).
  *
  * A lista do backend não traz `requester_id`/`company_id`: o solicitante é resolvido por casamento único de
  * nome+empresa com o diretório de clientes (0 chamadas extras) e, onde há homônimos, pelo detalhe do ticket
  * (`GET /tickets/{id}/`, cacheado por ticket, 6 em paralelo).
  */
 
-const PAGE = 500;
+/** Página da lista global no boot (Home / Clientes / Orgs usam o que couber aqui + o que as visões trouxerem). */
+export const HOME_PAGE = 100;
+/** Página ao abrir / paginar uma visão do servidor. */
+export const VIEW_PAGE = 100;
+/** Teto absoluto se algo ainda pedir "carregar tudo" (legado). */
 export const MAX_TICKETS = 5000;
 const DETAIL_CONCURRENCY = 6;
 
@@ -44,15 +49,36 @@ export const loadInfo: TicketsLoadInfo = { total: 0, loaded: 0, truncated: false
 
 const requesterByTicket = new Map<number, string>();
 
-async function fetchTicketDtos(query: Record<string, string | number> = {}): Promise<{ dtos: TicketDto[]; total: number }> {
-  const first = await http.get<Paginated<TicketDto>>('/tickets/', { limit: PAGE, ...query });
-  const dtos = [...first.results];
-  const wanted = Math.min(first.count, MAX_TICKETS);
+/** Uma página de tickets (não varre o restante). */
+export async function fetchTicketPage(
+  query: Record<string, string | number> = {},
+  opts: { limit?: number; offset?: number } = {},
+): Promise<{ dtos: TicketDto[]; total: number; offset: number; limit: number; hasMore: boolean }> {
+  const limit = opts.limit ?? VIEW_PAGE;
+  const offset = opts.offset ?? 0;
+  const page = await http.get<Paginated<TicketDto>>('/tickets/', { limit, offset, ...query });
+  const dtos = [...page.results];
+  const total = page.count;
+  return { dtos, total, offset, limit, hasMore: offset + dtos.length < total };
+}
+
+/** Legado: várias páginas em paralelo até `max` (default = HOME_PAGE — só a 1ª). */
+async function fetchTicketDtos(
+  query: Record<string, string | number> = {},
+  opts: { pageSize?: number; max?: number } = {},
+): Promise<{ dtos: TicketDto[]; total: number }> {
+  const pageSize = opts.pageSize ?? HOME_PAGE;
+  const max = opts.max ?? HOME_PAGE;
+  const first = await fetchTicketPage(query, { limit: pageSize, offset: 0 });
+  const dtos = [...first.dtos];
+  const wanted = Math.min(first.total, max);
   const offsets: number[] = [];
-  for (let o = PAGE; o < wanted; o += PAGE) offsets.push(o);
-  const rest = await Promise.all(offsets.map((offset) => http.get<Paginated<TicketDto>>('/tickets/', { limit: PAGE, offset, ...query })));
-  rest.forEach((p) => dtos.push(...p.results));
-  return { dtos, total: first.count };
+  for (let o = pageSize; o < wanted; o += pageSize) offsets.push(o);
+  if (offsets.length > 0) {
+    const rest = await Promise.all(offsets.map((offset) => fetchTicketPage(query, { limit: pageSize, offset })));
+    rest.forEach((p) => dtos.push(...p.dtos));
+  }
+  return { dtos, total: first.total };
 }
 
 async function pool<T>(items: T[], size: number, work: (item: T) => Promise<void>): Promise<void> {
@@ -94,9 +120,12 @@ async function toTickets(dtos: TicketDto[]): Promise<Ticket[]> {
 }
 
 export const loadAll = memo<Ticket[]>(async () => {
-  const { dtos, total } = await fetchTicketDtos();
+  // Só a 1ª página global: o volume completo vem por visão (`runView` / `loadMoreView`).
+  const { dtos, total } = await fetchTicketDtos({}, { pageSize: HOME_PAGE, max: HOME_PAGE });
   Object.assign(loadInfo, { total, loaded: dtos.length, truncated: total > dtos.length });
-  if (loadInfo.truncated) console.warn(`Helpdesk: ${total} tickets no backend; carregados ${dtos.length} (teto ${MAX_TICKETS}). Use as visões do servidor para o resto.`);
+  if (loadInfo.truncated) {
+    console.info(`Helpdesk: ${total} tickets no backend; lista inicial com ${dtos.length}. Abra uma visualização para paginar o resto.`);
+  }
   return toTickets(dtos);
 }, 10_000);
 
@@ -193,19 +222,92 @@ export async function getViewCounts(): Promise<Record<string, number>> {
   return counts;
 }
 
-export async function runView(viewId: string): Promise<Ticket[]> {
+/** Meta da última página carregada por visão (modo real). */
+export interface ViewPageMeta {
+  total: number;
+  loaded: number;
+  hasMore: boolean;
+  offset: number;
+}
+
+export const viewPageMeta: Record<string, ViewPageMeta> = {};
+
+/**
+ * Lista de uma visão. Com `query`, busca no servidor uma página (`offset`/`limit`).
+ * Sem `query`, avalia localmente sobre os tickets já carregados.
+ */
+export async function runView(viewId: string, opts: { offset?: number; limit?: number } = {}): Promise<Ticket[]> {
   const view = (await listViews()).find((v) => v.id === viewId);
   if (!view) throw new ApiError('Visualização não encontrada.');
   if (view.query) {
-    const { dtos } = await fetchTicketDtos(view.query);
-    const fromServer = await toTickets(dtos);
+    const limit = opts.limit ?? VIEW_PAGE;
+    const offset = opts.offset ?? 0;
+    const page = await fetchTicketPage(view.query, { limit, offset });
+    viewPageMeta[viewId] = {
+      total: page.total,
+      loaded: offset + page.dtos.length,
+      hasMore: page.hasMore,
+      offset,
+    };
+    const fromServer = await toTickets(page.dtos);
     const local = new Map(layers.tickets.apply(fromServer).map((t) => [t.id, t]));
     return fromServer.map((t) => local.get(t.id) ?? t);
   }
-  return runViewPure(view, await allTickets(), { meId: getRealMeId(), now: new Date(), statuses: await getStatuses() });
+  const all = await allTickets();
+  const list = runViewPure(view, all, { meId: getRealMeId(), now: new Date(), statuses: await getStatuses() });
+  viewPageMeta[viewId] = { total: list.length, loaded: list.length, hasMore: false, offset: 0 };
+  return list;
 }
 
+
 export { personalViewId };
+
+/** Converte filtros da UI para o mapa plano que o backend guarda em `SavedTicketView.filters`. */
+export function filtersToServer(filters: {
+  priority?: string;
+  status?: string;
+  q?: string;
+  tags?: string;
+  [k: string]: string | undefined;
+}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== '' && v !== 'any') out[k] = v;
+  }
+  return out;
+}
+
+export async function createPersonalView(input: { name: string; filters?: Record<string, string> }): Promise<View> {
+  const dto = await http.post<PersonalViewDto>('/ticket-views/', {
+    name: input.name.trim().slice(0, 60),
+    filters: input.filters ?? {},
+  });
+  personalViews.reset();
+  return mapPersonalView(dto);
+}
+
+export async function updatePersonalView(
+  viewId: string,
+  input: { name?: string; filters?: Record<string, string> },
+): Promise<View> {
+  const id = personalViewId(viewId);
+  if (id == null) throw new ApiError('Só visualizações pessoais podem ser editadas no servidor.');
+  const body: Record<string, unknown> = {};
+  if (input.name !== undefined) body.name = input.name.trim().slice(0, 60);
+  if (input.filters !== undefined) body.filters = input.filters;
+  const dto = await http.patch<PersonalViewDto>(`/ticket-views/${id}/`, body);
+  personalViews.reset();
+  return mapPersonalView(dto);
+}
+
+export async function deletePersonalView(viewId: string): Promise<void> {
+  const id = personalViewId(viewId);
+  if (id == null) throw new ApiError('Só visualizações pessoais podem ser apagadas no servidor.');
+  await http.delete(`/ticket-views/${id}/`);
+  personalViews.reset();
+  delete viewPageMeta[viewId];
+}
+
 
 // ---------------------------------------------------------------------------------------------------------------
 // ESCRITAS REAIS
@@ -234,7 +336,7 @@ async function mapDto(dto: TicketDetailDto): Promise<Ticket> {
 
 const isUnknownOutcome = (e: unknown): boolean => e instanceof ApiError && (e.status === 0 || (e.status ?? 0) >= 500);
 
-async function runStep(id: number, step: PlanStep, last: TicketDetailDto): Promise<TicketDetailDto> {
+async function runStep(id: number, step: PlanStep, last: TicketDetailDto, window?: ResolutionWindow): Promise<TicketDetailDto> {
   switch (step.kind) {
     case 'macro':
       return http.post<TicketDetailDto>(`/tickets/${id}/apply-macro/`, step.body);
@@ -245,13 +347,13 @@ async function runStep(id: number, step: PlanStep, last: TicketDetailDto): Promi
     case 'unfollow':
       return http.post<TicketDetailDto>(`/tickets/${id}/unfollow/`);
     case 'close': {
-      const w = resolutionWindow(last);
+      const w = window ?? resolutionWindow(last);
       return http.post<TicketDetailDto>(`/tickets/${id}/close/`, { resolution_started_at: w.started, resolution_ended_at: w.ended, note: '' });
     }
     case 'reply': {
       const fields: Record<string, unknown> = { ...step.body };
       if (step.needsWindow) {
-        const w = resolutionWindow(last);
+        const w = window ?? resolutionWindow(last);
         fields.resolution_started_at = w.started;
         fields.resolution_ended_at = w.ended;
       }
@@ -277,13 +379,13 @@ async function runStep(id: number, step: PlanStep, last: TicketDetailDto): Promi
 }
 
 /** Executa os passos em ordem; falha no meio -> `PartialUpdateError` com o relato exato. */
-async function runPlan(id: number, plan: TicketPlan, start: TicketDetailDto, opts: { created?: boolean } = {}): Promise<{ dto: TicketDetailDto; commentSent: boolean }> {
+async function runPlan(id: number, plan: TicketPlan, start: TicketDetailDto, opts: { created?: boolean; resolutionWindow?: ResolutionWindow } = {}): Promise<{ dto: TicketDetailDto; commentSent: boolean }> {
   let last = start;
   const done: PlanStep[] = [];
   let commentSent = false;
   for (const step of plan.steps) {
     try {
-      last = await runStep(id, step, last);
+      last = await runStep(id, step, last, opts.resolutionWindow);
       done.push(step);
       if (step.covers.includes('comment')) commentSent = true;
     } catch (e) {
@@ -319,7 +421,14 @@ function recordLocal(id: number, local: Partial<Ticket>): void {
  * como markdown, com anexos em multipart. Campos sem equivalente no backend ficam só neste navegador
  * (`Ticket.localFields` diz quais).
  */
-export async function updateTicket(id: number, patch: TicketPatch = {}, comment?: mock.NewComment, opts: { macroIds?: string[] } = {}): Promise<Ticket> {
+
+/** Sugestão D4 da janela de solução (para o diálogo de fechamento). */
+export async function suggestResolutionWindow(id: number): Promise<import('./mappers/outbound').ResolutionWindow> {
+  const dto = await fetchDetailDto(id);
+  return resolutionWindow(dto);
+}
+
+export async function updateTicket(id: number, patch: TicketPatch = {}, comment?: mock.NewComment, opts: { macroIds?: string[]; resolutionWindow?: ResolutionWindow } = {}): Promise<Ticket> {
   const [statuses, dto0] = await Promise.all([getStatuses(), fetchDetailDto(id)]);
   await ensureTags(patch.tags);
   const tags = await getTags();
@@ -337,7 +446,7 @@ export async function updateTicket(id: number, patch: TicketPatch = {}, comment?
   if (plan.blocked) throw new ApiError(plan.blocked, { status: 409 });
 
   recordLocal(id, localPart(plan));
-  const { dto } = await runPlan(id, plan, dto0);
+  const { dto } = await runPlan(id, plan, dto0, { resolutionWindow: opts.resolutionWindow });
   invalidateTickets();
   const out = await mapDto(dto);
   return plan.localKeys.length ? { ...out, localFields: plan.localKeys } : out;
@@ -467,6 +576,6 @@ export async function mergeTickets(targetId: number, sourceIds: number[]): Promi
   return res;
 }
 
-// Simulação de chegada de tickets: só existe no mock (no real virá do WebSocket /ws/me/; `startLiveUpdates` fica desligada).
+// Simulação de chegada de tickets: só no mock. No real, `startLiveUpdates` liga o WebSocket `/ws/me/` (`api/real/ws.ts`).
 export { simulateIncomingTicket, simulateCustomerReply } from '../mock/tickets';
 export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult } from '../mock/tickets';

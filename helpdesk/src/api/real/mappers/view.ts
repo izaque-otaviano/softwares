@@ -15,11 +15,23 @@ export interface ViewDef {
   serverCount?: ServerCount;
 }
 
-const helpdeskView = (v: Omit<View, 'columns' | 'origin'>, serverCount?: ServerCount): ViewDef => ({ view: { ...v, columns: COLS, origin: 'helpdesk' }, serverCount });
+/**
+ * Monta a visão do Helpdesk. Se há equivalente no servidor (`slug` ou `query`), anexa `view.query`
+ * para a lista ser buscada paginada no backend em vez de avaliar tudo no navegador.
+ */
+const helpdeskView = (v: Omit<View, 'columns' | 'origin' | 'query'>, serverCount?: ServerCount): ViewDef => {
+  const query =
+    serverCount?.query ??
+    (serverCount?.slug ? { view: serverCount.slug } : undefined);
+  return {
+    view: { ...v, columns: COLS, origin: 'helpdesk', ...(query ? { query } : {}) },
+    serverCount,
+  };
+};
 
 /**
- * As 6 visões do Helpdesk, avaliadas no navegador sobre os tickets carregados (`conditions`). Quando o servidor tem um
- * equivalente EXATO, o contador vem dele (resumo/GET count) e vale mais que o local.
+ * As 6 visões do Helpdesk. As que têm par no servidor (`query`) são listadas por página via REST;
+ * `recent` e `solved-recent` continuam locais (`updated_at` não é filtrável no backend).
  */
 export const HELPDESK_VIEWS: ViewDef[] = [
   helpdeskView(
@@ -34,7 +46,7 @@ export const HELPDESK_VIEWS: ViewDef[] = [
     { id: 'all-unsolved', name: 'Todos os tickets sem resolução', conditions: { all: [{ field: 'status_category', operator: 'is_not', value: 'solved' }] }, groupBy: 'statusCategory', countKey: 'all-unsolved' },
     { slug: 'nao-resolvidos' },
   ),
-  // `updated_at` não é filtrável no backend: avaliação local.
+  // `updated_at` não é filtrável no backend: avaliação local sobre o que já estiver na store.
   helpdeskView({ id: 'recent', name: 'Tickets atualizados recentemente', conditions: { all: [{ field: 'updated_within_hours', operator: 'less_than', value: '72' }] }, countKey: 'recent' }),
   helpdeskView(
     { id: 'pending', name: 'Tickets pendentes', conditions: { all: [{ field: 'status_category', operator: 'is', value: 'pending' }] }, countKey: 'pending' },

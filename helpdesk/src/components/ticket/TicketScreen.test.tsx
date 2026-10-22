@@ -78,6 +78,16 @@ describe('Tela do ticket', () => {
     expect(await screen.findByText('Ticket não encontrado')).toBeInTheDocument();
   });
 
+  it('ticket fora da lista carregada (paginação): busca por id em vez de dizer "não encontrado"', async () => {
+    await useTickets.getState().load();
+    const t = useTickets.getState().tickets.find((x) => x.assigneeId === 'me' && x.statusId === 'open')!;
+    // Simula a store só com a 1ª página: o ticket existe no servidor mas não está na lista.
+    useTickets.setState((st) => ({ tickets: st.tickets.filter((x) => x.id !== t.id) }));
+    renderAt(`/agent/tickets/${t.id}`);
+    expect(await screen.findByRole('complementary', { name: 'Propriedades do ticket' })).toBeInTheDocument();
+    expect(screen.queryByText('Ticket não encontrado')).toBeNull();
+  });
+
   it('mostra erro de carregamento com Tentar novamente', async () => {
     configureApi({ failRate: 1 });
     // listTickets é crítico? o load usa simulate sem critical para listTickets/listStatuses => falha

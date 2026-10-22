@@ -10,7 +10,7 @@ import { useTickets } from './useTickets';
 
 /** Limpa tudo o que é dado do usuário anterior (tickets, abas, rascunhos, caches). */
 export function resetAppState(): void {
-  useTickets.setState({ tickets: [], statuses: [], counts: {}, loaded: false, loading: false, error: null, viewIds: {} });
+  useTickets.setState({ tickets: [], statuses: [], counts: {}, loaded: false, loading: false, error: null, viewIds: {}, viewMeta: {} });
   useTabs.setState({ tabs: [], activeTabId: null, recent: [] });
   useFormStore.setState({ forms: {} });
   resetRefData();

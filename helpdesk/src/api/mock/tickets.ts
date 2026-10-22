@@ -47,7 +47,7 @@ export function getViewCounts(): Promise<Record<string, number>> {
   return simulate(() => countViews(db.views, db.tickets, viewContext()), { critical: true });
 }
 
-export function runView(viewId: string): Promise<Ticket[]> {
+export function runView(viewId: string, _opts: { offset?: number; limit?: number } = {}): Promise<Ticket[]> {
   return simulate(() => {
     const v = db.views.find((x) => x.id === viewId);
     if (!v) throw new ApiError('Visualização não encontrada.');
@@ -78,7 +78,13 @@ function uid(prefix: string): string {
 }
 
 /** Aplica patch e/ou novo comentário; devolve o ticket atualizado. */
-export function updateTicket(id: number, patch: TicketPatch = {}, comment?: NewComment, _opts: { macroIds?: string[] } = {}): Promise<Ticket> {
+export async function suggestResolutionWindow(_id: number): Promise<{ started: string; ended: string }> {
+  const now = new Date();
+  const ended = new Date(Math.floor(now.getTime() / 60000) * 60000).toISOString();
+  return { started: ended, ended };
+}
+
+export function updateTicket(id: number, patch: TicketPatch = {}, comment?: NewComment, _opts: { macroIds?: string[]; resolutionWindow?: { started: string; ended: string } } = {}): Promise<Ticket> {
   return simulate(() => {
     const i = db.tickets.findIndex((t) => t.id === id);
     if (i < 0) throw new ApiError('Ticket não encontrado.');
@@ -316,3 +322,44 @@ export function simulateCustomerReply(): Ticket | null {
 
 /** Views iniciais da store (antes do primeiro `listViews`). */
 export { views as initialViews } from './data';
+
+/** Compatível com o modo real (sem paginação no mock). */
+export const viewPageMeta: Record<string, { total: number; loaded: number; hasMore: boolean; offset: number }> = {};
+export const VIEW_PAGE = 100;
+export const HOME_PAGE = 100;
+
+/** Mock: cria visão pessoal em memória. */
+export async function createPersonalView(input: { name: string; filters?: Record<string, string> }): Promise<View> {
+  const id = `pv:local-${Date.now()}`;
+  const view: View = {
+    id,
+    name: input.name.trim() || 'Sem nome',
+    conditions: { all: [] },
+    columns: ['status', 'subject', 'requester', 'createdAt', 'type', 'priority'],
+    countKey: id,
+    query: input.filters ?? {},
+    origin: 'personal',
+  };
+  db.views.push(view);
+  return view;
+}
+
+export async function updatePersonalView(
+  viewId: string,
+  input: { name?: string; filters?: Record<string, string> },
+): Promise<View> {
+  const i = db.views.findIndex((v) => v.id === viewId);
+  if (i < 0) throw new ApiError('Visualização não encontrada.', { status: 404 });
+  const prev = db.views[i]!;
+  const next: View = {
+    ...prev,
+    name: input.name !== undefined ? input.name.trim() || prev.name : prev.name,
+    query: input.filters !== undefined ? input.filters : prev.query,
+  };
+  db.views[i] = next;
+  return next;
+}
+
+export async function deletePersonalView(viewId: string): Promise<void> {
+  db.views = db.views.filter((v) => v.id !== viewId);
+}

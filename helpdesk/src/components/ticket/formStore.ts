@@ -63,10 +63,21 @@ export interface FormEntry {
 
 export type SubmitResult =
   | { ok: true; ticketId: number; created: boolean; ticket: Ticket }
-  | { ok: false; kind: 'validation' | 'api' | 'busy' | 'missing'; error: string };
+  | { ok: false; kind: 'validation' | 'api' | 'busy' | 'missing' | 'needs_close_confirm'; error: string };
+
+/** Janela de solução (D4) confirmada no diálogo de fechamento. */
+export type ResolutionWindowInput = { started: string; ended: string };
+
+/** Pedido de confirmação de fechamento (só modo real). */
+export interface PendingClose {
+  key: string;
+  statusIdOverride?: string;
+}
 
 interface FormState {
   forms: Record<string, FormEntry>;
+  /** Diálogo de janela de solução ao fechar no modo real. */
+  pendingClose: PendingClose | null;
   /** Cria o formulário da chave se ainda não existir (não sobrescreve edições pendentes). `ticket = null` = ticket novo. */
   init: (key: string, ticket: Ticket | null) => void;
   patch: (key: string, partial: Partial<FormValues>) => void;
@@ -83,11 +94,18 @@ interface FormState {
   /** Descarta propriedades pendentes e o texto do editor. */
   reset: (key: string) => void;
   /** Valida, salva, roda gatilhos, limpa o editor, avisa por toast e fecha/permanece. */
-  submit: (key: string, statusIdOverride?: string) => Promise<SubmitResult>;
+  submit: (key: string, statusIdOverride?: string, resolutionWindow?: ResolutionWindowInput) => Promise<SubmitResult>;
+  /** Cancela o diálogo de fechamento. */
+  cancelClose: () => void;
   /** Repete o último envio (Banner "Tentar novamente"). */
   retry: (key: string) => Promise<SubmitResult>;
   remove: (key: string) => void;
   clearErrors: (key: string) => void;
+  /**
+   * Tempo real: o servidor mudou o ticket. Se as propriedades do formulário estão intocadas, adota os valores novos
+   * (o texto do editor não é afetado); com edições pendentes, não mexe em nada (o agente decide ao enviar).
+   */
+  rebase: (key: string, ticket: Ticket) => void;
 }
 
 export const isNewKey = (key: string): boolean => key.startsWith('new-ticket:');
@@ -340,7 +358,7 @@ export const useFormStore = create<FormState>()((set, get) => {
     return newKey;
   };
 
-  const run = async (key: string, override: string | undefined): Promise<SubmitResult> => {
+  const run = async (key: string, override: string | undefined, resolutionWindow?: ResolutionWindowInput): Promise<SubmitResult> => {
     let e = get().forms[key];
     if (!e) return { ok: false, kind: 'missing', error: 'Formulário não encontrado.' };
     if (e.submitting) return { ok: false, kind: 'busy', error: 'Envio em andamento.' };
@@ -390,7 +408,7 @@ export const useFormStore = create<FormState>()((set, get) => {
       } else {
         const patch = diffPatch(snapshot);
         assigneeChanged = 'assigneeId' in patch && Boolean(patch.assigneeId);
-        saved = await tickets.updateTicket(snapshot.ticketId!, patch, comment, { silent: true, macroIds: snapshot.macroIds });
+        saved = await tickets.updateTicket(snapshot.ticketId!, patch, comment, { silent: true, macroIds: snapshot.macroIds, resolutionWindow });
       }
     } catch (err) {
       if (err instanceof PartialUpdateError && err.ticket) {
@@ -456,6 +474,7 @@ export const useFormStore = create<FormState>()((set, get) => {
 
   return {
     forms: {},
+    pendingClose: null,
 
     init: (key, ticket) => {
       if (get().forms[key]) return;
@@ -543,10 +562,27 @@ export const useFormStore = create<FormState>()((set, get) => {
     reset: (key) =>
       update(key, (e) => ({ values: structuredClone(e.original), bodyHtml: '', bodyRev: e.bodyRev + 1, files: [], macroIds: [], callNumber: '', errors: {}, apiError: null })),
 
-    submit: (key, statusIdOverride) => {
+    submit: (key, statusIdOverride, resolutionWindow) => {
       lastOverride.set(key, statusIdOverride);
-      return run(key, statusIdOverride);
+      // Modo real: ao fechar (status resolvido), pede confirmação da janela de solução (franquia de horas).
+      if (IS_REAL && !resolutionWindow) {
+        const e = get().forms[key];
+        if (e && !e.isNew && !e.submitting) {
+          const statuses = useTickets.getState().statuses;
+          const targetId = statusIdOverride ?? e.values.statusId;
+          const target = statuses.find((s) => s.id === targetId);
+          const current = statuses.find((s) => s.id === e.original.statusId);
+          if (target?.category === 'solved' && current?.category !== 'solved') {
+            set({ pendingClose: { key, statusIdOverride } });
+            return Promise.resolve({ ok: false, kind: 'needs_close_confirm', error: 'Confirme o início e o término da solução.' });
+          }
+        }
+      }
+      set({ pendingClose: null });
+      return run(key, statusIdOverride, resolutionWindow);
     },
+
+    cancelClose: () => set({ pendingClose: null }),
 
     retry: (key) => run(key, lastOverride.get(key)),
 
@@ -559,6 +595,15 @@ export const useFormStore = create<FormState>()((set, get) => {
     },
 
     clearErrors: (key) => update(key, () => ({ errors: {}, apiError: null })),
+
+    rebase: (key, ticket) => {
+      const e = get().forms[key];
+      if (!e || e.isNew || e.submitting) return;
+      if (changedKeys(e.values, e.original).length > 0) return; // edição pendente: preserva
+      const fresh = valuesFromTicket(ticket);
+      if (changedKeys(fresh, e.original).length === 0) return;
+      update(key, () => ({ values: fresh, original: structuredClone(fresh) }));
+    },
   };
 });
 

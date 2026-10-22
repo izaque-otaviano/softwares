@@ -90,10 +90,10 @@ src/
   (badges) sem fugir da grade de 4 px nas demais medidas.
 - O `Banner` usa seus próprios botões de ação (herdam a cor do tom do aviso), não o `Button`.
 - **Acessibilidade medida com axe** (axe-core, regras WCAG 2.0/2.1/2.2 A e AA mais best-practice) em Início,
-  Visualizações, ticket, novo ticket, Clientes, Administração, Status e `/kit`: zero violações, **com uma exceção
-  conhecida**: nas telas de ticket, o `tablist` das abas de trabalho (`aria-required-children`) segue sinalizado.
-  Cada aba é um `tab` seguido de um botão "Fechar aba" dentro do mesmo `tablist`; mantive assim porque o fechamento
-  por botão é parte do brief e separar os dois quebraria a navegação por Tab.
+  Visualizações, ticket, novo ticket, Clientes, Administração, Status e `/kit`: zero violações (medição anterior às
+  abas atuais; não foi refeita). As abas de trabalho agora são um `role=group` com botões e `aria-current` (antes
+  `tablist`/`tab`, que o axe sinalizava por causa do botão "Fechar aba" dentro do `tablist`): some a violação, mas as
+  abas perdem a semântica de aba.
 - **Responsivo abaixo de 1024 px**: o painel direito do ticket vira `Drawer` e o painel de propriedades vira acordeão
   (`useIsNarrow`). Acima disso o layout é o de desktop do brief (altura total, sem rolagem de página).
 - **`ErrorBoundary`** envolve as rotas: erro de renderização vira banner com "Recarregar" em vez de tela branca e é

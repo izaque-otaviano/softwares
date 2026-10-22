@@ -12,6 +12,8 @@ export interface ViewActionsProps {
   onPlay: () => void;
   /** ▶ Play some quando a visualização está vazia. */
   canPlay: boolean;
+  /** Só visões pessoais: apagar no servidor. */
+  onDelete?: () => void;
 }
 
 const SUB_ITEM =
@@ -31,6 +33,11 @@ export function ViewActions(p: ViewActionsProps) {
           <MenuItem onSelect={p.onExport}>Exportar como CSV</MenuItem>
           <MenuItem onSelect={p.onEdit}>Editar visualização</MenuItem>
           <MenuItem onSelect={p.onClone}>Clonar visualização</MenuItem>
+          {p.onDelete ? (
+            <MenuItem tone="danger" onSelect={p.onDelete}>
+              Apagar visualização
+            </MenuItem>
+          ) : null}
           <MenuSeparator />
           <DropdownMenu.Sub>
             <DropdownMenu.SubTrigger className={SUB_ITEM}>

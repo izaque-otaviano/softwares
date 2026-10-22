@@ -224,3 +224,85 @@ export function downloadCsv(filename: string, csv: string): void {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+
+/** Categoria Helpdesk → valor de `?status=` no Resolv. */
+const CATEGORY_TO_STATUS: Record<string, string> = {
+  new: 'new',
+  open: 'open',
+  pending: 'pending_customer',
+  hold: 'pending_customer',
+  solved: 'closed',
+  closed: 'closed',
+};
+
+export interface StatusLike {
+  id: string;
+  category: string;
+}
+
+/**
+ * Filtros da gaveta → query plana do backend (`SavedTicketView.filters` / GET /tickets/).
+ * Campos sem equivalente no Resolv (tipo, tags por nome) são omitidos.
+ */
+export function viewFiltersToServer(
+  f: ViewFilters,
+  statuses: StatusLike[] = [],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (f.priority && f.priority !== 'any') out.priority = f.priority;
+  if (f.subject.trim()) out.q = f.subject.trim();
+  if (f.requesterId) out.requester = f.requesterId;
+  if (f.statusIds.length > 0) {
+    const byId = new Map(statuses.map((s) => [s.id, s]));
+    const codes = [
+      ...new Set(
+        f.statusIds
+          .map((id) => byId.get(id)?.category)
+          .map((c) => (c ? CATEGORY_TO_STATUS[c] ?? c : null))
+          .filter((x): x is string => Boolean(x)),
+      ),
+    ];
+    if (codes.length === 1) out.status = codes[0]!;
+    else if (codes.length > 1) out.status = codes.join(',');
+  }
+  if (f.datePreset === 'today' || f.datePreset === '7d' || f.datePreset === '30d') {
+    out.periodo = f.datePreset;
+  } else if (f.datePreset === 'range') {
+    if (f.from) out.desde = f.from;
+    if (f.to) out.ate = f.to;
+  }
+  // tags por nome não têm id no filtro da UI — o backend espera id numérico.
+  return out;
+}
+
+/** Query do servidor → filtros da gaveta (melhor esforço). */
+export function serverFiltersToView(
+  query: Record<string, string> | undefined,
+  statuses: StatusLike[] = [],
+): ViewFilters {
+  const f = { ...EMPTY_FILTERS };
+  if (!query) return f;
+  if (query.priority) f.priority = query.priority as ViewFilters['priority'];
+  if (query.q) f.subject = query.q;
+  if (query.requester) f.requesterId = query.requester;
+  if (query.periodo === 'today' || query.periodo === '7d' || query.periodo === '30d') {
+    f.datePreset = query.periodo;
+  } else if (query.desde || query.ate) {
+    f.datePreset = 'range';
+    f.from = query.desde ?? '';
+    f.to = query.ate ?? '';
+  }
+  if (query.status) {
+    const codes = query.status.split(',').map((s) => s.trim()).filter(Boolean);
+    const reverse: Record<string, string[]> = {
+      new: ['new'],
+      open: ['open'],
+      pending_customer: ['pending', 'hold'],
+      closed: ['solved', 'closed'],
+    };
+    const cats = new Set(codes.flatMap((c) => reverse[c] ?? [c]));
+    f.statusIds = statuses.filter((s) => cats.has(s.category)).map((s) => s.id);
+  }
+  return f;
+}

@@ -63,14 +63,18 @@ export function WorkTabs() {
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
-      <div role="tablist" aria-label="Abas de trabalho" className="flex min-w-0 items-center gap-1 overflow-x-auto">
+      {/*
+        role=group (não tablist): cada aba tem um botão de ativar e outro de fechar.
+        tablist + botão "Fechar" dentro quebrava aria-required-children (axe).
+        aria-current marca a aba ativa; o fechar fica no mesmo grupo visual.
+      */}
+      <div role="group" aria-label="Abas de trabalho" className="flex min-w-0 items-center gap-1 overflow-x-auto">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
           const Icon = tabIcon(tab);
           return (
             <div
               key={tab.id}
-              role="presentation"
               className={cn(
                 'group flex h-10 w-48 shrink-0 items-center rounded transition-colors duration-100',
                 active ? 'bg-ink-active text-fg-inverse' : 'text-fg hover:bg-hover',
@@ -78,8 +82,7 @@ export function WorkTabs() {
             >
               <button
                 type="button"
-                role="tab"
-                aria-selected={active}
+                aria-current={active ? 'page' : undefined}
                 title={tab.title}
                 onClick={() => activateTab(tab.id)}
                 onAuxClick={(e) => {

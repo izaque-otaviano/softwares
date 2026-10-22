@@ -31,9 +31,15 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     id: 'account',
     label: 'Conta',
     icon: Building2,
-    to: `${OUT_OF_SCOPE_BASE}/visao-geral`,
+    to: '/admin/conta/visao-geral',
     groups: [
-      { label: 'Conta', items: [stub('Visão geral', 'visao-geral'), stub('Marca', 'marca')] },
+      {
+        label: 'Conta',
+        items: [
+          { label: 'Visão geral', to: '/admin/conta/visao-geral' },
+          stub('Marca', 'marca'),
+        ],
+      },
       { label: 'Cobrança', items: [stub('Assinatura', 'assinatura'), stub('Faturas', 'faturas')] },
       { label: 'Segurança', items: [stub('Política de senhas', 'senhas'), stub('Autenticação única', 'sso')] },
     ],
@@ -59,18 +65,38 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     id: 'channels',
     label: 'Canais',
     icon: Radio,
-    to: `${OUT_OF_SCOPE_BASE}/email`,
+    to: '/admin/canais/email',
     groups: [
-      { label: 'Mensagens', items: [stub('E-mail', 'email'), stub('Formulário web', 'formulario-web')] },
-      { label: 'Integrações', items: [stub('API', 'api'), stub('Webhooks', 'webhooks')] },
+      {
+        label: 'Mensagens',
+        items: [
+          { label: 'E-mail', to: '/admin/canais/email' },
+          { label: 'Formulário web', to: '/admin/canais/formulario-web' },
+        ],
+      },
+      {
+        label: 'Integrações',
+        items: [
+          { label: 'API', to: '/admin/canais/api' },
+          { label: 'Webhooks', to: '/admin/canais/webhooks' },
+        ],
+      },
     ],
   },
   {
     id: 'workspaces',
     label: 'Espaços de trabalho',
     icon: LayoutGrid,
-    to: `${OUT_OF_SCOPE_BASE}/layouts`,
-    groups: [{ label: 'Área do agente', items: [stub('Layouts de ticket', 'layouts'), stub('Atalhos', 'atalhos')] }],
+    to: '/admin/espacos/layouts',
+    groups: [
+      {
+        label: 'Área do agente',
+        items: [
+          { label: 'Layouts de ticket', to: '/admin/espacos/layouts' },
+          { label: 'Atalhos', to: '/admin/espacos/atalhos' },
+        ],
+      },
+    ],
   },
   {
     id: 'objects',

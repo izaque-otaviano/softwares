@@ -79,12 +79,15 @@ describe('AdminLayout', () => {
     expect(await within(dialog).findByText(/Criar gatilho/)).toBeInTheDocument();
   });
 
-  it('itens de exemplo levam a "Fora desta versão"', async () => {
+  it('Canais abre página de e-mail; Marca continua fora desta versão', async () => {
     const user = userEvent.setup();
     renderAdmin('/admin');
     await user.click(screen.getByRole('link', { name: 'Canais' }));
+    expect(await screen.findByRole('heading', { name: 'E-mail' })).toBeInTheDocument();
+    expect(screen.getByTestId('loc')).toHaveTextContent('/admin/canais/email');
+    await user.click(screen.getByRole('link', { name: 'Conta' }));
+    await user.click(await screen.findByRole('link', { name: 'Marca' }));
     expect(await screen.findByText('Fora desta versão')).toBeInTheDocument();
-    expect(screen.getByTestId('loc')).toHaveTextContent('/admin/fora-desta-versao/email');
   });
 
   it('a busca da TopBar navega ao primeiro resultado', async () => {
