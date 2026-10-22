@@ -36,6 +36,20 @@ Design de interfaces e protótipos (Mac e Windows). Baseado em [storytold/figcra
 - Código: [`figcraft/`](figcraft/)
 - Instaladores: [Releases](../../releases)
 
+## Helpdesk
+
+Protótipo de sistema de tickets de atendimento (React, TypeScript, Vite e Tailwind): área do agente com abas de trabalho, visualizações, tela do ticket com macros e envio por status, clientes, organizações e busca, mais a administração (membros, campos, status, gatilhos e macros). Funciona com dados de exemplo (`npm run dev`) ou ligado ao backend do Resolv (`npm run dev:real`), com login, leitura e escrita reais.
+
+- Código: [`helpdesk/`](helpdesk/) (instruções em [`helpdesk/README.md`](helpdesk/README.md))
+- O que falta e os problemas conhecidos do backend: [`helpdesk/PENDENCIAS.md`](helpdesk/PENDENCIAS.md)
+
+## Resolv
+
+Sistema de tickets e chat de atendimento: backend em Django/DRF (com Channels para tempo real) e front-end em React. É o backend ao qual o Helpdesk se liga.
+
+- Código: [`resolv/`](resolv/) (instruções em [`resolv/README.md`](resolv/README.md))
+- Copiado de `izaqueotaviano/Resolv` (hoje CDesk), branch `claude/ticket-system-8tsh8q`, commit `7cc6389`, sem o histórico anterior.
+
 ## Instaladores
 
 Os instaladores de VectorCraft, PhotoCraft, FilmCraft e FigCraft (DMG universal para Mac, `.exe`
