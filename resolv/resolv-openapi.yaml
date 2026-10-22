@@ -7762,8 +7762,29 @@ paths:
         CRUD das visualizações pessoais de quem está logado.
 
         Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-        Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-        todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+        barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+        vira o envelope `{count, next, previous, results}` do resto da API. O
+        `count` por visão (tickets) só é calculado para as visões da página.
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: OPCIONAL. Visões por página (padrão 25).
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: OPCIONAL. Alternativa a `page`.
+      - in: query
+        name: page
+        schema:
+          type: integer
+        description: OPCIONAL. Número da página (1 = primeira). Com `page`, `limit`
+          ou `offset` a resposta vira o envelope `{count, next, previous, results}`;
+          sem nenhum deles é o array puro com todas as visões.
       tags:
       - tickets
       responses:
@@ -7781,8 +7802,11 @@ paths:
         CRUD das visualizações pessoais de quem está logado.
 
         Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-        Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-        todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+        barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+        vira o envelope `{count, next, previous, results}` do resto da API. O
+        `count` por visão (tickets) só é calculado para as visões da página.
       tags:
       - tickets
       requestBody:
@@ -7811,8 +7835,11 @@ paths:
         CRUD das visualizações pessoais de quem está logado.
 
         Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-        Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-        todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+        barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+        vira o envelope `{count, next, previous, results}` do resto da API. O
+        `count` por visão (tickets) só é calculado para as visões da página.
       parameters:
       - in: path
         name: id
@@ -7834,8 +7861,11 @@ paths:
         CRUD das visualizações pessoais de quem está logado.
 
         Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-        Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-        todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+        barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+        vira o envelope `{count, next, previous, results}` do resto da API. O
+        `count` por visão (tickets) só é calculado para as visões da página.
       parameters:
       - in: path
         name: id
@@ -7869,8 +7899,11 @@ paths:
         CRUD das visualizações pessoais de quem está logado.
 
         Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-        Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-        todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+        barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+        vira o envelope `{count, next, previous, results}` do resto da API. O
+        `count` por visão (tickets) só é calculado para as visões da página.
       parameters:
       - in: path
         name: id
@@ -7903,8 +7936,11 @@ paths:
         CRUD das visualizações pessoais de quem está logado.
 
         Só interno: a fila é do agente; o cliente tem as telas dele no portal.
-        Sem paginação — a lista inteira é o contrato (a barra lateral desenha
-        todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        Por padrão a lista é um ARRAY PURO com todas as visões — é o contrato (a
+        barra lateral desenha todas) e ela tem teto (`MAX_VISOES_POR_PESSOA`).
+        A paginação é OPCIONAL: com `?page=`, `?limit=` ou `?offset=` a resposta
+        vira o envelope `{count, next, previous, results}` do resto da API. O
+        `count` por visão (tickets) só é calculado para as visões da página.
       parameters:
       - in: path
         name: id
@@ -8085,13 +8121,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketCreate'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketCreate'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketCreate'
         required: true
       responses:
         '201':
@@ -8265,13 +8301,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketClose'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketClose'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketClose'
         required: true
       responses:
         '200':
@@ -8540,16 +8576,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketReply'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketReply'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/TicketReply'
         required: true
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
@@ -8731,24 +8767,31 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkAssign'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkAssign'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkAssign'
         required: true
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketDetail'
+                $ref: '#/components/schemas/BulkResult'
           description: ''
   /api/v1/tickets/bulk-close/:
     post:
       operationId: v1_tickets_bulk_close_create
+      description: |-
+        Fecha vários chamados. Dois formatos (ver `BulkCloseSerializer`):
+        `ticket_ids` + uma janela para todos (o de sempre) ou
+        `items:[{id, resolution_started_at, resolution_ended_at}]` com a
+        janela de CADA ticket. Ticket inválido (janela antes da criação,
+        ausente, já fechado...) vai para `failed[]` com o motivo; os demais
+        fecham.
       parameters:
       - in: path
         name: id
@@ -8761,20 +8804,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkClose'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkClose'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
-        required: true
+              $ref: '#/components/schemas/BulkClose'
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketDetail'
+                $ref: '#/components/schemas/BulkResult'
           description: ''
   /api/v1/tickets/bulk-priority/:
     post:
@@ -8791,20 +8833,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkPriority'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkPriority'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkPriority'
         required: true
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketDetail'
+                $ref: '#/components/schemas/BulkResult'
           description: ''
   /api/v1/tickets/bulk-status/:
     post:
@@ -8826,20 +8868,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkStatus'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkStatus'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TicketDetail'
+              $ref: '#/components/schemas/BulkStatus'
         required: true
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketDetail'
+                $ref: '#/components/schemas/BulkResult'
           description: ''
   /api/v1/tickets/facets/:
     get:
@@ -9026,7 +9068,7 @@ paths:
         e `skip_locked` faz o segundo clique pular para o próximo da fila em
         vez de esperar pelo mesmo.
 
-        A ordem é a da tela (resolv/inicio/pegarProximo.ts): o prazo de SLA de
+        A ordem é a da tela (resolv/inicio/usePegarProximo.ts): o prazo de SLA de
         resolução que vence primeiro (sem prazo por último), depois a
         prioridade mais alta, depois o mais antigo. "Aguardando o cliente"
         fica de fora — ali a bola está com o cliente.
@@ -9488,6 +9530,171 @@ components:
       - board
       - id
       - name
+    BulkAssign:
+      type: object
+      description: |-
+        Base das 3 ações em lote (Fase 3 do prompt de integração, GAPS.md):
+        a lista de ids em comum. `max_length` é limite técnico (corpo do
+        request limitado), não regra de negócio — a view ainda filtra pelos
+        tickets VISÍVEIS antes de aplicar qualquer coisa, do mesmo jeito que
+        `tabs` já faz (`get_queryset().filter(pk__in=ids)`).
+
+        `report_missing` (OPCIONAL, padrão `false`): por padrão um id que não
+        existe OU que o usuário não enxerga some em silêncio da resposta — não
+        vaza existência (mesmo cuidado de `retrieve()`). Com `true` ele entra em
+        `failed[]` com o MESMO motivo genérico nos dois casos ("Ticket não
+        encontrado."), então nada vaza e quem chama sabe que o id não foi
+        processado em vez de achar que passou.
+      properties:
+        ticket_ids:
+          type: array
+          items:
+            type: integer
+          maxItems: 500
+        report_missing:
+          type: boolean
+          default: false
+        assignee_id:
+          type: integer
+          nullable: true
+      required:
+      - ticket_ids
+    BulkClose:
+      type: object
+      description: |-
+        Fechar em lote, em dois formatos (exclusivos):
+
+        - ANTIGO: `ticket_ids` + uma janela (`resolution_started_at`/`_ended_at`)
+          para todos — continua igual;
+        - POR TICKET: `items: [{id, resolution_started_at, resolution_ended_at,
+          note?}]`. Útil quando cada ticket tem o seu início (criado em horas
+          diferentes). A janela/nota de nível superior, se vier, é o padrão dos
+          itens que não trouxerem a própria.
+
+        Em qualquer formato, um ticket inválido (criado depois do início, janela
+        ausente, já fechado...) vai para `failed[]` com o motivo; o resto fecha.
+      properties:
+        ticket_ids:
+          type: array
+          items:
+            type: integer
+          maxItems: 500
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkCloseItem'
+          maxItems: 500
+        resolution_started_at:
+          type: string
+          format: date-time
+        resolution_ended_at:
+          type: string
+          format: date-time
+        note:
+          type: string
+          default: ''
+          maxLength: 200
+        report_missing:
+          type: boolean
+          default: false
+    BulkCloseItem:
+      type: object
+      description: |-
+        Um ticket do `bulk-close` com a SUA janela de resolução. O que faltar
+        aqui herda da janela/nota do nível de cima (se houver).
+      properties:
+        id:
+          type: integer
+        resolution_started_at:
+          type: string
+          format: date-time
+        resolution_ended_at:
+          type: string
+          format: date-time
+        note:
+          type: string
+          maxLength: 200
+      required:
+      - id
+    BulkFailure:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+        detail:
+          type: string
+      required:
+      - detail
+      - id
+    BulkPriority:
+      type: object
+      description: |-
+        Base das 3 ações em lote (Fase 3 do prompt de integração, GAPS.md):
+        a lista de ids em comum. `max_length` é limite técnico (corpo do
+        request limitado), não regra de negócio — a view ainda filtra pelos
+        tickets VISÍVEIS antes de aplicar qualquer coisa, do mesmo jeito que
+        `tabs` já faz (`get_queryset().filter(pk__in=ids)`).
+
+        `report_missing` (OPCIONAL, padrão `false`): por padrão um id que não
+        existe OU que o usuário não enxerga some em silêncio da resposta — não
+        vaza existência (mesmo cuidado de `retrieve()`). Com `true` ele entra em
+        `failed[]` com o MESMO motivo genérico nos dois casos ("Ticket não
+        encontrado."), então nada vaza e quem chama sabe que o id não foi
+        processado em vez de achar que passou.
+      properties:
+        ticket_ids:
+          type: array
+          items:
+            type: integer
+          maxItems: 500
+        report_missing:
+          type: boolean
+          default: false
+        priority:
+          $ref: '#/components/schemas/PriorityEnum'
+      required:
+      - priority
+      - ticket_ids
+    BulkResult:
+      type: object
+      description: 'Resposta das ações em lote: o que mudou e o que não mudou (com
+        o motivo).'
+      properties:
+        updated:
+          type: array
+          items:
+            type: integer
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkFailure'
+      required:
+      - failed
+      - updated
+    BulkStatus:
+      type: object
+      description: |-
+        Ação "Mudar status" da barra de seleção da fila. É o STATUS (coluna do
+        quadro, `TicketStage`), não a categoria: a coluna "Status" da fila mostra
+        o nome do stage ("Em análise"), e escolher ali uma categoria crua
+        ("open") jogaria todo mundo no status de fábrica sem a pessoa pedir.
+        Quem resolve o id e recusa stage de conclusão é a view — a regra de
+        negócio mesmo mora em `ticket_service.mudar_status`.
+      properties:
+        ticket_ids:
+          type: array
+          items:
+            type: integer
+          maxItems: 500
+        report_missing:
+          type: boolean
+          default: false
+        stage_id:
+          type: integer
+      required:
+      - stage_id
+      - ticket_ids
     BusinessCalendar:
       type: object
       properties:
@@ -11189,8 +11396,17 @@ components:
           - $ref: '#/components/schemas/AutoAwayMinutesEnum'
           minimum: 0
           maximum: 32767
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
       required:
       - company_name
+      - created_at
       - custom_role_name
       - email
       - full_name
@@ -11203,6 +11419,7 @@ components:
       - signature_render
       - teams
       - ticket_scope
+      - updated_at
     Mention:
       type: object
       description: |-
@@ -13397,6 +13614,13 @@ components:
         requester_display:
           type: string
           readOnly: true
+        requester_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        company_id:
+          type: integer
+          readOnly: true
         assignee_name:
           type: string
           nullable: true
@@ -13782,6 +14006,14 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TicketScopeEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     PedidoRecuperacao:
       type: object
       properties:
@@ -14786,6 +15018,93 @@ components:
       - name
       - service_name
       - ticket_count
+    TicketClose:
+      type: object
+      properties:
+        resolution_started_at:
+          type: string
+          format: date-time
+        resolution_ended_at:
+          type: string
+          format: date-time
+        note:
+          type: string
+          default: ''
+          maxLength: 200
+        stage:
+          type: integer
+          nullable: true
+      required:
+      - resolution_ended_at
+      - resolution_started_at
+    TicketCreate:
+      type: object
+      properties:
+        team_id:
+          type: integer
+        subject:
+          type: string
+          maxLength: 200
+        order_number:
+          type: string
+          maxLength: 40
+        body:
+          type: string
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/PriorityEnum'
+          default: normal
+        category_id:
+          type: integer
+          nullable: true
+        requester_id:
+          type: integer
+        with_signature:
+          type: boolean
+          default: false
+        assignee:
+          type: integer
+          nullable: true
+          description: Responsável pelo ticket (agente ativo).
+        status:
+          nullable: true
+          description: |-
+            Status inicial por categoria: new | open | pending_customer. Fechado não vale na abertura.
+
+            * `new` - Novo
+            * `open` - Aberto
+            * `pending_customer` - Aguardando retorno
+          oneOf:
+          - $ref: '#/components/schemas/TicketCreateStatusEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        stage:
+          type: integer
+          nullable: true
+          description: Status inicial por coluna (inclui os personalizados). Se vier
+            junto com `status`, a categoria do stage tem de ser a mesma.
+        tags:
+          type: array
+          items:
+            type: integer
+          description: Ids de etiquetas já existentes.
+        is_public:
+          type: boolean
+          default: true
+          description: false = a primeira mensagem nasce como nota INTERNA.
+      required:
+      - body
+      - subject
+      - team_id
+    TicketCreateStatusEnum:
+      enum:
+      - new
+      - open
+      - pending_customer
+      type: string
+      description: |-
+        * `new` - Novo
+        * `open` - Aberto
+        * `pending_customer` - Aguardando retorno
     TicketDetail:
       type: object
       description: Campos sensíveis condicionados a is_content_visible_to(user).
@@ -14825,6 +15144,13 @@ components:
           readOnly: true
         requester_display:
           type: string
+          readOnly: true
+        requester_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        company_id:
+          type: integer
           readOnly: true
         assignee_name:
           type: string
@@ -14980,6 +15306,7 @@ components:
       - assignee_id
       - assignee_name
       - category_name
+      - company_id
       - company_name
       - content_hidden
       - created_at
@@ -14994,6 +15321,7 @@ components:
       - reference
       - requester
       - requester_display
+      - requester_id
       - restriction_reason
       - satisfaction
       - scheduled_replies
@@ -15080,6 +15408,13 @@ components:
           readOnly: true
         requester_display:
           type: string
+          readOnly: true
+        requester_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        company_id:
+          type: integer
           readOnly: true
         assignee_name:
           type: string
@@ -15198,6 +15533,7 @@ components:
       - assignee_id
       - assignee_name
       - category_name
+      - company_id
       - company_name
       - content_hidden
       - created_at
@@ -15209,6 +15545,7 @@ components:
       - plan
       - reference
       - requester_display
+      - requester_id
       - restriction_reason
       - satisfaction
       - service_name
@@ -15277,6 +15614,19 @@ components:
         id:
           type: integer
           readOnly: true
+        author_id:
+          type: integer
+          nullable: true
+          description: |-
+            O id de quem escreveu, para a tela casar autor sem adivinhar pelo
+            nome (homônimos). Nulo em mensagem do sistema.
+
+            O que cada lado vê: o agente (interno) recebe o id de qualquer autor.
+            O CLIENTE só recebe o de quem é cliente (ele mesmo ou colega da
+            empresa, que já aparecem por nome) — o id de um agente é identificador
+            interno e fica nulo para ele, a mesma cautela de `events`, que nem sai
+            para cliente. Nome e avatar do agente seguem como sempre.
+          readOnly: true
         author_name:
           type: string
           readOnly: true
@@ -15340,6 +15690,7 @@ components:
       required:
       - attachments
       - author_avatar
+      - author_id
       - author_is_internal
       - author_name
       - body
@@ -15359,6 +15710,39 @@ components:
         * `web` - Sistema
         * `chat` - Chat
         * `system` - Automático
+    TicketReply:
+      type: object
+      properties:
+        body:
+          type: string
+        is_public:
+          type: boolean
+          default: true
+        with_signature:
+          type: boolean
+          default: false
+        new_status:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TicketStatusEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        resolution_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolution_ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        close_note:
+          type: string
+          default: ''
+          maxLength: 200
+        stage:
+          type: integer
+          nullable: true
+      required:
+      - body
     TicketScopeEnum:
       enum:
       - all
@@ -15668,9 +16052,18 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TicketScopeEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
       required:
       - anonymized_at
       - company_name
+      - created_at
       - custom_role_name
       - email
       - full_name
@@ -15682,6 +16075,7 @@ components:
       - signature_render
       - team_ids
       - two_factor_method
+      - updated_at
     UserKindEnum:
       enum:
       - internal

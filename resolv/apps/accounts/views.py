@@ -86,7 +86,9 @@ class MeSerializer(serializers.ModelSerializer):
             "ui_language", "ui_density", "personal_hours",
             # conforto (Minha conta → Aparência / Notificações / Status)
             *CAMPOS_DE_CONFORTO,
+            "created_at", "updated_at",
         ]
+        read_only_fields = ["created_at", "updated_at"]
 
     def get_signature_render(self, obj) -> str:
         return assinatura.render_html(obj)

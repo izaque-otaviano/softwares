@@ -217,7 +217,10 @@ class Command(BaseCommand):
                 )
                 TicketStatusEvent.objects.filter(ticket=t).last()
                 t.status = to_s
-                t.save(update_fields=["status"])
+                # a coluna acompanha o status (invariante do modelo); sem isto
+                # o ticket reaberto ficava `open` com a coluna "Fechado" (TD-00005)
+                t.stage = ticket_service.stage_padrao(to_s)
+                t.save(update_fields=["status", "stage"])
 
             # 1. Novo, ninguém respondeu ainda
             ticket(ana, suporte, "Página do formulário fora do ar",

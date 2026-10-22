@@ -18,7 +18,6 @@ import secrets
 from collections import defaultdict
 
 from django.conf import settings
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
@@ -47,6 +46,7 @@ from apps.accounts.models import (
 )
 from apps.accounts.sessions import access_history_payload, live_sessions
 from apps.accounts.signals import record_access_event
+from apps.accounts.validators import gerar_senha_temporaria
 from apps.audit.models import AuditAction, AuditLog
 from apps.core.permissions import HasPerm, IsAdmin, IsInternalReadAdminWrite
 from apps.core.serializer_fields import slug_unico
@@ -293,9 +293,13 @@ class UserAdminSerializer(serializers.ModelSerializer):
             "signature_render",
             # RBAC: papel personalizado e escopo por pessoa (ver rbac.py).
             "custom_role", "custom_role_name", "ticket_scope",
+            # quando a conta foi criada / alterada (o User já era um
+            # TimeStampedModel; só não saía na API)
+            "created_at", "updated_at",
         ]
         read_only_fields = [
             "last_login", "last_seen_at", "anonymized_at",
+            "created_at", "updated_at",
             # só a ação `reset-2fa` muda isto — PATCH genérico deixaria um
             # admin "ativar" 2FA de outra pessoa sem ela nunca ter confirmado
             # um código (o mesmo cuidado que travou subject_user/kind em
@@ -544,15 +548,13 @@ class UserAdminViewSet(viewsets.ModelViewSet):
                 {"detail": "Este usuário entra pelo Google; não há senha para redefinir."}
             )
 
-        nova_senha = secrets.token_urlsafe(9)
+        # a senha nasce com as quatro classes de caractere (antes era
+        # `token_urlsafe`, que às vezes sorteava uma senha que o próprio
+        # validador recusava e a 2ª tentativa estourava 500)
         try:
-            validate_password(nova_senha, user)
-        except DjangoValidationError:
-            # praticamente nunca acontece (senha aleatória contra os
-            # validators configurados) — um segundo sorteio mais longo é
-            # mais barato que deixar a exceção subir crua pra quem chamou
-            nova_senha = secrets.token_urlsafe(12)
-            validate_password(nova_senha, user)
+            nova_senha = gerar_senha_temporaria(user)
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": list(exc.messages)}) from exc
 
         user.set_password(nova_senha)
         user.save(update_fields=["password"])

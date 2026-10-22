@@ -20,6 +20,7 @@ from apps.tickets.models import (
     TicketCategory,
     TicketMessage,
     TicketPriority,
+    TicketStage,
     TicketStatus,
     TicketStatusEvent,
     TicketTag,
@@ -137,6 +138,7 @@ class MentionSerializer(serializers.Serializer):
 
 
 class TicketMessageSerializer(serializers.ModelSerializer):
+    author_id = serializers.SerializerMethodField()
     author_name = serializers.SerializerMethodField()
     author_avatar = serializers.SerializerMethodField()
     author_is_internal = serializers.SerializerMethodField()
@@ -149,8 +151,8 @@ class TicketMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketMessage
         fields = [
-            "id", "author_name", "author_avatar", "author_is_internal", "body",
-            "is_public", "source", "is_first_response", "created_at", "attachments",
+            "id", "author_id", "author_name", "author_avatar", "author_is_internal",
+            "body", "is_public", "source", "is_first_response", "created_at", "attachments",
             "mentions",
             # a tela precisa saber que o texto mudou depois de enviado: uma
             # correção silenciosa numa conversa que o cliente já leu não é
@@ -200,6 +202,24 @@ class TicketMessageSerializer(serializers.ModelSerializer):
             and obj.deleted_at is None
         )
 
+    def get_author_id(self, obj) -> int | None:
+        """O id de quem escreveu, para a tela casar autor sem adivinhar pelo
+        nome (homônimos). Nulo em mensagem do sistema.
+
+        O que cada lado vê: o agente (interno) recebe o id de qualquer autor.
+        O CLIENTE só recebe o de quem é cliente (ele mesmo ou colega da
+        empresa, que já aparecem por nome) — o id de um agente é identificador
+        interno e fica nulo para ele, a mesma cautela de `events`, que nem sai
+        para cliente. Nome e avatar do agente seguem como sempre."""
+        if obj.author_id is None:
+            return None
+        user = getattr(self.context.get("request"), "user", None)
+        if user is not None and user.is_authenticated and user.is_internal:
+            return obj.author_id
+        if user is not None and obj.author_id == getattr(user, "pk", None):
+            return obj.author_id
+        return None if obj.author.is_internal else obj.author_id
+
     def get_author_name(self, obj) -> str:
         return obj.author.full_name if obj.author else "Sistema"
 
@@ -226,6 +246,9 @@ class _MaskingMixin:
     def get_requester_display(self, obj) -> str:
         return obj.requester.full_name if self._visible(obj) else MASKED_REQUESTER
 
+    def get_requester_id(self, obj) -> int | None:
+        return obj.requester_id if self._visible(obj) else None
+
     def get_is_restricted(self, obj) -> bool:
         return obj.is_restricted()  # cadeado na UI
 
@@ -244,6 +267,11 @@ class TicketListSerializer(_MaskingMixin, serializers.ModelSerializer):
     subject = serializers.SerializerMethodField()
     tags = TicketTagPillSerializer(many=True, read_only=True)
     requester_display = serializers.SerializerMethodField()
+    # ids para a tela casar solicitante/empresa sem adivinhar pelo nome.
+    # `requester_id` segue a máscara de `requester_display` (nulo quando o
+    # conteúdo é restrito); `company_id` acompanha `company_name`, que já saía.
+    requester_id = serializers.SerializerMethodField()
+    company_id = serializers.IntegerField(read_only=True)
     is_restricted = serializers.SerializerMethodField()
     content_hidden = serializers.SerializerMethodField()
     restriction_reason = serializers.SerializerMethodField()
@@ -287,7 +315,8 @@ class TicketListSerializer(_MaskingMixin, serializers.ModelSerializer):
         fields = [
             "id", "reference", "subject", "order_number", "status", "stage",
             "stage_name", "stage_color", "priority", "source",
-            "team", "requester_display", "assignee_name", "assignee_avatar",
+            "team", "requester_display", "requester_id", "company_id",
+            "assignee_name", "assignee_avatar",
             "assignee_id", "owner_name", "owner_id",
             "company_name", "plan", "sla", "category", "category_name", "service_name",
             "is_restricted", "content_hidden", "restriction_reason",
@@ -558,6 +587,12 @@ class TicketDetailSerializer(TicketListSerializer):
         return TicketMessageSerializer(qs, many=True, context=self.context).data
 
 
+def _agentes_ativos():
+    from apps.accounts.models import User, UserKind
+
+    return User.objects.filter(is_active=True, kind=UserKind.INTERNAL)
+
+
 class TicketCreateSerializer(serializers.Serializer):
     team_id = serializers.PrimaryKeyRelatedField(
         queryset=Team.objects.filter(is_active=True), source="team"
@@ -582,12 +617,34 @@ class TicketCreateSerializer(serializers.Serializer):
     # "incluir minha assinatura" (só faz efeito para quem é interno; ver
     # `TicketReplySerializer` para o porquê do default False)
     with_signature = serializers.BooleanField(default=False)
-
-
-def _agentes_ativos():
-    from apps.accounts.models import User, UserKind
-
-    return User.objects.filter(is_active=True, kind=UserKind.INTERNAL)
+    # --- abertura já triada (OPCIONAIS; só para usuário interno) ----------
+    # Sem nenhum deles o corpo é o de sempre: "Novo", sem responsável, sem
+    # etiquetas, primeira mensagem pública. As regras de verdade (papel,
+    # quem pode ser responsável) moram em `ticket_service.create_ticket`.
+    assignee = serializers.PrimaryKeyRelatedField(
+        queryset=_agentes_ativos(), required=False, allow_null=True,
+        help_text="Responsável pelo ticket (agente ativo).",
+    )
+    status = serializers.ChoiceField(
+        choices=[c for c in TicketStatus.choices if c[0] != TicketStatus.CLOSED],
+        required=False, allow_null=True,
+        help_text="Status inicial por categoria: new | open | pending_customer. "
+                  "Fechado não vale na abertura.",
+    )
+    stage = serializers.PrimaryKeyRelatedField(
+        queryset=TicketStage.objects.filter(is_active=True),
+        required=False, allow_null=True,
+        help_text="Status inicial por coluna (inclui os personalizados). Se vier "
+                  "junto com `status`, a categoria do stage tem de ser a mesma.",
+    )
+    tags = serializers.PrimaryKeyRelatedField(
+        queryset=TicketTag.objects.all(), many=True, required=False,
+        help_text="Ids de etiquetas já existentes.",
+    )
+    is_public = serializers.BooleanField(
+        default=True,
+        help_text="false = a primeira mensagem nasce como nota INTERNA.",
+    )
 
 
 class TicketReclassifySerializer(serializers.Serializer):
@@ -629,6 +686,12 @@ class TicketReplySerializer(serializers.Serializer):
     # chamada só perdia a justificativa que a tela pediu.
     close_note = serializers.CharField(
         max_length=200, required=False, allow_blank=True, default=""
+    )
+    # coluna do novo status, OPCIONAL: um status personalizado da categoria de
+    # `new_status` (ex.: um "Resolvido" da categoria fechada). Ativo e da
+    # categoria certa — quem confere é `ticket_service.add_reply`.
+    stage = serializers.PrimaryKeyRelatedField(
+        queryset=TicketStage.objects.all(), required=False, allow_null=True,
     )
 
 
@@ -701,6 +764,12 @@ class TicketCloseSerializer(serializers.Serializer):
     resolution_started_at = serializers.DateTimeField()
     resolution_ended_at = serializers.DateTimeField()
     note = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    # status de fechamento PERSONALIZADO (categoria `closed`), OPCIONAL: sem
+    # ele cai no "Fechado" de fábrica. Ativo e da categoria fechada — quem
+    # confere é `ticket_service.close_ticket`.
+    stage = serializers.PrimaryKeyRelatedField(
+        queryset=TicketStage.objects.all(), required=False, allow_null=True,
+    )
 
 
 class TicketCloseByRequesterSerializer(serializers.Serializer):
@@ -737,11 +806,31 @@ class _BulkTicketIdsSerializer(serializers.Serializer):
     a lista de ids em comum. `max_length` é limite técnico (corpo do
     request limitado), não regra de negócio — a view ainda filtra pelos
     tickets VISÍVEIS antes de aplicar qualquer coisa, do mesmo jeito que
-    `tabs` já faz (`get_queryset().filter(pk__in=ids)`)."""
+    `tabs` já faz (`get_queryset().filter(pk__in=ids)`).
+
+    `report_missing` (OPCIONAL, padrão `false`): por padrão um id que não
+    existe OU que o usuário não enxerga some em silêncio da resposta — não
+    vaza existência (mesmo cuidado de `retrieve()`). Com `true` ele entra em
+    `failed[]` com o MESMO motivo genérico nos dois casos ("Ticket não
+    encontrado."), então nada vaza e quem chama sabe que o id não foi
+    processado em vez de achar que passou."""
 
     ticket_ids = serializers.ListField(
         child=serializers.IntegerField(), allow_empty=False, max_length=500,
     )
+    report_missing = serializers.BooleanField(default=False)
+
+
+class BulkFailureSerializer(serializers.Serializer):
+    id = serializers.IntegerField(allow_null=True)
+    detail = serializers.CharField()
+
+
+class BulkResultSerializer(serializers.Serializer):
+    """Resposta das ações em lote: o que mudou e o que não mudou (com o motivo)."""
+
+    updated = serializers.ListField(child=serializers.IntegerField())
+    failed = BulkFailureSerializer(many=True)
 
 
 class BulkAssignSerializer(_BulkTicketIdsSerializer):
@@ -752,10 +841,65 @@ class BulkPrioritySerializer(_BulkTicketIdsSerializer):
     priority = serializers.ChoiceField(choices=TicketPriority.choices)
 
 
-class BulkCloseSerializer(_BulkTicketIdsSerializer):
-    resolution_started_at = serializers.DateTimeField()
-    resolution_ended_at = serializers.DateTimeField()
+class BulkCloseItemSerializer(serializers.Serializer):
+    """Um ticket do `bulk-close` com a SUA janela de resolução. O que faltar
+    aqui herda da janela/nota do nível de cima (se houver)."""
+
+    id = serializers.IntegerField()
+    resolution_started_at = serializers.DateTimeField(required=False)
+    resolution_ended_at = serializers.DateTimeField(required=False)
+    note = serializers.CharField(max_length=200, required=False, allow_blank=True)
+
+
+@extend_schema_field(BulkCloseItemSerializer(many=True))
+class _ItensDoFechamentoField(serializers.ListField):
+    """Lista de `BulkCloseItemSerializer` — mas SEM validar item a item aqui:
+    um item mal formado vira `failed[]` daquele ticket (a view valida cada um),
+    em vez de um 400 que derruba o lote inteiro. O decorador só descreve o
+    formato no schema."""
+
+
+class BulkCloseSerializer(serializers.Serializer):
+    """Fechar em lote, em dois formatos (exclusivos):
+
+    - ANTIGO: `ticket_ids` + uma janela (`resolution_started_at`/`_ended_at`)
+      para todos — continua igual;
+    - POR TICKET: `items: [{id, resolution_started_at, resolution_ended_at,
+      note?}]`. Útil quando cada ticket tem o seu início (criado em horas
+      diferentes). A janela/nota de nível superior, se vier, é o padrão dos
+      itens que não trouxerem a própria.
+
+    Em qualquer formato, um ticket inválido (criado depois do início, janela
+    ausente, já fechado...) vai para `failed[]` com o motivo; o resto fecha.
+    """
+
+    ticket_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, max_length=500,
+    )
+    items = _ItensDoFechamentoField(
+        child=serializers.DictField(), required=False, max_length=500,
+    )
+    resolution_started_at = serializers.DateTimeField(required=False)
+    resolution_ended_at = serializers.DateTimeField(required=False)
     note = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    report_missing = serializers.BooleanField(default=False)
+
+    def validate(self, data):
+        ids, itens = data.get("ticket_ids"), data.get("items")
+        if itens is not None and ids is not None:
+            raise serializers.ValidationError(
+                {"items": "Envie `ticket_ids` (janela única) OU `items` (janela por ticket)."}
+            )
+        if itens is not None:
+            if not itens:
+                raise serializers.ValidationError({"items": "Lista vazia."})
+            return data
+        if not ids:
+            raise serializers.ValidationError({"ticket_ids": "Informe ao menos um ticket."})
+        for campo in ("resolution_started_at", "resolution_ended_at"):
+            if campo not in data:
+                raise serializers.ValidationError({campo: "Este campo é obrigatório."})
+        return data
 
 
 class BulkStatusSerializer(_BulkTicketIdsSerializer):
