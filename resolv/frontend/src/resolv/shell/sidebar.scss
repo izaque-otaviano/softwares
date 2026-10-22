@@ -303,3 +303,28 @@
     }
   }
 }
+
+// Uma ação de criação consistente com os botões do sistema.
+.sidebar-rail__item--primaria {
+  margin-bottom: 8px;
+  background: var(--shell-superficie, var(--surface-card));
+  border: 1px solid var(--shell-borda, var(--stroke));
+  font-weight: 600;
+  &:hover {
+    background: var(--shell-hover, var(--sidebar-hover));
+  }
+}
+.sidebar-rail__item--ativo .sidebar-rail__icone {
+  color: var(--shell-acento, var(--foco));
+}
+.sidebar-rail__novo {
+  background: transparent;
+  border-radius: 0;
+}
+.sidebar-rail__novo i {
+  color: var(--text-primary);
+  font-size: 18px;
+}
+.sidebar-rail--recolhida .sidebar-rail__item {
+  height: 36px;
+}

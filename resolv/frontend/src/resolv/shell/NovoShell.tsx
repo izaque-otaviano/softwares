@@ -9,6 +9,9 @@ import { MiniChat } from '../chat/MiniChat'
 import '../styles/tokens.scss'
 import '../styles/identidade.scss'
 import './shell.scss'
+import '../styles/controles.scss'
+import '../styles/acabamento.scss'
+import '../styles/tabelas.scss'
 import { BarraDeAbas } from './BarraDeAbas'
 import { BotaoTema } from './BotaoTema'
 import { BuscaComando } from './BuscaComando'
@@ -72,12 +75,12 @@ function CascaDoShell({ children }: { children: ReactNode }) {
   const gavetaAberta = gavetaPedida && telaPequena
 
   return (
-    <div
-      className={'resolv-scope novo-shell' + (sidebarRecolhida ? ' novo-shell--recolhida' : '')}
-    >
+    <div className={'resolv-scope novo-shell' + (sidebarRecolhida ? ' novo-shell--recolhida' : '')}>
       <Sidebar
         onAbrirBusca={() => setBuscaAberta(true)}
-        gaveta={telaPequena ? { aberta: gavetaAberta, onFechar: () => setGavetaAberta(false) } : undefined}
+        gaveta={
+          telaPequena ? { aberta: gavetaAberta, onFechar: () => setGavetaAberta(false) } : undefined
+        }
       />
       <div className="novo-shell__corpo">
         <header className="novo-shell__topo">

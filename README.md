@@ -48,7 +48,7 @@ Protótipo de sistema de tickets de atendimento (React, TypeScript, Vite e Tailw
 Sistema de tickets e chat de atendimento: backend em Django/DRF (com Channels para tempo real) e front-end em React. É o backend ao qual o Helpdesk se liga.
 
 - Código: [`resolv/`](resolv/) (instruções em [`resolv/README.md`](resolv/README.md))
-- Copiado de `izaqueotaviano/Resolv` (hoje CDesk), branch `claude/ticket-system-8tsh8q`, commit `7cc6389`, sem o histórico anterior.
+- Copiado de `izaqueotaviano/Resolv` (hoje CDesk), sem o histórico anterior: junção das branches `claude/ticket-system-8tsh8q` (30/set, commit `7cc6389`) e `claude/atualiza-resolv-codex` (2/out, commit `bdef542`).
 
 ## Instaladores
 

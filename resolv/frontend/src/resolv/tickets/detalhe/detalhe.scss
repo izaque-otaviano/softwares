@@ -1,26 +1,35 @@
-// ============================================================================
-// Detalhe do ticket — design system Resolv.
-//
-// Estrutura: abas · cabeçalho do ticket · 3 colunas (Propriedades · Conversa ·
-// Cliente). Borda 1px, raio 2px nos controles, raio total nas pílulas, mono
-// nas referências, um acento só. Tudo aqui vive sob .resolv-scope, e é de lá
-// (tokens.scss) que vêm --tom-*, --anel-foco e --sombra-flutuante: eram oito
-// declarações copiadas linha a linha entre este arquivo e novo.scss, escritas
-// em rgba() cru — ou seja, presas ao tema claro e duplicadas.
-// ============================================================================
+// Detalhe do ticket: mesa de atendimento em três áreas, inspirada na
+// referência. Painéis brancos, divisórias finas e conversa com autoria clara.
+// Campos e ações mantêm seus componentes e comportamentos existentes.
 
 .detalhe {
   // Só o que é geometria desta tela; a cor mora nos tokens.
   --largura-props: 272px;
-  --largura-cliente: 296px;
-  // Um plano só (o mesmo da sidebar): cabeçalho, colunas e conversa ficam no
-  // --surface-canvas, divididos por fio; branco só em cartão (mensagem, SLA),
-  // campo e compositor. Sobre o plano, o "degrau" de chip/hover/esqueleto
-  // (--surface-alt) teria a MESMA cor do fundo e sumiria — aqui ele passa a
-  // ser o tom de item ativo da sidebar, que é o degrau feito para o plano.
-  --plano-detalhe: var(--surface-canvas);
-  --surface-alt: var(--sidebar-ativo);
+  --largura-cliente: 320px;
+  // Paleta do briefing anterior, escopada à página do ticket.
+  --f-ui: 'Segoe UI', Inter, system-ui, sans-serif;
+  --f-mono: var(--f-ui);
+  --surface-canvas: light-dark(#f6f5f3, #1a1a19);
+  --surface-card: light-dark(#ffffff, #2a2a29);
+  --surface: var(--surface-card);
+  --surface-alt: light-dark(#f5f5f5, #343433);
+  --text-primary: light-dark(#242424, #f5f5f5);
+  --text-secondary: light-dark(#616161, #c7c7c7);
+  --text-muted: var(--text-secondary);
+  --borda-campo: light-dark(#d4d4d4, #666663);
+  --stroke: light-dark(#e5e4e2, #454543);
+  --stroke-hover: light-dark(#d4d4d4, #777773);
+  --primario: light-dark(#242424, #ebebeb);
+  --primario-sobre: light-dark(#ffffff, #242424);
+  --primario-hover: light-dark(#3b3b3b, #ffffff);
+  --sidebar-hover: var(--surface-alt);
+  --raio: 8px;
+  --raio-cartao: 12px;
+  --plano-detalhe: var(--surface-card);
+  --ticket-mensagem-cliente: light-dark(#eaf7f8, #24393c);
   background: var(--plano-detalhe);
+  font-family: var(--f-ui);
+  border-top: 1px solid var(--stroke);
 
   display: flex;
   flex-direction: column;
@@ -266,7 +275,7 @@
 .ticket-cab {
   background: var(--plano-detalhe);
   border-bottom: 1px solid var(--stroke);
-  padding: 10px 20px 10px 12px;
+  padding: 14px 20px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -311,14 +320,15 @@
     flex: 1 1 280px;
     min-width: 0;
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
   &__ref {
     font-family: var(--f-mono);
     font-size: 12px;
     font-weight: 500;
-    color: var(--accent);
+    color: var(--text-secondary);
     white-space: nowrap;
   }
   &__assunto {
@@ -330,7 +340,8 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -357,7 +368,7 @@
     display: grid;
     place-items: center;
     border: none;
-    border-radius: 999px;
+    border-radius: var(--raio);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
@@ -603,12 +614,12 @@
   &__grupo {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 14px 16px 16px;
+    gap: 16px;
+    padding: 18px 18px 20px;
     border-bottom: 1px solid var(--stroke);
   }
   &__titulo {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
   }
@@ -627,8 +638,8 @@
   }
   &__rotulo {
     font-size: 12px;
-    font-weight: 500;
-    color: var(--text-primary);
+    font-weight: 600;
+    color: var(--text-secondary);
   }
   &__link {
     border: none;
@@ -674,8 +685,8 @@
     position: relative;
     display: flex;
     align-items: center;
-    height: 34px;
-    border: 1px solid var(--stroke);
+    height: 36px;
+    border: 1px solid var(--borda-campo);
     border-radius: var(--raio);
     background: var(--surface-card);
     padding-left: 10px;
@@ -947,10 +958,10 @@
   &__lista {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 20px 20px;
+    padding: 18px 20px 24px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 18px;
     scroll-behavior: smooth;
   }
   &__dia {
@@ -1014,28 +1025,45 @@
 // ---- mensagem ----
 .msg {
   display: flex;
-  gap: 10px;
-  padding: 12px 14px;
-  background: var(--surface-card);
-  border: 1px solid transparent;
-  border-radius: var(--raio-cartao);
+  gap: 14px;
+  padding: 6px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+
+  &--cliente &__texto {
+    padding: 12px 14px;
+    background: var(--ticket-mensagem-cliente);
+    border-radius: var(--raio);
+  }
+  &--agente &__texto {
+    padding: 12px 14px;
+    background: var(--surface-alt);
+    border-radius: var(--raio);
+  }
+  &--interna &__texto {
+    background: var(--tom-nota);
+    border: 1px solid var(--tom-alerta-borda);
+  }
+  &--sistema &__texto {
+    background: var(--surface-alt);
+    border: 1px dashed var(--stroke);
+  }
 
   &--interna {
     // Creme da nota interna por token: o valor sólido do claro escureceria o
     // texto do tema escuro contra um fundo luminoso (tokens.scss cuida do par).
     // Sem faixa lateral: o creme e a etiqueta "Nota interna" já dizem o que é.
-    background: var(--tom-nota);
-    border-color: var(--tom-alerta-borda);
+    background: transparent;
   }
   &--sistema {
     background: transparent;
-    border-color: var(--stroke);
-    border-style: dashed;
+    border-color: transparent;
   }
 
   &__avatar {
-    width: 30px;
-    height: 30px;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
     border-radius: 50%;
     display: grid;
@@ -1147,7 +1175,7 @@
   }
 
   &__texto {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.55;
     color: var(--text-primary);
     white-space: pre-wrap;
@@ -1377,8 +1405,9 @@
 // ============================================================================
 .compositor {
   flex-shrink: 0;
-  background: var(--surface-canvas);
-  padding: 8px 20px 12px;
+  background: var(--surface-card);
+  border-top: 1px solid var(--stroke);
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1418,8 +1447,8 @@
     display: flex;
     flex-direction: column;
     background: var(--surface-card);
-    border: 1px solid var(--stroke);
-    border-radius: var(--raio-cartao);
+    border: 1px solid transparent;
+    border-radius: var(--raio);
     transition:
       border-color 0.15s ease,
       background-color 0.18s ease;
@@ -1556,7 +1585,7 @@
   }
   // Dentro da superfície o campo some: quem desenha a borda e o foco é ela.
   &__superficie &__texto {
-    min-height: 76px;
+    min-height: 112px;
     padding: 8px 14px 10px;
     border: none;
     border-radius: 0;
@@ -1565,7 +1594,7 @@
   }
 
   &__previa {
-    min-height: 76px;
+    min-height: 112px;
     max-height: 40vh;
     overflow-y: auto;
     padding: 8px 14px 10px;
@@ -2461,10 +2490,11 @@
   padding-bottom: 24px;
 
   &__cabecalho {
-    display: flex;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
     align-items: center;
-    gap: 10px;
-    padding: 16px;
+    gap: 8px 10px;
+    padding: 18px 20px;
     border-bottom: 1px solid var(--stroke);
   }
   &__avatar {
@@ -2500,7 +2530,9 @@
     white-space: nowrap;
   }
   &__plano {
-    margin-left: auto;
+    grid-column: 2;
+    justify-self: start;
+    margin-left: 0;
     flex-shrink: 0;
     padding: 2px 8px;
     border: 1px solid var(--stroke);
@@ -2514,13 +2546,13 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 14px 16px 16px;
+    padding: 18px 20px 20px;
     border-bottom: 1px solid var(--stroke);
   }
   &__titulo {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--text-primary);
   }
   &__lista {
     display: flex;
@@ -3021,10 +3053,108 @@
   }
 }
 
+// Hierarquia da área de atendimento: cabeçalho, painéis e editor.
+.detalhe {
+  --stroke: light-dark(#d8dee4, #46515d);
+  --ticket-painel: light-dark(#f7f9fb, #252d35);
+  --ticket-mensagem-cliente: light-dark(#eaf6f8, #24393c);
+
+  .ticket-cab {
+    padding: 16px 20px 14px 12px;
+    gap: 10px;
+  }
+  .ticket-cab__assunto {
+    font-size: 19px;
+    line-height: 1.35;
+  }
+  .ticket-cab__ref {
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .ticket-cab__linha--meta {
+    border-top: 1px solid var(--stroke);
+    padding-top: 10px;
+  }
+  .props,
+  .cliente {
+    background: var(--ticket-painel);
+  }
+  .props__grupo {
+    padding: 16px 18px 18px;
+    gap: 14px;
+  }
+  .props__titulo,
+  .cliente__titulo {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .cliente__cabecalho {
+    background: var(--surface-card);
+    padding: 16px 20px;
+  }
+  .cliente__grupo {
+    padding: 16px 20px 18px;
+  }
+  .conversa__topo {
+    background: var(--ticket-painel);
+    height: 42px;
+  }
+  .msg {
+    padding: 12px 0;
+  }
+  .msg + .msg {
+    border-top: 1px solid var(--stroke);
+  }
+  .msg__meta {
+    gap: 8px;
+  }
+  .msg__texto {
+    line-height: 1.55;
+  }
+  .msg--cliente .msg__texto {
+    border-radius: 6px;
+  }
+  .compositor {
+    padding: 12px;
+    background: var(--ticket-painel);
+    gap: 8px;
+  }
+  .compositor__superficie {
+    border-color: var(--stroke);
+    border-radius: 6px;
+  }
+  .compositor__cabeca {
+    padding: 8px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .compositor__superficie .compositor__rodape {
+    padding: 8px;
+    border-top: 1px solid var(--stroke);
+  }
+}
+
+@media (max-width: 767px) {
+  .detalhe .ticket-cab {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .detalhe .ticket-cab__assunto {
+    font-size: 16px;
+  }
+}
+@media (max-width: 640px) {
+  .detalhe .compositor {
+    padding: 8px 12px 10px;
+  }
+}
+
 @media (max-width: 1280px) {
   .detalhe {
     --largura-props: 248px;
-    --largura-cliente: 264px;
+    --largura-cliente: 300px;
   }
 }
 

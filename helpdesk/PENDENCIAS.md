@@ -41,6 +41,8 @@ Detalhes técnicos de cada ponto de integração: `src/api/PENDENTE_NO_BACKEND.m
 10. Usuário do Resolv não tem `created_at` nem `updated_at`.
 11. `/ticket-views/` devolve array puro, sem envelope de paginação.
 
+12. **Redefinição de senha pode falhar de forma aleatória** (`resolv/apps/accounts/admin_api.py`, ação de redefinir): sorteia uma senha com `secrets.token_urlsafe(9)`, tenta de novo uma única vez se ela não passar na regra de "três tipos de caractere" e, se o segundo sorteio também falhar, o erro sobe sem tratamento. É raro, mas aconteceu numa rodada da suíte (`test_old_password_stops_working`). Correção: sortear em laço até passar, ou montar a senha garantindo os tipos.
+
 ### Funcionalidades que existem só no front (a criar no backend)
 
 Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA, fusão (ticket, usuário, organização), apagar ticket, tipo de ticket, CC e seguidores de terceiros, licenças. Também: assunto e solicitante editados num ticket existente, e campos de status, macro, cliente e organização sem equivalente no backend.
@@ -54,6 +56,17 @@ Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA
 5. **Menu ⋮ do ticket:** criar macro, fundir, suspender, spam e apagar só mostram toast no modo mock.
 6. **Início do admin:** "execuções 24 h" é estimada, e os limites do cartão de uso são valores provisórios.
 7. **Conta, Canais e Espaços de trabalho** abrem "Fora desta versão".
+
+### Resolv (visual, após juntar a linha do Codex)
+
+Em `resolv/`, a mesclagem manteve o Quadro e as abas tipo navegador (nossos) e adotou o acabamento do Codex nas demais telas. Falta o dono validar e ajustar:
+
+1. Contraste de estilo entre o Quadro (cores fortes) e as telas em estilo Material compacto do Codex.
+2. Na lista de tickets, os filtros agora quebram em duas linhas ("Mais filtros" desce) e o nome da visão selecionada na lateral é cortado.
+3. Detalhe do ticket: o botão "Enviar e reabrir" avança cerca de 10 px além da borda do compositor.
+4. Chat: a coluna "Atalhos" (Início, Menções, Com estrela) veio do Codex com dois itens desabilitados ("Em breve"); a área de mensagens ficou mais estreita.
+5. O botão "Novo ticket" da barra lateral e o sino ficaram contornados (estilo Codex) em vez do círculo preto anterior.
+6. As branches `claude/project-manager-app-briefing-y8a73s` e `claude/resolv-to-edesk-copy-4fg2oa` (set/2026) do repositório antigo não foram trazidas.
 
 ## Decisão em aberto
 

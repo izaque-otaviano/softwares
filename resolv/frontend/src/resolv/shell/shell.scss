@@ -14,6 +14,17 @@
 // saber o quanto recuar. Uma variável só, lida pelos dois, é o que garante que
 // o conteúdo nunca fica por baixo da barra em nenhum dos estados.
 .novo-shell {
+  // Etapa 1: tokens de navegação, independentes das superfícies das páginas.
+  --shell-fundo: light-dark(#f4f6f8, #20262c);
+  --shell-superficie: var(--surface-card);
+  --shell-borda: light-dark(#d8dee4, #46515d);
+  --shell-tinta: light-dark(#263238, #edf2f7);
+  --shell-ativo: light-dark(#263238, #dce6ef);
+  --shell-ativo-sobre: light-dark(#ffffff, #20262c);
+  --shell-selecao: light-dark(#eaf2ff, #233c56);
+  --shell-acento: light-dark(#2563eb, #93baff);
+  --shell-hover: light-dark(#e8edf2, #303c47);
+  --shell-raio: 6px;
   --largura-sidebar: 248px;
 
   display: flex;

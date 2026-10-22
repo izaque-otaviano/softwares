@@ -159,7 +159,12 @@ export function PaginaChat() {
       // perdeu a corrida ("já foi pego"), ou está no limite — o backend é
       // quem decide; a tela só repete o motivo e a lista se atualiza pelo
       // evento `chat_taken` que chega pra todo mundo
-      onError: (e) => setErroFila(e instanceof ApiError ? (e.detail ?? 'Não foi possível pegar.') : 'Não foi possível pegar.'),
+      onError: (e) =>
+        setErroFila(
+          e instanceof ApiError
+            ? (e.detail ?? 'Não foi possível pegar.')
+            : 'Não foi possível pegar.',
+        ),
     })
   }
 
@@ -192,7 +197,40 @@ export function PaginaChat() {
   return (
     <div className="chat-console" data-modo={modo}>
       {mostraLista && (
+        <nav className="cc-atalhos" aria-label="Atalhos do chat">
+          <h2 className="cc-atalhos__titulo">Chat</h2>
+          <p className="cc-atalhos__grupo">Atalhos</p>
+          <button
+            type="button"
+            className="cc-atalhos__item"
+            aria-current={aba === 'ativos' ? 'page' : undefined}
+            title="Início"
+            onClick={() => trocarAba('ativos')}
+          >
+            <i className="ti ti-home" aria-hidden="true" />
+            <span className="cc-atalhos__rotulo">Início</span>
+          </button>
+          {/* Estrutura visual autorizada: os fluxos serão definidos depois. */}
+          <button type="button" className="cc-atalhos__item" disabled title="Menções (em breve)">
+            <i className="ti ti-at" aria-hidden="true" />
+            <span className="cc-atalhos__rotulo">Menções</span>
+            <span className="cc-atalhos__breve">Em breve</span>
+          </button>
+          <button
+            type="button"
+            className="cc-atalhos__item"
+            disabled
+            title="Com estrela (em breve)"
+          >
+            <i className="ti ti-star" aria-hidden="true" />
+            <span className="cc-atalhos__rotulo">Com estrela</span>
+            <span className="cc-atalhos__breve">Em breve</span>
+          </button>
+        </nav>
+      )}
+      {mostraLista && (
         <aside className="cc-lista" aria-label="Conversas">
+          <h2 className="cc-lista__titulo">{aba === 'ativos' ? 'Início' : 'Finalizados'}</h2>
           <div className="cc-lista__abas" role="tablist" aria-label="Fila e finalizados">
             <button
               type="button"
@@ -303,8 +341,8 @@ export function PaginaChat() {
               <>
                 <i className="ti ti-message-circle-2" aria-hidden="true" />
                 <p>
-                  Nenhuma conversa em andamento. Quando alguém entrar na fila, aparece aqui, com aviso
-                  sonoro se você estiver em outra aba.
+                  Nenhuma conversa em andamento. Quando alguém entrar na fila, aparece aqui, com
+                  aviso sonoro se você estiver em outra aba.
                 </p>
                 <button type="button" className="cc-botao" onClick={() => trocarAba('finalizados')}>
                   Ver atendimentos finalizados
