@@ -12,13 +12,14 @@ export function BottomBar({ ticketKey }: { ticketKey: string }) {
   const storeStatuses = useTickets((s) => s.statuses);
   const statuses = storeStatuses.length ? storeStatuses : DEFAULT_STATUSES;
   const isNew = entry?.isNew ?? false;
+  const currentId = entry?.values.statusId;
 
   const items = useMemo<SplitItem[]>(
     () =>
       statuses
-        .filter((s) => isNew || s.id !== 'new')
+        .filter((s) => (isNew || s.id !== 'new') && (s.active !== false || s.id === currentId))
         .map((s) => ({ id: s.id, label: s.agentName, leading: <StatusDot color={s.color} /> })),
-    [statuses, isNew],
+    [statuses, isNew, currentId],
   );
 
   if (!entry) return null;

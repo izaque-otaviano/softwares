@@ -55,7 +55,8 @@ export const agents: User[] = [
   staff('a2', 'Rafael Pinto', 'rafael.pinto@resolv.com.br', 'agent'),
   staff('a3', 'Aline Teixeira', 'aline.teixeira@resolv.com.br', 'agent'),
   staff('a4', 'Bruno Carvalho', 'bruno.carvalho@resolv.com.br', 'agent'),
-  staff('a5', 'Débora Freitas', 'debora.freitas@resolv.com.br', 'agent'),
+  // Convite pendente: nunca acessou, não ocupa licença.
+  { ...staff('a5', 'Débora Freitas', 'debora.freitas@resolv.com.br', 'agent'), lastSeenAt: undefined },
 ];
 
 export const admins: User[] = [staff('admin1', 'Henrique Souza', 'henrique.souza@resolv.com.br', 'admin')];

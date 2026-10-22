@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as api from '@/api/tickets';
-import { listStatuses } from '@/api/meta';
+import { listStatuses, saveStatus as saveStatusApi } from '@/api/meta';
 import { countViews } from '@/lib/views';
 import { runView as runViewPure } from '@/lib/views';
 import { ME_ID } from '@/mocks/clock';
@@ -25,6 +25,10 @@ interface TicketsState {
   error: string | null;
 
   load: () => Promise<void>;
+  /** Só os status (telas de administração abertas sem passar pelas listas). */
+  loadStatuses: () => Promise<void>;
+  /** Cria/edita/desativa um status e publica o resultado para todas as telas na hora. */
+  saveStatus: (status: Omit<TicketStatus, 'id'> & { id?: string }) => Promise<TicketStatus>;
   /** Zera os contadores (null) e busca de novo. */
   refreshCounts: () => Promise<void>;
   /** Tickets de uma view, avaliados sobre o estado atual da store. */
@@ -89,6 +93,20 @@ export const useTickets = create<TicketsState>()((set, get) => {
       } catch (e) {
         set({ loading: false, error: e instanceof Error ? e.message : 'Erro ao carregar tickets.' });
       }
+    },
+
+    loadStatuses: async () => {
+      const statuses = await listStatuses();
+      set({ statuses: [...statuses] });
+    },
+
+    saveStatus: async (status) => {
+      const saved = await saveStatusApi(status);
+      const statuses = get().statuses;
+      const next = statuses.some((s) => s.id === saved.id) ? statuses.map((s) => (s.id === saved.id ? saved : s)) : [...statuses, saved];
+      set({ statuses: next });
+      recompute(get().tickets);
+      return saved;
     },
 
     refreshCounts: async () => {

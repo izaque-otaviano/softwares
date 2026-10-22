@@ -46,7 +46,8 @@ describe('Página de busca', () => {
   it('status:aberto lista tickets, contadores no painel e clique abre o ticket', async () => {
     renderAt('/agent/search?q=status%3Aaberto');
     const table = await screen.findByRole('table', { name: 'Tickets encontrados' });
-    const rows = await within(table).findAllByRole('row');
+    await within(table).findAllByText(/^#\d+$/);
+    const rows = within(table).getAllByRole('row');
     expect(rows.length).toBeGreaterThan(1);
     expect(screen.getByRole('button', { name: /Tickets/ })).toBeInTheDocument();
     expect(screen.getByText('Nenhuma pesquisa salva')).toBeInTheDocument();

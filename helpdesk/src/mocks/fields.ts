@@ -1,6 +1,7 @@
 import type { TicketField } from '@/types/domain';
+import { minutesAgo } from './clock';
 
-export const fields: TicketField[] = [
+const base: TicketField[] = [
   { id: 'subject', title: 'Assunto', type: 'system', system: true, active: true, required: true },
   { id: 'assignee', title: 'Atribuído para', type: 'system', system: true, active: true, required: false },
   { id: 'group', title: 'Grupo', type: 'system', system: true, active: true, required: true },
@@ -14,3 +15,6 @@ export const fields: TicketField[] = [
   { id: 'idioma_confianca', title: 'Confiança do idioma', type: 'number', system: false, active: true, required: false },
   { id: 'grupo_canal', title: 'Grupo do canal', type: 'text', system: false, active: false, required: false, description: 'Grupo responsável pelo canal de entrada.' },
 ];
+
+/** Datas de modificação determinísticas (mais antigas para os campos de sistema). */
+export const fields: TicketField[] = base.map((f, i) => ({ ...f, updatedAt: minutesAgo((f.system ? 400 : 3 + i * 4) * 1440) }));

@@ -1,8 +1,10 @@
 import type { Trigger } from '@/types/domain';
+import { minutesAgo } from './clock';
 
 export const triggers: Trigger[] = [
   {
     id: 't1',
+    updatedAt: minutesAgo(60 * 24 * 40),
     name: 'Notificar solicitante: ticket recebido',
     description: 'Envia confirmação por e-mail quando um ticket novo é criado.',
     category: 'Notificações',
@@ -14,6 +16,7 @@ export const triggers: Trigger[] = [
   },
   {
     id: 't2',
+    updatedAt: minutesAgo(60 * 24 * 35),
     name: 'Notificar solicitante: resposta pública',
     description: 'Avisa o cliente quando o agente envia uma resposta pública.',
     category: 'Notificações',
@@ -25,6 +28,7 @@ export const triggers: Trigger[] = [
   },
   {
     id: 't3',
+    updatedAt: minutesAgo(60 * 24 * 30),
     name: 'Notificar agente: atribuição',
     description: 'Avisa o agente quando um ticket é atribuído a ele.',
     category: 'Notificações',
@@ -36,6 +40,7 @@ export const triggers: Trigger[] = [
   },
   {
     id: 't4',
+    updatedAt: minutesAgo(60 * 24 * 20),
     name: 'Urgente vai para o N2',
     description: 'Tickets urgentes são encaminhados ao grupo Suporte N2.',
     category: 'Automação de atendimento',
@@ -47,6 +52,7 @@ export const triggers: Trigger[] = [
   },
   {
     id: 't5',
+    updatedAt: minutesAgo(60 * 24 * 15),
     name: 'Marcar reembolso',
     description: 'Adiciona a tag "reembolso" quando o assunto menciona reembolso ou estorno.',
     category: 'Automação de atendimento',
@@ -58,6 +64,7 @@ export const triggers: Trigger[] = [
   },
   {
     id: 't6',
+    updatedAt: minutesAgo(60 * 24 * 5),
     name: 'Reabrir quando o cliente responde',
     description: 'Ticket pendente volta para Aberto após resposta do solicitante.',
     category: 'Automação de atendimento',

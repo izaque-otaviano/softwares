@@ -1,6 +1,7 @@
 import { Suspense, lazy, type ReactNode } from 'react';
 import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { AgentLayout } from '@/components/shell';
+import { AdminLayout } from './AdminLayout';
 
 const Kit = lazy(() => import('@/pages/Kit'));
 const Home = lazy(() => import('@/pages/Home'));
@@ -12,6 +13,18 @@ const Customers = lazy(() => import('@/pages/Customers'));
 const Customer = lazy(() => import('@/pages/Customer'));
 const Orgs = lazy(() => import('@/pages/Orgs'));
 const Org = lazy(() => import('@/pages/Org'));
+
+const AdminHome = lazy(() => import('@/pages/admin/Home'));
+const AdminMembers = lazy(() => import('@/pages/admin/Members'));
+const AdminRoles = lazy(() => import('@/pages/admin/Roles'));
+const AdminGroups = lazy(() => import('@/pages/admin/Groups'));
+const AdminFields = lazy(() => import('@/pages/admin/Fields'));
+const AdminStatuses = lazy(() => import('@/pages/admin/Statuses'));
+const AdminTriggers = lazy(() => import('@/pages/admin/Triggers'));
+const AdminTriggerEdit = lazy(() => import('@/pages/admin/TriggerEdit'));
+const AdminMacros = lazy(() => import('@/pages/admin/Macros'));
+const AdminMacroEdit = lazy(() => import('@/pages/admin/MacroEdit'));
+const AdminOutOfScope = lazy(() => import('@/pages/admin/OutOfScope'));
 
 const lazyEl = (node: ReactNode) => <Suspense fallback={null}>{node}</Suspense>;
 
@@ -34,6 +47,26 @@ export const routes: RouteObject[] = [
       { path: 'orgs/:id', element: <Org /> },
       { path: 'search', element: lazyEl(<Search />) },
       { path: '*', element: <NotFound /> },
+    ],
+  },
+  {
+    path: '/admin',
+    element: <AdminLayout />,
+    children: [
+      { index: true, element: <AdminHome /> },
+      { path: 'members', element: <AdminMembers /> },
+      { path: 'roles', element: <AdminRoles /> },
+      { path: 'groups', element: <AdminGroups /> },
+      { path: 'fields', element: <AdminFields /> },
+      { path: 'statuses', element: <AdminStatuses /> },
+      { path: 'triggers', element: <AdminTriggers /> },
+      { path: 'triggers/new', element: <AdminTriggerEdit /> },
+      { path: 'triggers/:id', element: <AdminTriggerEdit /> },
+      { path: 'macros', element: <AdminMacros /> },
+      { path: 'macros/new', element: <AdminMacroEdit /> },
+      { path: 'macros/:id', element: <AdminMacroEdit /> },
+      { path: 'fora-desta-versao/:slug', element: <AdminOutOfScope /> },
+      { path: '*', element: <AdminOutOfScope /> },
     ],
   },
   { path: '*', element: lazyEl(<NotFound />) },

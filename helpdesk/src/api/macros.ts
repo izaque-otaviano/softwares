@@ -18,7 +18,14 @@ export function getMacro(id: string): Promise<Macro> {
 export function saveMacro(macro: Omit<Macro, 'id' | 'usage7d'> & { id?: string; usage7d?: number }): Promise<Macro> {
   return simulate(() => {
     const existing = macro.id ? db.macros.findIndex((m) => m.id === macro.id) : -1;
-    const saved: Macro = { usage7d: 0, ...macro, id: macro.id ?? `m${Date.now().toString(36)}` };
+    const now = new Date().toISOString();
+    const saved: Macro = {
+      usage7d: 0,
+      ...macro,
+      id: macro.id ?? `m${Date.now().toString(36)}`,
+      createdAt: macro.createdAt ?? (existing >= 0 ? db.macros[existing]!.createdAt : undefined) ?? now,
+      updatedAt: now,
+    };
     if (existing >= 0) db.macros[existing] = saved;
     else db.macros.push(saved);
     return saved;

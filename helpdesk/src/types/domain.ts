@@ -8,6 +8,8 @@ export interface TicketStatus {
   endUserName: string;
   /** Chave de token (`new`, `open`, `hold`, `pending`, `solved`) ou qualquer cor CSS de status criado no Admin. Use sempre via StatusBadge/StatusDot. */
   color: string;
+  /** Ausente = ativo. Status desativado some dos menus de escolha, mas continua pintando tickets que já o usam. */
+  active?: boolean;
 }
 
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'; // Baixa, Normal, Alta, Urgente
@@ -148,6 +150,8 @@ export interface Macro {
   active: boolean;
   usage7d: number;
   actions: MacroActions;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type ConditionOperator =
@@ -181,6 +185,7 @@ export interface Trigger {
   category: string;
   active: boolean;
   fired7d: number;
+  updatedAt?: string;
   all: Condition[];
   any: Condition[];
   actions: TriggerAction[];
@@ -196,6 +201,8 @@ export interface TicketField {
   required: boolean;
   description?: string;
   options?: string[];
+  /** Última modificação (ISO). */
+  updatedAt?: string;
 }
 
 export interface SearchResults {

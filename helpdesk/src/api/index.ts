@@ -6,4 +6,6 @@ export * as macrosApi from './macros';
 export * as triggersApi from './triggers';
 export * as searchApi from './search';
 export * as metaApi from './meta';
+export * as fieldsApi from './fields';
+export * as membersApi from './members';
 export { db, resetDb } from './db';

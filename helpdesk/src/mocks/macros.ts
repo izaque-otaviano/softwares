@@ -1,4 +1,5 @@
 import type { Macro } from '@/types/domain';
+import { minutesAgo } from './clock';
 
 export const macros: Macro[] = [
   {
@@ -8,6 +9,8 @@ export const macros: Macro[] = [
     availableTo: 'all',
     active: true,
     usage7d: 18,
+    createdAt: minutesAgo(60 * 24 * 90),
+    updatedAt: minutesAgo(60 * 24 * 12),
     actions: {
       status: 'pending',
       publicReply:
@@ -21,6 +24,8 @@ export const macros: Macro[] = [
     availableTo: 'group',
     active: true,
     usage7d: 6,
+    createdAt: minutesAgo(60 * 24 * 60),
+    updatedAt: minutesAgo(60 * 24 * 3),
     actions: {
       status: 'open',
       addTags: ['downgrade'],

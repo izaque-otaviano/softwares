@@ -54,8 +54,8 @@ describe('Conversa e Composer', () => {
   it('alternar para observação interna muda a cor, esconde Para/CC e persiste no store', async () => {
     const { key, composer } = await open();
     expect(composer).toHaveClass('bg-surface');
-    expect(within(composer).getByText('Para')).toBeInTheDocument();
-    expect(within(composer).getByRole('button', { name: 'CC' })).toBeInTheDocument();
+    expect(await within(composer).findByText('Para')).toBeInTheDocument();
+    expect(await within(composer).findByRole('button', { name: 'CC' })).toBeInTheDocument();
     await userEvent.click(within(composer).getByRole('button', { name: /Modo de resposta/ }));
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Observação interna/ }));
     await waitFor(() => expect(composer).toHaveClass('bg-note-bg'));
@@ -75,7 +75,7 @@ describe('Conversa e Composer', () => {
 
   it('link CC abre o campo de e-mails', async () => {
     const { key, composer } = await open();
-    await userEvent.click(within(composer).getByRole('button', { name: 'CC' }));
+    await userEvent.click(await within(composer).findByRole('button', { name: 'CC' }));
     expect(useFormStore.getState().forms[key]!.ccOpen).toBe(true);
     expect(await within(composer).findByLabelText('CC (e-mails)')).toBeInTheDocument();
   });
