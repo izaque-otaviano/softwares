@@ -11,13 +11,14 @@
   --line: #d8dcde;
   --line-strong: #b0b8be;
   --surface: #ffffff;
-  --surface-1: #f8f9f9;
+  --surface-1: #f6f8fa;
   --surface-2: #e8eaec;
   --hover: rgba(92, 105, 112, 0.08);
   --action: #1f73b7;
   --action-hover: #17598d;
   --action-soft: #e8f1f8;
-  --ink: #39434b;
+  --ink: #1e8844;
+  --ink-hover: #176b36;
   --ink-active: #293239;
   --note-bg: #fff3e4;
   --note-badge: #fca347;
@@ -31,11 +32,24 @@
   --sla-breach-text: #8f1f2b;
   --danger: #cc3340;
   --ai: #8e5fd1;
-  --status-new: #f5a04a;
-  --status-open: #cc3340;
-  --status-hold: #8f2a35;
-  --status-pending: #1f73b7;
-  --status-solved: #39434b;
+  --status-new: #855800;
+  --status-open: #a12620;
+  --status-hold: #394b80;
+  --status-pending: #465365;
+  --status-solved: #216338;
+  --presence-available: #16a34a;
+  --presence-away: #d97706;
+  --presence-offline: #64748b;
+  --presence-dnd: #be123c;
+  --presence-soft-available: #dcfce7;
+  --presence-soft-away: #fef3c7;
+  --presence-soft-offline: #f1f3f5;
+  --presence-soft-dnd: #ffe4e6;
+  --status-soft-new: #fff4db;
+  --status-soft-open: #fce8e6;
+  --status-soft-hold: #e8eaf6;
+  --status-soft-pending: #f1f3f5;
+  --status-soft-solved: #e4f3e8;
 
   --shadow-pop: 0 4px 8px rgba(10, 13, 14, 0.16);
   --shadow-menu: 0 20px 24px rgba(10, 13, 14, 0.16);
@@ -43,7 +57,7 @@
 
   --rail: 56px;
   --rail2: 48px;
-  --props: 309px;
+  --props: 240px;
   --right: 380px;
   --topbar: 48px;
   --bottombar: 50px;

@@ -38,7 +38,7 @@ const REST: Record<IconButtonVariant, string> = {
 const REST_HOVER: Record<IconButtonVariant, string> = {
   ghost: 'hover:bg-hover hover:text-fg',
   outline: 'hover:bg-hover',
-  ink: 'hover:bg-ink-active',
+  ink: 'hover:bg-ink-hover',
 };
 
 const PRESSED: Record<IconButtonVariant, string> = {

@@ -8,9 +8,32 @@ export function isStatusColorKey(value: string): value is StatusColorKey {
   return (STATUS_COLOR_KEYS as readonly string[]).includes(value);
 }
 
-/** Cor CSS de um status: token para as chaves conhecidas, valor literal para status personalizados. */
+/** Tom forte de cada chave, o mesmo que o backend guarda: serve para achar a chave de uma cor vinda do servidor. */
+const STRONG_HEX: Record<StatusColorKey, string> = { new: '#855800', open: '#A12620', hold: '#394B80', pending: '#465365', solved: '#216338' };
+
+/** Chave de token de uma cor de status: a própria chave, ou a chave cujo tom forte é esse hex (cor de fábrica do backend). */
+export function statusColorKey(color: string): StatusColorKey | undefined {
+  if (isStatusColorKey(color)) return color;
+  const hex = color.trim().toUpperCase();
+  return STATUS_COLOR_KEYS.find((k) => STRONG_HEX[k] === hex);
+}
+
+/** Cor CSS forte de um status (bolinha, faixa, cabeçalho de coluna): token para as chaves conhecidas, valor literal nos demais. */
 export function statusColor(color: string): string {
-  return isStatusColorKey(color) ? `var(--status-${color})` : color;
+  const key = statusColorKey(color);
+  return key ? `var(--status-${key})` : color;
+}
+
+/** Fundo suave do selo: o tom claro do token, ou um tom claro derivado da cor de um status personalizado. */
+export function statusSoftColor(color: string): string {
+  const key = statusColorKey(color);
+  return key ? `var(--status-soft-${key})` : `color-mix(in srgb, ${color} 14%, white)`;
+}
+
+/** Cor do texto do selo: o tom forte do token, ou a cor personalizada escurecida para manter o contraste. */
+export function statusInkColor(color: string): string {
+  const key = statusColorKey(color);
+  return key ? `var(--status-${key})` : `color-mix(in srgb, ${color} 55%, black)`;
 }
 
 export const CATEGORY_LABEL: Record<StatusCategory, string> = {
