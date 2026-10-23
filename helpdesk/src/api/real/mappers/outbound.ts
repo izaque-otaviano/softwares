@@ -1,6 +1,6 @@
 import { factoryStatusFor, toBackendCategory } from './status';
 import type { StageCategoryDto, TagDto, TicketDetailDto } from './dto';
-import type { Priority, StatusCategory, TicketStatus } from '@/types/domain';
+import type { FieldValue, Priority, StatusCategory, TicketStatus } from '@/types/domain';
 
 /**
  * MAPEADORES DE IDA (Helpdesk -> Resolv). Funções puras: viram o que o usuário fez na tela em chamadas ao backend.
@@ -19,7 +19,12 @@ export interface PatchInput {
   tags?: string[];
   followerIds?: string[];
   ccIds?: string[];
+  /** Campos de IA (locais, não vão ao backend). */
   customFields?: Record<string, string | undefined>;
+  /** Campos personalizados que mudaram (slug -> valor, `null` apaga): `PATCH custom_fields`. */
+  fieldValues?: Record<string, FieldValue | null>;
+  /** Formulário do ticket (`form_id`); `null` volta ao padrão. */
+  formId?: string | null;
 }
 export type PatchKey = keyof PatchInput;
 /** O que um passo cobre: campo do patch, a mensagem ou uma macro (`macro:<id>`). */
@@ -45,7 +50,9 @@ export const KEY_LABEL: Record<PatchKey | 'comment' | 'macro', string> = {
   tags: 'etiquetas',
   followerIds: 'seguidores',
   ccIds: 'CC',
-  customFields: 'campos personalizados',
+  customFields: 'campos de IA',
+  fieldValues: 'campos personalizados',
+  formId: 'formulário',
   comment: 'mensagem',
   macro: 'macro',
 };
@@ -162,6 +169,14 @@ export function planTicketUpdate(input: PlanInput): TicketPlan {
   if ('type' in patch) {
     props.type = patch.type || null; // limpar o tipo = null (ausente não mexe)
     covers.push('type');
+  }
+  if (patch.fieldValues && Object.keys(patch.fieldValues).length > 0) {
+    props.custom_fields = patch.fieldValues; // `null` apaga o valor; chave ausente não mexe
+    covers.push('fieldValues');
+  }
+  if ('formId' in patch) {
+    props.form_id = patch.formId ? Number(patch.formId) : null; // null = volta ao formulário padrão
+    covers.push('formId');
   }
   if (covers.length > 0) steps.push({ kind: 'props', covers, body: props });
 
@@ -307,6 +322,10 @@ export interface CreateTicketInput {
   type?: string;
   /** `false` = a descrição nasce como observação interna (o solicitante nunca a vê). Padrão: pública. */
   isPublic?: boolean;
+  /** Formulário escolhido; a equipe e o tipo dele só valem se o envio não trouxe os seus. */
+  formId?: string;
+  /** Campos personalizados (slug -> valor). */
+  fieldValues?: Record<string, FieldValue>;
   files?: File[];
 }
 
@@ -327,6 +346,8 @@ export function createTicketBody(i: CreateTicketInput): Record<string, unknown> 
     ...(i.tagIds?.length ? { tags: i.tagIds } : {}),
     ...(i.type ? { type: i.type } : {}),
     ...(i.isPublic === false ? { is_public: false } : {}),
+    ...(i.formId ? { form_id: Number(i.formId) } : {}),
+    ...(i.fieldValues && Object.keys(i.fieldValues).length ? { custom_fields: i.fieldValues } : {}),
     with_signature: false,
   };
 }
@@ -346,6 +367,8 @@ export interface NewTicketFormInput {
   type?: PatchInput['type'];
   ccIds?: string[];
   customFields?: PatchInput['customFields'];
+  formId?: string;
+  fieldValues?: Record<string, FieldValue>;
   files?: File[];
 }
 
@@ -372,6 +395,8 @@ export function planNewTicket(input: NewTicketFormInput, ctx: { statuses: Ticket
     tagIds: input.tags?.length ? resolveTagIds(input.tags, ctx.tags).ids : undefined,
     isPublic: input.public,
     type: input.type,
+    formId: input.formId,
+    fieldValues: input.fieldValues,
   });
   const followUp: PatchInput = {
     ...(closing ? { statusId: target!.id } : {}),
@@ -389,6 +414,10 @@ export function toFormData(fields: Record<string, unknown>, files: File[] = []):
     if (v === undefined || v === null) continue;
     if (Array.isArray(v)) {
       for (const item of v) fd.append(k, String(item)); // listas (tags) viajam repetidas, como o backend espera
+      continue;
+    }
+    if (typeof v === 'object') {
+      fd.append(k, JSON.stringify(v)); // `custom_fields`: o JSON em texto, como o backend espera no multipart
       continue;
     }
     fd.append(k, typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v));

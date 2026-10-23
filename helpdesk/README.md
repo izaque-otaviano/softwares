@@ -1,7 +1,7 @@
 # Helpdesk (protótipo)
 
 Protótipo navegável de um sistema de tickets de atendimento: área do agente (Início, Visualizações, tela do ticket,
-Clientes, Organizações, busca) e central de administração (membros, campos, status, gatilhos, macros). Tudo roda no
+Clientes, Organizações, busca) e central de administração (membros, campos, formulários, status, gatilhos, macros). Tudo roda no
 navegador sobre dados mockados, sem backend e sem persistência.
 
 Stack: React 18, TypeScript, Vite, Tailwind CSS v3, react-router v6, Zustand, Radix UI, cmdk, Tiptap, date-fns (pt-BR),
@@ -25,7 +25,7 @@ npm run build      # tsc -b && vite build (saída em dist/)
 | 2 | Shell (TopBar, NavRail, abas de trabalho, busca), Home e Visualizações | Pronta |
 | 3 | Tela do ticket completa (propriedades, conversa, composer, macros, envio dividido, painéis, eventos) | Pronta |
 | 4 | Novo ticket, Clientes, Organizações, busca | Pronta |
-| 5 | Administração (Início, Membros/Funções/Grupos, Campos, Status, Gatilhos e editor, Macros) | Pronta |
+| 5 | Administração (Início, Membros/Funções/Grupos, Campos, Formulários, Status, Gatilhos e editor, Macros) | Pronta |
 | 6 | Polimento: skeletons, vazios, erros, atalhos, acessibilidade, responsivo, README | Pronta |
 
 ## Mapa de rotas
@@ -43,7 +43,7 @@ npm run build      # tsc -b && vite build (saída em dist/)
 | `/agent/search?q=` | Resultados de busca |
 | `/admin` | Início da administração |
 | `/admin/members`, `/admin/roles`, `/admin/groups` | Pessoas |
-| `/admin/fields`, `/admin/statuses` | Campos e status do ticket |
+| `/admin/fields`, `/admin/forms`, `/admin/statuses` | Campos personalizados, formulários e status do ticket |
 | `/admin/triggers`, `/admin/triggers/new`, `/admin/triggers/:id` | Gatilhos e editor |
 | `/admin/macros`, `/admin/macros/new`, `/admin/macros/:id` | Macros e editor |
 | `/admin/fora-desta-versao/:slug` e qualquer outra `/admin/*` | "Fora desta versão" |
@@ -169,7 +169,7 @@ Dois modos, escolhidos por `VITE_API_MODE` (ver `.env.example`):
   fechar, atribuir, prioridade, etiquetas, seguir, macro, anexos), ações em lote, Clientes, Organizações, Busca e Admin
   (Membros, Status, Macros) leem e gravam no Resolv. O envio do ticket orquestra de 1 a 4 chamadas sem transação, com
   relato de falha parcial e "Tentar novamente" que não duplica o que já passou. Tipo, apagar/restaurar, CC e seguidores de
-  terceiros, licenças e resumo de IA também vão ao backend. O que ele não tem (gatilhos, campos personalizados,
-  formulários, fusão) segue
+  terceiros, licenças, resumo de IA, **campos personalizados e formulários** (só equipe) também vão ao backend. O que ele
+  não tem (gatilhos, fusão, campos de IA do painel) segue
   LOCAL e avisa "somente neste navegador" só nesses pontos. Decisões, o que escreve de verdade e o que segue local:
   `src/api/PENDENTE_NO_BACKEND.md`.

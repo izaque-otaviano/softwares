@@ -5,5 +5,5 @@ export { statuses } from './statuses';
 export { tickets } from './tickets';
 export { macros } from './macros';
 export { triggers } from './triggers';
-export { fields } from './fields';
+export { fields, forms } from './fields';
 export { views } from './views';

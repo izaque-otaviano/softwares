@@ -57,10 +57,10 @@ edição (`Ticket.localFields`).
 | Etiquetas | criadas por `POST /settings/tags/` quando o ticket/macro usa um nome novo (só administrador; agente é avisado antes de qualquer escrita) |
 
 Ainda LOCAIS no modo real (em memória, somem ao recarregar; marcados "somente neste navegador"): assunto, solicitante e
-campos personalizados num ticket (camada `layers.ticketPatches`); nome do status para o usuário final e descrição;
+os campos de IA do painel (camada `layers.ticketPatches`); nome do status para o usuário final e descrição;
 descrição, "disponível para", ação de status e nota interna da macro; tags, grupo padrão e "acesso dos usuários" da
-organização; tags, notas, contatos extras, idioma e fuso do cliente; fundir ticket, usuário e organização; gatilhos,
-campos, formulários. Visões pessoais (criar/editar/apagar) vão ao backend (`/ticket-views/`); abas abertas e itens
+organização; tags, notas, contatos extras, idioma e fuso do cliente; fundir ticket, usuário e organização; gatilhos.
+**Campos personalizados e formulários agora vão ao backend** (seção própria, abaixo). Visões pessoais (criar/editar/apagar) vão ao backend (`/ticket-views/`); abas abertas e itens
 recentes seguem locais. **Tipo, apagar/restaurar, CC e seguidores de terceiros, licenças e resumo de IA agora vão ao
 backend** (seção "Tipo, apagar, CC e seguidores, licenças e resumo de IA", abaixo).
 
@@ -184,8 +184,8 @@ Continuam (sem mudar o backend):
 
 ### Ainda local por natureza (mesmo na leitura)
 
-Campos que o backend não tem aparecem vazios/padrão e ficam marcados em `capabilities`: tópico/sentimento/idioma de IA
-(campos personalizados), tags de usuário e de organização (sempre vazias), grupo padrão e "acesso dos usuários" da
+Campos que o backend não tem aparecem vazios/padrão e ficam marcados em `capabilities`: resumo/tópico/sentimento/idioma
+de IA (campos de IA do painel, locais), tags de usuário e de organização (sempre vazias), grupo padrão e "acesso dos usuários" da
 organização (padrão `own_tickets`), `endUserName`/descrição de status (= nome/vazio), macro: `availableTo` (todos),
 `usage7d` (0), ações de status e nota interna. Criação/atualização do usuário vêm de `created_at`/`updated_at` (backend antigo sem eles: a tela mostra "-");
 canal "e-mail" não existe (tudo vira "Formulário web"; `chat` e `system` têm ícone próprio nas mensagens).
@@ -202,8 +202,7 @@ array puro, que traz todas as visões); ids e carimbos nas respostas. Ver as "Es
 | Chave | O que é | Comportamento local | Observação para o backend |
 | --- | --- | --- | --- |
 | `triggers` | Gatilhos editáveis e motor de regras | Motor `lib/triggers.ts` roda no navegador; `fired7d` conta em memória | Backend só tem automações fixas (Celery). Não há e-mail/ação real. |
-| `customFields` | Campos personalizados de ticket (inclui tópico, sentimento e idioma de IA) | CRUD em memória | Só existe `order_number` livre. |
-| `forms` | Formulários de ticket (`formId`) | Fixo `'default'` | Não existe. |
+| (campos de IA) | Resumo, tópico, sentimento, idioma e confianças do painel "Campos de IA" | Em memória, por ticket (`Ticket.customFields`; no real, `ticketPatches`) | Não são campos personalizados do backend (que nunca tem campo de fábrica). Aparecem em Admin > Campos como "Campo padrão" + "Somente neste navegador". |
 | `merge` | Fusão de tickets, usuários e organizações | Executa no estado local | Não existe fusão. |
 
 Também locais por natureza: abas abertas (`tickets/tabs` existe, etapa 5), itens recentes e a simulação de
@@ -233,10 +232,37 @@ Ressalvas e decisões:
 - `GET /tickets/{id}/` de ticket apagado devolve 200 ao admin: os eventos `ticket_event` do WebSocket que chegam depois de apagar o fazem ser ignorado na lista (`applyServerTicket`).
 - Mock: `deleteTickets` move para uma lixeira (restaurável), `cc`/seguidores gravam como o servidor (limite de 20, e-mail do solicitante recusado), licenças limitam criação e reativação com 409, o resumo é simulado.
 
+## Campos personalizados e formulários de ticket (RESOLVIDOS no backend, ligados no front)
+
+`capabilities`: `customFields` e `forms` são `'real'` no modo real (no mock seguem `'local'` e o mock imita as mesmas regras).
+Contrato: `resolv/docs/ALTERACOES-HELPDESK.md` (seção "Campos personalizados e formulários de ticket"). Só equipe: o
+cliente nunca vê nem edita (o Helpdesk não tem portal de cliente e nada voltado ao cliente renderiza esses campos).
+Verificado no navegador contra o backend novo (porta 8031, só dados `AG-front`).
+
+| Recurso | Chamadas | O que o front faz |
+| --- | --- | --- |
+| Campos (Admin > Campos) | `GET/POST/PATCH/DELETE /settings/ticket-fields/`, `POST .../reorder/` | Tipos v1: texto, parágrafo, número, data, caixa de seleção, lista suspensa. Criar/editar título, descrição, obrigatório e opções; ativar/desativar; mover para cima/baixo (reorder). Editor de opções com ordem e valores únicos (renomear opção salva mantém o `value` guardado nos tickets). `type` trava no editor quando o campo já tem valores (`values_count`). 409 `field_in_use` ao apagar: diálogo "Este campo já foi usado" que oferece **desativar**. 400 no campo certo (`title`, `type`, `options`...), o resto em faixa, sempre mantendo o digitado; 403 = "Você não tem permissão para esta ação.". Os campos padrão do front (assunto, descrição, solicitante, atribuído, grupo, status, prioridade, tipo, tags) e os campos de IA aparecem como "Campo padrão", sem ações. |
+| Formulários (Admin > Formulários) | `GET/POST/PATCH/DELETE /settings/ticket-forms/`, `POST .../reorder/`, `POST .../{id}/clone/` | Nome, descrição, ativo, campos com ordem e obrigatório por formulário (`form_fields`), equipe padrão e tipo padrão, "Definir como padrão" (troca o padrão), clonar, mover. 409 `default_form_required` (tirar, desativar ou apagar o padrão) e `form_in_use` (apagar formulário com tickets: sugere desativar) viram a frase do servidor e/ou diálogo. |
+| Valores no ticket | `custom_fields` e `form_id` em `PATCH /tickets/{id}/` e `POST /tickets/`; `form_id` na lista e no detalhe; `custom_fields` só no detalhe | O painel "Campos do formulário" mostra o seletor de formulário (só com mais de um ativo) e os campos do formulário do ticket (ou do padrão) na ordem, com o controle do tipo e asterisco nos obrigatórios. Salvar vai no MESMO `PATCH` das outras propriedades (passo `props` do plano: antes de `follow`, mensagem e fechamento; só o que mudou, `null` apaga), então a ordem de chamadas e a falha parcial existentes continuam valendo. Campo desativado some, ou aparece só para leitura se o ticket tem valor. 400 `{custom_fields:{slug:msg}}` aparece no campo certo. |
+| Ticket novo | `form_id` + `custom_fields` no `POST /tickets/` | Formulário padrão pré-selecionado; escolher outro aplica equipe e tipo padrão dele (só enquanto o agente não escolheu outros); obrigatórios validados no cliente antes de enviar (erro por campo); no multipart o `custom_fields` vai como JSON em texto. 400 `required_custom_fields` do servidor: erro em cada campo, ticket não criado. |
+| Resolver/fechar | 400 `required_custom_fields` em `close/` e `reply` (`new_status:closed`); `failed[]` do `bulk-close` | O cliente antecipa (diálogo "Faltam campos obrigatórios", com "Enviar assim mesmo": o servidor decide). Recusa do servidor: o mesmo diálogo em modo "não foi resolvido", com "Ir ao campo" (foca o controle no painel) e o texto da resposta intacto (o backend não grava a resposta nem fecha). Em lote, o item de `failed[]` mostra "Campos obrigatórios pendentes: A, B" (nomes lidos do `detail`, que é só texto) e "Abrir ticket para preencher". |
+
+Ressalvas e decisões:
+
+- `custom_fields` **não vem na lista**, só no detalhe (`Ticket.fieldValues` fica `undefined` na lista). Por isso **não há coluna nem filtro por campo personalizado** nas listas/visões: não existia no Helpdesk. O backend já aceita `?cf_<slug>=valor` (igualdade; dropdown pelo `value`, checkbox `true|false`, date `AAAA-MM-DD`; ignorado para slug desconhecido) e é o caminho se um filtro for criado: o front **não o usa hoje**.
+- Isenções de obrigatoriedade no backend: ticket criado pelo cliente (portal), cliente encerrando o próprio ticket, fechamento automático por falta de resposta, importação e conversão de chat não validam obrigatórios. O front só exige ao criar e ao resolver/fechar pelo agente; mudar status para resolvido sem passar por `close/` não existe no Helpdesk.
+- Campo obrigatório que não está no formulário do ticket não é exigido (o front calcula igual: ativo, no formulário, obrigatório no campo OU no formulário). Checkbox `false` conta como preenchido; `0` também. Por isso o checkbox do painel tem "Limpar" (voltar a sem valor).
+- O `detail` do `failed[]` do `bulk-close` não traz a lista estruturada de campos (só texto): os nomes são extraídos do texto depois dos dois-pontos. O `POST close/` e o `reply` trazem `fields[]` estruturado.
+- Retirar uma opção em uso é permitido: o ticket mantém o valor e o painel o mostra como "valor (removida)".
+- Limite de 60 campos ativos (400 ao criar/reativar além disso; faixa no modal). O teto local de 20 da visão geral do admin foi trocado por esse limite.
+- O mock aplica as mesmas regras (obrigatório ao criar e ao resolver, 409 de campo em uso, formulário padrão único, não apagar formulário com tickets, equipe/tipo do formulário só se o envio não trouxe os seus) e traz dados de exemplo (7 campos, 3 formulários; incidentes usam o formulário "Incidentes" com contrato e severidade obrigatórios).
+- Quem não tem `settings.manage` lê campos e formulários (qualquer agente), mas leva 403 ao escrever (mensagem padrão); os botões continuam visíveis no Admin, que já é área de administrador. Agente sem `ticket.edit_properties` leva 400 ao gravar `custom_fields` (a mensagem do servidor aparece no banner).
+- Eventos de auditoria `campo: Título: antes → depois` e `formulário → Nome` chegam como `note` com status de = para e aparecem como texto no histórico, como os de tipo.
+
 ## Pedidos opcionais ao backend (etapa 8, não bloqueiam)
 
 `updated_since`; status direto no `PATCH`; tags livres para agentes; `actor_id` nos eventos; `stage` no `bulk-close`;
-filtro por lista de ids em `GET /tickets/`. (`author_id`, `requester_id` e `company_id` já foram entregues.)
+filtro por lista de ids em `GET /tickets/`; `fields[]` estruturado (e não só texto) no `failed[]` do `bulk-close` quando o motivo é `required_custom_fields`; `custom_fields` opcional na lista. (`author_id`, `requester_id` e `company_id` já foram entregues.)
 
 ## Camada local no modo real (só para o que o backend não tem)
 

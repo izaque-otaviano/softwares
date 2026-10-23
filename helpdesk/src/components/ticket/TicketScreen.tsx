@@ -7,6 +7,7 @@ import { useIsNarrow } from '@/lib/useMediaQuery';
 import { BottomBar } from './BottomBar';
 import { CloseResolutionModal } from './CloseResolutionModal';
 import { Composer } from './Composer';
+import { RequiredFieldsDialog } from './RequiredFieldsDialog';
 import { Conversation } from './Conversation';
 import { isNewKey, ticketIdFromKey, useFormEntry, useFormStore } from './formStore';
 import { useRightPanel } from './panels/panelState';
@@ -87,6 +88,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
   const deleted = useTickets((s) => (isNew ? false : Boolean(s.tickets.find((t) => t.id === ticketIdFromKey(ticketKey))?.deletedAt)));
   if (!entry) return null;
   const commentError = entry.errors.comment;
+  const fieldsError = entry.errors.fields;
 
   return (
     <div onKeyDownCapture={onKeyDown} className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" data-testid="ticket-screen">
@@ -105,6 +107,11 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
               {commentError}
             </Banner>
           ) : null}
+          {fieldsError ? (
+            <Banner tone="warning" className="m-3 shrink-0" onDismiss={() => useFormStore.getState().clearErrors(ticketKey)}>
+              {fieldsError}
+            </Banner>
+          ) : null}
           {isNew ? (
             <>
               <h1 className="sr-only">Novo ticket</h1>
@@ -120,6 +127,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
       </div>
       <BottomBar ticketKey={ticketKey} />
       <CloseResolutionModal />
+      <RequiredFieldsDialog />
     </div>
   );
 }

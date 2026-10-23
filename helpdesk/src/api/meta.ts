@@ -8,6 +8,5 @@ const impl: typeof mock = IS_REAL ? real : mock;
 export const {
   listGroups,
   listStatuses,
-  listFields,
   saveStatus,
 } = impl;

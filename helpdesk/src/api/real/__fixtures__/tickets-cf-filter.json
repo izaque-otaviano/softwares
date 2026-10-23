@@ -1,0 +1,70 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 183,
+      "reference": "TD-00183",
+      "subject": "AG-front fixture",
+      "order_number": "",
+      "status": "new",
+      "stage": 1,
+      "stage_name": "Novo",
+      "stage_color": "#6C4E9C",
+      "priority": "normal",
+      "type": "incident",
+      "source": "internal",
+      "form_id": 2,
+      "team": {
+        "id": 1,
+        "name": "Suporte",
+        "slug": "suporte",
+        "visibility": "company_wide",
+        "order": 1,
+        "internal_only": false
+      },
+      "requester_display": "AG-front Cliente",
+      "requester_id": 17,
+      "company_id": 1,
+      "assignee_name": null,
+      "assignee_avatar": null,
+      "assignee_id": null,
+      "owner_name": null,
+      "owner_id": null,
+      "company_name": "Acme Marketing",
+      "plan": {
+        "slug": "black",
+        "name": "Black"
+      },
+      "sla": {
+        "first_response": {
+          "due_at": "2026-10-23T17:11:00.129100Z",
+          "state": "ok",
+          "minutes_left": 119
+        },
+        "resolution": {
+          "due_at": "2026-10-26T14:11:00.129100Z",
+          "state": "ok",
+          "minutes_left": 4259
+        }
+      },
+      "category": null,
+      "category_name": null,
+      "service_name": null,
+      "is_restricted": false,
+      "content_hidden": false,
+      "restriction_reason": "",
+      "reopen_count": 0,
+      "last_reopened_at": null,
+      "first_response_at": null,
+      "auto_closed": false,
+      "current_status_note": "campo: AG-front Contrato: — → C-1",
+      "tags": [],
+      "satisfaction": null,
+      "closed_at": null,
+      "created_at": "2026-10-23T12:11:00.129100-03:00",
+      "updated_at": "2026-10-23T12:11:23.552676-03:00"
+    }
+  ]
+}

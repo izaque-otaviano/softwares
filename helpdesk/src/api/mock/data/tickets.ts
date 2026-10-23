@@ -116,7 +116,14 @@ function build(spec: Spec, index: number): Ticket {
     priority: spec.p,
     statusId: spec.st,
     channel: spec.ch,
-    formId: 'default',
+    // Incidentes usam o formulário "Incidentes" (id 2) com contrato e severidade preenchidos; o resto, o padrão (id 1).
+    formId: spec.ty === 'incident' ? '2' : '1',
+    fieldValues:
+      spec.ty === 'incident'
+        ? { numero_do_contrato: `CT-2024-${String(100 + id).padStart(4, '0')}`, severidade: ['media', 'alta', 'baixa', 'critica'][index % 4]! }
+        : index % 5 === 0
+          ? { numero_do_contrato: `CT-2023-${String(40 + id).padStart(4, '0')}` }
+          : {},
     customFields: {
       resumo: spec.msg.slice(0, 120),
       topico: spec.topic,

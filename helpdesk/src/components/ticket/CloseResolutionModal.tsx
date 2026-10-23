@@ -80,8 +80,8 @@ export function CloseResolutionModal() {
     try {
       const result = await useFormStore.getState().submit(pending.key, pending.statusIdOverride, window);
       if (result.ok) useFormStore.getState().cancelClose();
-      // se falhou (api), o formulário já tem apiError; fecha o diálogo para o agente ver o banner
-      if (!result.ok && result.kind === 'api') useFormStore.getState().cancelClose();
+      // se falhou (api, campos obrigatórios), o formulário já tem o aviso; fecha o diálogo para o agente ver o banner ou a lista de pendências
+      if (!result.ok && (result.kind === 'api' || result.kind === 'required_fields' || result.kind === 'validation')) useFormStore.getState().cancelClose();
     } finally {
       setSubmitting(false);
     }

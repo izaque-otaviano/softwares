@@ -166,12 +166,14 @@ describe('Funções e Grupos', () => {
 });
 
 describe('Campos', () => {
-  it('mostra os campos ativos, o chip e o selo Campo padrão', async () => {
+  it('mostra os campos personalizados ativos e os campos padrão sem edição', async () => {
     const user = userEvent.setup();
     renderAdmin('/admin/fields');
     const table = await screen.findByRole('table', { name: 'Campos' });
-    expect(await within(table).findByRole('button', { name: 'Assunto' })).toBeInTheDocument();
-    expect(within(table).getAllByText('Campo padrão')).toHaveLength(4);
+    expect(await within(table).findByRole('button', { name: 'Número do contrato' })).toBeInTheDocument();
+    // Padrão do front (9) + campos de IA (7): texto simples, sem botão de edição.
+    expect(within(table).getAllByText('Campo padrão')).toHaveLength(16);
+    expect(within(table).queryByRole('button', { name: 'Assunto' })).not.toBeInTheDocument();
     expect(within(table).queryByText('Grupo do canal')).not.toBeInTheDocument();
     expect(screen.getByText('Ativos')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remover filtro Ativos' }));
@@ -181,42 +183,47 @@ describe('Campos', () => {
   it('adiciona um campo', async () => {
     const user = userEvent.setup();
     renderAdmin('/admin/fields');
-    await screen.findByRole('button', { name: 'Assunto' });
+    await screen.findByRole('button', { name: 'Número do contrato' });
     await user.click(screen.getByRole('button', { name: 'Adicionar campo' }));
     const dialog = await screen.findByRole('dialog', { name: 'Adicionar campo' });
-    await user.type(within(dialog).getByLabelText(/Nome de exibição/), 'Número do pedido');
+    await user.type(within(dialog).getByLabelText(/Título/), 'Número do pedido');
     await user.click(within(dialog).getByRole('button', { name: 'Adicionar campo' }));
     expect(await screen.findByRole('button', { name: 'Número do pedido' })).toBeInTheDocument();
     expect(screen.getByText('numero_do_pedido')).toBeInTheDocument();
   });
 
-  it('desativa e apaga com confirmação; campos padrão ficam protegidos', async () => {
+  it('desativa e apaga com confirmação; campo já usado sugere desativar; campos padrão não têm ações', async () => {
     const user = userEvent.setup();
     renderAdmin('/admin/fields');
-    await screen.findByRole('button', { name: 'Resumo' });
+    await screen.findByRole('button', { name: 'Observações internas' });
+    expect(screen.queryByRole('button', { name: /Mais ações.*Assunto/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Mais ações.*Assunto/ }));
-    expect(await screen.findByRole('menuitem', { name: 'Apagar' })).toHaveAttribute('aria-disabled', 'true');
-    await user.keyboard('{Escape}');
-
-    await user.click(screen.getByRole('button', { name: /Mais ações.*Resumo/ }));
+    await user.click(screen.getByRole('button', { name: /Mais ações.*Observações internas/ }));
     await user.click(await screen.findByRole('menuitem', { name: 'Desativar' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Resumo' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Observações internas' })).not.toBeInTheDocument());
 
-    await user.click(screen.getByRole('button', { name: /Mais ações.*Tópico$/ }));
+    await user.click(screen.getByRole('button', { name: /Mais ações.*Valor em disputa$/ }));
     await user.click(await screen.findByRole('menuitem', { name: 'Apagar' }));
     const confirm = await screen.findByRole('dialog', { name: 'Apagar campo?' });
     await user.click(within(confirm).getByRole('button', { name: 'Apagar campo' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Tópico' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Valor em disputa' })).not.toBeInTheDocument());
+
+    // 409 field_in_use: o contrato já tem valor em tickets -> sugere desativar
+    await user.click(screen.getByRole('button', { name: /Mais ações.*Número do contrato$/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Apagar' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Apagar campo?' })).getByRole('button', { name: 'Apagar campo' }));
+    const inUse = await screen.findByRole('dialog', { name: 'Este campo já foi usado em tickets' });
+    await user.click(within(inUse).getByRole('button', { name: 'Desativar campo' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Número do contrato' })).not.toBeInTheDocument());
   });
 
   it('colunas configuráveis', async () => {
     const user = userEvent.setup();
     renderAdmin('/admin/fields');
-    await screen.findByRole('button', { name: 'Assunto' });
+    await screen.findByRole('button', { name: 'Número do contrato' });
     await user.click(screen.getByRole('button', { name: 'Colunas' }));
-    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'ID do campo' }));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Identificador' }));
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('columnheader', { name: /ID do campo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /Identificador/ })).not.toBeInTheDocument();
   });
 });

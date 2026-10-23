@@ -19,6 +19,7 @@ Base: `/api/v1`. Autenticação por sessão + cabeçalho `X-CSRFToken`, como ant
 | 7 | Reabrir muda a coluna | `reply`, resposta do cliente | correção + migração |
 | 8 | `macro.manage` coerente | `me.permissions`, `/settings/ticket-macros/` | ver abaixo |
 | 9 | Ids e carimbos nas respostas | tickets, mensagens, usuários, `/ticket-views/` | campos novos |
+| 10 | Campos personalizados e formulários (só equipe) | `/settings/ticket-fields/`, `/settings/ticket-forms/`, `custom_fields`, `form_id` | aditivo; `team_id` do `POST /tickets/` vira opcional se o formulário traz equipe |
 
 ---
 
@@ -363,6 +364,145 @@ DELETE /tickets/{id}/followers/{user_id}/     200 detalhe   404
   resposta pública de agente.
 * Auditoria: eventos de histórico `cc + a@x.com`, `cc − a@x.com`, `seguidor + Nome`, `seguidor − Nome`.
 * Não há campos `cc`/`followers` no `PATCH` nem no `POST /tickets/`: só as rotas acima.
+
+## Campos personalizados e formulários de ticket
+
+Tudo aditivo. Migrações `tickets/0034_campos_personalizados_e_formularios` (tabelas) e
+`0035_formulario_padrao` (cria o "Formulário padrão", vazio). **Nenhum campo de fábrica**: assunto,
+descrição, responsável etc. continuam sendo campos de sistema do front.
+
+### Regra de ouro: campo personalizado é SÓ DA EQUIPE
+
+Agente/supervisor/admin leem; o **cliente nunca vê nem edita** (nem na API do portal, nem em e-mails, nem na
+exportação do portal). `custom_fields` e `form_id` vêm vazios/nulos para o cliente; `?cf_*` é ignorado para ele;
+cliente que envia `custom_fields`/`form_id` em `POST /tickets/` ou `PATCH` leva **403**.
+
+### Definição do campo — `/settings/ticket-fields/`
+
+```http
+GET    /settings/ticket-fields/            qualquer agente (paginado, ordenado por `order`)
+POST   /settings/ticket-fields/            settings.manage
+GET    /settings/ticket-fields/{id}/       qualquer agente
+PATCH  /settings/ticket-fields/{id}/       settings.manage   (title, description, options, is_required, is_active, order…)
+DELETE /settings/ticket-fields/{id}/       settings.manage   204 | 409 {"code": "field_in_use"}  (já teve valor: desative)
+POST   /settings/ticket-fields/reorder/    settings.manage   {"ids": [3, 1, 2]} -> 200 lista inteira ordenada (omitidos vão para o fim)
+```
+
+```json
+{"id": 4, "slug": "numero_do_contrato", "title": "Número do contrato", "description": "",
+ "type": "text", "options": [], "is_required": false, "is_active": true, "order": 3,
+ "is_system": false, "values_count": 12, "created_at": "…", "updated_at": "…"}
+```
+
+* `type`: `text` (até 2000) \| `textarea` (até 10000) \| `number` \| `date` \| `checkbox` \| `dropdown`.
+* `slug` nasce do título (`[a-z0-9_]`, nunca só dígitos, `_2` em colisão), **é estável** (renomear não muda) e
+  nunca é reaproveitado. Chave de `custom_fields` aceita `slug` **ou** `id`.
+* `dropdown`: `options` obrigatório, **ordenado**, `[{"value": "alta", "label": "Alta"}]` (aceita também
+  `["Alta", "Baixa"]` e `{"label": …}` sem `value`: `value` = rótulo). Valores e rótulos únicos
+  (sem diferenciar caixa), até 200, cada um até 100 caracteres. Só dropdown tem `options` (nos outros tipos
+  é zerado).
+* Título 1–80; **até 60 campos ativos** (criar/reativar além disso: 400).
+* **`type` não muda** depois de existirem valores (400); `DELETE` de campo usado é 409 (use `is_active:false`).
+* Retirar uma opção que já está em uso é permitido: o valor guardado continua no ticket (sai o `value` cru).
+* Erros: 400 validação, 403 sem `settings.manage` (ou cliente), 404, 409.
+* Mudanças de definição geram `AuditLog` (`config_change`).
+
+### Valores no ticket
+
+`custom_fields` em `POST /tickets/` (JSON ou multipart com o JSON em texto) e `PATCH /tickets/{id}/`:
+
+```json
+{"custom_fields": {"numero_do_contrato": "C-123", "severidade": "alta", "valor": 12.5,
+                   "prazo": "2026-12-31", "aceite": false, "obs": null}}
+```
+
+* Tipos: text/textarea = string; number = número JSON (até 9 dígitos inteiros e 6 decimais); date = `"AAAA-MM-DD"`;
+  checkbox = boolean (`false` é um valor); dropdown = o `value` de uma opção. **`null` (ou `""`) apaga**; chave ausente
+  não mexe. Campo **inativo** só aceita `null`.
+* Erro (400, nada é gravado, ticket nem é criado):
+  `{"custom_fields": {"valor": "Informe um número …", "fantasma": "Campo personalizado inexistente."}}`.
+* Exige `ticket.edit_properties` (como `type`/`tags`): agente leve leva 400; cliente 403.
+* **Detalhe** `GET /tickets/{id}/` devolve `custom_fields`: `{slug: valor}` **só dos campos com valor**
+  (campos desativados com dado continuam saindo). Cliente: `{}`.
+  **Lista** `GET /tickets/` **não** traz `custom_fields` (evitaria N consultas); traz `form_id`.
+* Auditoria no histórico (`events`, só equipe), um evento por campo que mudou, mesmo formato das propriedades:
+  `campo: Contrato: — → C-123` / `campo: Contrato: C-123 → ZZ-9` / `campo: Contrato: ZZ-9 → —`
+  (checkbox "sim"/"não", dropdown pelo rótulo, data `dd/mm/aaaa`, texto cortado em 50). Sem mudança, sem evento.
+* **Filtro** `GET /tickets/?cf_<slug>=valor` — igualdade; vários `cf_*` se somam (E). dropdown = `value`;
+  checkbox = `true|false`; number; date `AAAA-MM-DD`; texto = igual sem diferenciar caixa. Slug desconhecido ou valor
+  inválido para o tipo é ignorado (como `type` desconhecido). Ignorado para cliente. Valor guardado em colunas tipadas
+  (`TicketCustomFieldValue`: `text_value`, `number_value`, `date_value`, `bool_value`, `option_value`) com índices.
+* **Fora do escopo (decisão):** `custom_fields` na **lista** e coluna no **CSV** de relatórios (mudaria o cabeçalho
+  do CSV e custaria consultas extras).
+
+### Formulários — `/settings/ticket-forms/`
+
+```http
+GET    /settings/ticket-forms/                 qualquer agente
+POST   /settings/ticket-forms/                 settings.manage
+GET    /settings/ticket-forms/{id}/            qualquer agente
+PATCH  /settings/ticket-forms/{id}/            settings.manage
+DELETE /settings/ticket-forms/{id}/            204 | 409 {"code": "form_in_use"} (há tickets) | 409 {"code": "default_form_required"}
+POST   /settings/ticket-forms/reorder/         {"ids": [2, 1]} -> 200 lista ordenada
+POST   /settings/ticket-forms/{id}/clone/      {"name": "opcional"} -> 201 (sem nome: "Cópia de X"; nunca vira padrão)
+```
+
+```json
+{"id": 2, "name": "Incidentes", "description": "", "is_active": true, "is_default": false, "order": 1,
+ "default_team": 3, "default_team_name": "Suporte", "type": "incident", "ticket_count": 0,
+ "form_fields": [{"field": 4, "slug": "numero_do_contrato", "title": "…", "type": "text",
+                  "field_is_active": true, "is_required": true, "order": 0}]}
+```
+
+* Corpo de escrita: `form_fields: [{"field": <id ou slug>, "is_required": bool}]` — a **ordem da lista é a ordem
+  dos campos**; no PATCH a lista **substitui** (ausente = não mexe). Só campos ativos entram (os já presentes
+  podem ficar). (O nome é `form_fields` e não `fields` por colisão com o serializer.)
+* `type` = tipo de ticket padrão (`question|incident|problem|task`), `default_team` = equipe padrão (ativa).
+* **Sempre exatamente 1 formulário padrão ativo**: "Formulário padrão" (vazio) vem da migração e é recriado sob
+  demanda se o banco for esvaziado; o primeiro criado vira padrão se não houver. `PATCH {"is_default": true}` num
+  formulário ativo **troca** o padrão. Tirar `is_default`, desativar ou apagar o padrão = **409**
+  (`default_form_required`, "escolha outro como padrão antes").
+* Ticket: `form_id` aceito em `POST /tickets/` e `PATCH /tickets/{id}/` (`null` no PATCH volta ao padrão), devolvido
+  na lista e no detalhe (id do padrão vigente quando o ticket não tem formulário próprio; `null` para cliente).
+  No POST, com `form_id`: `team_id` e `type` do formulário só valem se o POST **não** os enviou (`team_id` passa a
+  ser opcional **se** o formulário tem equipe padrão; sem nenhum dos dois: 400 `team_id`). Sem `form_id`, nada
+  do formulário padrão é aplicado (comportamento de sempre).
+* Auditoria: troca de formulário no ticket = evento `formulário → Nome` (`padrão` ao limpar); CRUD/clone/reordenar
+  geram `AuditLog` (`config_change`).
+
+### Obrigatório (criar e resolver/fechar) — código `required_custom_fields`
+
+Exigido = campo **ativo**, **pertencente ao formulário do ticket** (o dele, ou o padrão), marcado obrigatório
+**no campo** (`is_required`) **ou no formulário** (`form_fields[].is_required`). Campo obrigatório que não está
+no formulário não é exigido. Checkbox `false` conta como preenchido.
+
+```json
+// 400 — mesmo corpo na criação e no fechamento (nada é gravado/fechado)
+{"detail": "Preencha os campos obrigatórios antes de resolver ou fechar o ticket: Contrato, Severidade.",
+ "code": "required_custom_fields",
+ "fields": [{"id": 4, "slug": "contrato", "title": "Contrato"}],
+ "custom_fields": {"contrato": "Campo obrigatório."}}
+```
+
+* **Criar** (`POST /tickets/` por equipe): faltando valor → 400 acima ("…antes de criar o ticket…"), ticket não é criado.
+* **Resolver/fechar**: `POST /tickets/{id}/close/` e `POST /tickets/{id}/reply/` com `new_status:"closed"` → 400 acima,
+  sem fechar e **sem gravar a resposta**. `bulk-close`: o ticket com pendência vai para `failed[]`
+  (`{"id", "detail": "Preencha os campos obrigatórios …"}`) e os demais fecham. Resposta agendada que fecharia
+  falha no disparo com o mesmo motivo. Mudar status para categoria fechada por PATCH/lote/quadro já é barrado
+  por existir só o fluxo de fechar.
+* **Isenções (decisão):** ticket criado pelo **cliente** (portal) não é bloqueado — ele não vê os campos; o cliente
+  encerrando o próprio ticket e o fechamento automático por falta de resposta também não são bloqueados; importação
+  e conversão de chat não validam.
+
+### LGPD / retenção
+
+* **Export do titular** (`audit/lgpd` export): cada ticket do titular ganha `campos_personalizados:
+  [{"campo", "tipo", "valor"}]` no `dados.json` e no `dados.html` (escapado). Inclui ticket apagado (soft delete).
+* **Redação assistida**: valores `text`/`textarea` dos tickets do titular com padrão de PII entram em
+  `redaction_candidates` (`model: "custom_field_value"`, `field: "text_value"`, `custom_field: "<título>"`);
+  `POST /audit/lgpd/{id}/redact/` aceita `model: "custom_field_value"` (original vai para o `AuditLog`).
+* **Retenção**: o expurgo de ticket fechado troca `text_value` de text/textarea por `[expurgado por retenção]`
+  (mesmo marcador do assunto); number/date/checkbox/dropdown ficam (estatística).
 
 ---
 

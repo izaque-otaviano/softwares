@@ -13,6 +13,7 @@ export * as triggersApi from './triggers';
 export * as searchApi from './search';
 export * as metaApi from './meta';
 export * as fieldsApi from './fields';
+export * as formsApi from './forms';
 export * as membersApi from './members';
 
 // Só para testes do modo mock (os testes de tela usam `configureApi`/`resetDb`/`db` daqui).

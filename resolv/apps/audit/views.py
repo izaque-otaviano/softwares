@@ -268,8 +268,11 @@ class DataSubjectRequestViewSet(viewsets.ModelViewSet):
         self.get_object()  # 404 se o pedido não existe
         model = request.data.get("model")
         target = request.data.get("pk")
-        if model not in ("ticket", "message") or not target:
-            return Response({"detail": "Informe model ('ticket'|'message') e pk."}, 400)
+        if model not in ("ticket", "message", "custom_field_value") or not target:
+            return Response(
+                {"detail": "Informe model ('ticket'|'message'|'custom_field_value') e pk."},
+                400,
+            )
 
         done = anonymization.redact_free_text(
             model=model, pk=int(target), actor=request.user

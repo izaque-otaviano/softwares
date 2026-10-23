@@ -1,0 +1,14 @@
+{
+  "detail": "Preencha os campos obrigatórios antes de resolver ou fechar o ticket: AG-front Contrato.",
+  "code": "required_custom_fields",
+  "fields": [
+    {
+      "id": 1,
+      "slug": "ag_front_contrato",
+      "title": "AG-front Contrato"
+    }
+  ],
+  "custom_fields": {
+    "ag_front_contrato": "Campo obrigatório."
+  }
+}

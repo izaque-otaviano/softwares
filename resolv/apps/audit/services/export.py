@@ -68,6 +68,7 @@ def collect(dsr) -> dict:
     """Levanta os dados do titular respeitando o escopo."""
     from apps.chat.models import Chat, ChatMessage
     from apps.tickets.models import Ticket, TicketAttachment
+    from apps.tickets.services import custom_fields
 
     user = dsr.subject_user
     if user is None:
@@ -81,7 +82,7 @@ def collect(dsr) -> dict:
     tickets = (
         Ticket.all_objects.filter(requester=user)
         .select_related("team", "company")
-        .prefetch_related("messages__author")
+        .prefetch_related("messages__author", "custom_values__field")
         .order_by("created_at")
     )
 
@@ -95,6 +96,8 @@ def collect(dsr) -> dict:
             "prioridade": ticket.get_priority_display(),
             "aberto_em": _iso(ticket.created_at),
             "fechado_em": _iso(ticket.closed_at),
+            # campos personalizados do ticket (dado do ticket do titular)
+            "campos_personalizados": custom_fields.valores_do_titular(ticket),
             "mensagens": [
                 {
                     "autor": _author_label(message),
@@ -236,6 +239,11 @@ def _html(payload: dict) -> str:
             f"<p class='meta'>{escape(ticket['equipe'])} · "
             f"{escape(ticket['status'])} · aberto em {escape(ticket['aberto_em'] or '')}</p>"
         )
+        for campo in ticket.get("campos_personalizados", []):
+            parts.append(
+                f"<p class='meta'>{escape(campo['campo'])}: "
+                f"{escape(str(campo['valor']))}</p>"
+            )
         for message in ticket["mensagens"]:
             parts.append(
                 f"<div class='msg'><span class='meta'>{escape(message['autor'])} · "

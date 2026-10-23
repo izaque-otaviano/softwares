@@ -14,7 +14,8 @@ import { useTabs } from '@/store/useTabs';
 import { useTickets } from '@/store/useTickets';
 import { toast } from '@/store/useUi';
 import { localFieldsNote } from '@/store/useTickets';
-import type { Macro, Priority, Ticket, TicketType } from '@/types/domain';
+import { cleanValues, customFieldErrors, diffValues, formForTicket, isFilled, missingRequired, requiredFromError, sameValues, slotsFor, type MissingField } from '@/lib/customFields';
+import type { FieldValue, Macro, Priority, Ticket, TicketType } from '@/types/domain';
 
 export type ReplyMode = 'public' | 'internal' | 'call';
 
@@ -29,10 +30,15 @@ export interface FormValues {
   type: TicketType | null;
   priority: Priority | null;
   statusId: string;
+  /** Campos de IA (locais). */
   customFields: Record<string, string | undefined>;
+  /** Formulário do ticket (`form_id`); vazio = ainda sem formulário (usa o padrão). */
+  formId: string;
+  /** Campos personalizados (slug -> valor; ausente = vazio). */
+  fieldValues: Record<string, FieldValue>;
 }
 
-export type FormErrorField = 'subject' | 'requester' | 'assignee' | 'comment';
+export type FormErrorField = 'subject' | 'requester' | 'assignee' | 'comment' | 'fields';
 export type FormErrors = Partial<Record<FormErrorField, string>>;
 
 export interface FormEntry {
@@ -58,13 +64,15 @@ export interface FormEntry {
   stayOnTicket: boolean;
   submitting: boolean;
   errors: FormErrors;
+  /** Erros por campo personalizado (slug -> mensagem), do cliente ou do `400` do servidor. */
+  fieldErrors: Record<string, string>;
   /** Falha de API do último envio: a UI mostra Banner "Tentar novamente" (`retry`); o texto digitado fica. */
   apiError: string | null;
 }
 
 export type SubmitResult =
   | { ok: true; ticketId: number; created: boolean; ticket: Ticket }
-  | { ok: false; kind: 'validation' | 'api' | 'busy' | 'missing' | 'needs_close_confirm'; error: string };
+  | { ok: false; kind: 'validation' | 'api' | 'busy' | 'missing' | 'needs_close_confirm' | 'required_fields'; error: string };
 
 /** Janela de solução (D4) confirmada no diálogo de fechamento. */
 export type ResolutionWindowInput = { started: string; ended: string };
@@ -75,10 +83,31 @@ export interface PendingClose {
   statusIdOverride?: string;
 }
 
+/** Campos obrigatórios pendentes ao resolver/fechar: aviso do cliente (antecipa) ou recusa do servidor (`required_custom_fields`). */
+export interface RequiredPrompt {
+  key: string;
+  statusIdOverride?: string;
+  fields: MissingField[];
+  /** `client`: ainda não enviou (dá para "Enviar assim mesmo"); `server`: o servidor recusou e nada foi fechado. */
+  source: 'client' | 'server';
+}
+
 interface FormState {
   forms: Record<string, FormEntry>;
   /** Diálogo de janela de solução ao fechar no modo real. */
   pendingClose: PendingClose | null;
+  /** Diálogo de campos obrigatórios pendentes. */
+  requiredPrompt: RequiredPrompt | null;
+  /** Pedido para focar um campo personalizado no painel (atalho do diálogo). */
+  focusRequest: { key: string; slug: string; seq: number } | null;
+  setFieldValue: (key: string, slug: string, value: FieldValue | null) => void;
+  /** Troca o formulário (ticket novo aplica equipe e tipo padrão dele). */
+  selectForm: (key: string, formId: string) => void;
+  dismissRequired: () => void;
+  /** "Ir ao campo": fecha o diálogo e pede o foco no campo do painel. */
+  focusField: (key: string, slug: string) => void;
+  /** "Enviar assim mesmo" depois do aviso do cliente: o servidor decide. */
+  sendAnyway: () => Promise<SubmitResult | undefined>;
   /** Cria o formulário da chave se ainda não existir (não sobrescreve edições pendentes). `ticket = null` = ticket novo. */
   init: (key: string, ticket: Ticket | null) => void;
   patch: (key: string, partial: Partial<FormValues>) => void;
@@ -95,7 +124,7 @@ interface FormState {
   /** Descarta propriedades pendentes e o texto do editor. */
   reset: (key: string) => void;
   /** Valida, salva, roda gatilhos, limpa o editor, avisa por toast e fecha/permanece. */
-  submit: (key: string, statusIdOverride?: string, resolutionWindow?: ResolutionWindowInput) => Promise<SubmitResult>;
+  submit: (key: string, statusIdOverride?: string, resolutionWindow?: ResolutionWindowInput, opts?: { skipRequiredCheck?: boolean }) => Promise<SubmitResult>;
   /** Cancela o diálogo de fechamento. */
   cancelClose: () => void;
   /** Repete o último envio (Banner "Tentar novamente"). */
@@ -129,6 +158,8 @@ const EMPTY_VALUES: FormValues = {
   priority: null,
   statusId: 'new',
   customFields: {},
+  formId: '',
+  fieldValues: {},
 };
 
 export function valuesFromTicket(t: Ticket): FormValues {
@@ -144,6 +175,8 @@ export function valuesFromTicket(t: Ticket): FormValues {
     priority: t.priority ?? null,
     statusId: t.statusId,
     customFields: { ...t.customFields },
+    formId: t.formId ?? '',
+    fieldValues: { ...(t.fieldValues ?? {}) },
   };
 }
 
@@ -162,7 +195,9 @@ function changedKeys(a: FormValues, b: FormValues): (keyof FormValues)[] {
         ? sameList(x, y)
         : k === 'customFields'
           ? JSON.stringify(cleanFields(x as FormValues['customFields'])) === JSON.stringify(cleanFields(y as FormValues['customFields']))
-          : x === y;
+          : k === 'fieldValues'
+            ? sameValues(x as FormValues['fieldValues'], y as FormValues['fieldValues'])
+            : x === y;
     if (!same) out.push(k);
   });
   return out;
@@ -206,9 +241,28 @@ function newEntry(key: string, ticket: Ticket | null, keep?: Partial<FormEntry>)
     stayOnTicket: true,
     submitting: false,
     errors: {},
+    fieldErrors: {},
     apiError: null,
     ...keep,
   };
+}
+
+/** Campos do formulário do ticket (na ordem), com o que é obrigatório; usa os dados de referência já carregados. */
+export function entrySlots(values: Pick<FormValues, 'formId' | 'fieldValues'>) {
+  const ref = useRefData.getState();
+  return slotsFor(formForTicket(values.formId, ref.forms), ref.fields, values.fieldValues);
+}
+
+/** Obrigatórios pendentes do formulário (mesmo critério do servidor). */
+export function pendingRequired(values: Pick<FormValues, 'formId' | 'fieldValues'>): MissingField[] {
+  return missingRequired(entrySlots(values), values.fieldValues).map((s) => ({ id: s.field.id, slug: s.field.slug ?? s.field.id, title: s.field.title }));
+}
+
+/** Formulário padrão e o que ele aplica a um ticket novo (equipe e tipo padrão). */
+function defaultFormValues(): Partial<FormValues> {
+  const form = useRefData.getState().forms.find((f) => f.isDefault && f.active);
+  if (!form) return {};
+  return { formId: form.id, ...(form.defaultTeamId ? { assigneeGroupId: form.defaultTeamId } : {}), ...(form.defaultType ? { type: form.defaultType } : {}) };
 }
 
 function validate(e: FormEntry): FormErrors {
@@ -219,6 +273,9 @@ function validate(e: FormEntry): FormErrors {
     if (!values.subject.trim()) errors.subject = 'Informe o assunto do ticket.';
     if (!values.requesterId) errors.requester = 'Selecione o solicitante.';
     if (!hasBody) errors.comment = 'Escreva a descrição do ticket.';
+    // Obrigatório ao CRIAR (o servidor confere de novo): o cliente antecipa para não perder a ida e volta.
+    const missing = pendingRequired(values);
+    if (missing.length) errors.fields = `Preencha os campos obrigatórios: ${missing.map((m) => m.title).join(', ')}.`;
   }
   if (!values.assigneeGroupId && !values.assigneeId) errors.assignee = 'Atribua o ticket a um grupo ou agente.';
   if (!e.isNew && !hasBody && changedKeys(values, e.original).length === 0) {
@@ -276,6 +333,12 @@ function diffPatch(e: FormEntry): TicketPatch {
         break;
       case 'customFields':
         patch.customFields = v.customFields;
+        break;
+      case 'fieldValues':
+        patch.fieldValues = diffValues(e.original.fieldValues, v.fieldValues);
+        break;
+      case 'formId':
+        patch.formId = v.formId || null;
         break;
     }
   }
@@ -364,6 +427,33 @@ export const useFormStore = create<FormState>()((set, get) => {
     return newKey;
   };
 
+  /**
+   * Recusas do servidor que apontam campos personalizados: `400 required_custom_fields` (criar: erro em cada campo;
+   * resolver/fechar: abre o diálogo de pendências) e `400 {custom_fields:{slug:msg}}` (erro no campo certo). O texto
+   * digitado e os valores ficam. Devolve `null` se o erro é outro.
+   */
+  const applyFieldFailure = (key: string, creating: boolean, err: unknown, override: string | undefined, keepApiError: boolean): SubmitResult | null => {
+    const required = requiredFromError(err);
+    const byField = customFieldErrors(err);
+    const message = err instanceof Error ? err.message : 'Revise os campos.';
+    if (required && creating) {
+      const fe = Object.fromEntries(required.map((m) => [m.slug, byField[m.slug] ?? 'Campo obrigatório.']));
+      const text = `Preencha os campos obrigatórios: ${required.map((m) => m.title).join(', ')}.`;
+      update(key, (x) => ({ submitting: false, fieldErrors: fe, errors: { ...x.errors, fields: text }, apiError: null }));
+      return { ok: false, kind: 'validation', error: text };
+    }
+    if (required) {
+      set({ requiredPrompt: { key, statusIdOverride: override, fields: required, source: 'server' } });
+      update(key, (x) => ({ submitting: false, fieldErrors: Object.fromEntries(required.map((m) => [m.slug, 'Campo obrigatório.'])), ...(keepApiError ? {} : { apiError: null }), errors: x.errors }));
+      return { ok: false, kind: 'required_fields', error: message };
+    }
+    if (Object.keys(byField).length > 0) {
+      update(key, (x) => ({ submitting: false, fieldErrors: byField, errors: { ...x.errors, fields: 'Revise os campos personalizados destacados no painel. O que você digitou foi mantido.' }, ...(keepApiError ? {} : { apiError: null }) }));
+      return { ok: false, kind: 'validation', error: Object.values(byField)[0] ?? message };
+    }
+    return null;
+  };
+
   const run = async (key: string, override: string | undefined, resolutionWindow?: ResolutionWindowInput): Promise<SubmitResult> => {
     let e = get().forms[key];
     if (!e) return { ok: false, kind: 'missing', error: 'Formulário não encontrado.' };
@@ -374,10 +464,11 @@ export const useFormStore = create<FormState>()((set, get) => {
     }
     const errors = validate(e);
     if (Object.keys(errors).length > 0) {
-      update(key, () => ({ errors, apiError: null }));
+      const missing = e.isNew ? pendingRequired(e.values) : [];
+      update(key, () => ({ errors, apiError: null, fieldErrors: Object.fromEntries(missing.map((m) => [m.slug, 'Campo obrigatório.'])) }));
       return { ok: false, kind: 'validation', error: Object.values(errors)[0] ?? 'Revise o formulário.' };
     }
-    update(key, () => ({ submitting: true, errors: {}, apiError: null }));
+    update(key, () => ({ submitting: true, errors: {}, fieldErrors: {}, apiError: null }));
     await useRefData.getState().refresh(); // grupos, usuários e gatilhos atuais (nunca lança)
     const snapshot = get().forms[key]!;
     const { values } = snapshot;
@@ -408,6 +499,8 @@ export const useFormStore = create<FormState>()((set, get) => {
           ccIds: values.ccIds,
           followerIds: values.followerIds,
           customFields: values.customFields,
+          formId: values.formId || undefined,
+          fieldValues: cleanValues(values.fieldValues),
           files: comment!.files,
           macroIds: snapshot.macroIds,
         };
@@ -419,9 +512,11 @@ export const useFormStore = create<FormState>()((set, get) => {
       }
     } catch (err) {
       if (err instanceof PartialUpdateError && err.ticket) {
-        settlePartial(key, snapshot, err);
-        return { ok: false, kind: 'api', error: err.message };
+        const newKey = settlePartial(key, snapshot, err);
+        return applyFieldFailure(newKey, false, err, override, true) ?? { ok: false, kind: 'api', error: err.message };
       }
+      const failure = applyFieldFailure(key, snapshot.isNew, err, override, false);
+      if (failure) return failure;
       const message = err instanceof Error ? err.message : 'Não foi possível enviar. Tente novamente.';
       update(key, () => ({ submitting: false, apiError: message }));
       return { ok: false, kind: 'api', error: message };
@@ -457,6 +552,7 @@ export const useFormStore = create<FormState>()((set, get) => {
       callNumber: '',
       submitting: false,
       errors: {},
+      fieldErrors: {},
       apiError: null,
     };
     if (created) {
@@ -482,11 +578,69 @@ export const useFormStore = create<FormState>()((set, get) => {
   return {
     forms: {},
     pendingClose: null,
+    requiredPrompt: null,
+    focusRequest: null,
 
     init: (key, ticket) => {
       if (get().forms[key]) return;
       void useRefData.getState().ensure();
       set((s) => ({ forms: { ...s.forms, [key]: newEntry(key, ticket) } }));
+      // Campos e formulários (só equipe) carregam uma vez; ticket novo já nasce no formulário padrão, com equipe e tipo dele.
+      void useRefData
+        .getState()
+        .ensureCustom()
+        .then(() => {
+          const e = get().forms[key];
+          if (!e || !e.isNew || e.values.formId) return;
+          const d = defaultFormValues();
+          if (!d.formId) return;
+          update(key, (x) => ({
+            values: { ...x.values, ...d, assigneeGroupId: x.values.assigneeGroupId || d.assigneeGroupId || '' },
+            original: { ...x.original, ...d, assigneeGroupId: x.original.assigneeGroupId || d.assigneeGroupId || '' },
+          }));
+        });
+    },
+
+    setFieldValue: (key, slug, value) =>
+      update(key, (e) => {
+        const fieldValues = { ...e.values.fieldValues };
+        if (isFilled(value)) fieldValues[slug] = value;
+        else delete fieldValues[slug];
+        const { [slug]: _gone, ...fieldErrors } = e.fieldErrors;
+        const errors = { ...e.errors };
+        if (Object.keys(fieldErrors).length === 0) delete errors.fields;
+        return { values: { ...e.values, fieldValues }, fieldErrors, errors };
+      }),
+
+    selectForm: (key, formId) =>
+      update(key, (e) => {
+        const forms = useRefData.getState().forms;
+        const next = forms.find((f) => f.id === formId);
+        const prev = forms.find((f) => f.id === e.values.formId);
+        const values = { ...e.values, formId };
+        if (e.isNew && next) {
+          // Equipe e tipo padrão do formulário valem enquanto o agente não escolheu outros: vazios, ainda os do formulário
+          // anterior, ou a equipe que veio sozinha da organização do solicitante.
+          const ref = useRefData.getState();
+          const orgGroup = ref.orgs.find((o) => o.id === ref.users.find((u) => u.id === values.requesterId)?.orgId)?.groupId;
+          if (next.defaultTeamId && (!values.assigneeGroupId || values.assigneeGroupId === prev?.defaultTeamId || values.assigneeGroupId === e.original.assigneeGroupId || values.assigneeGroupId === orgGroup)) values.assigneeGroupId = next.defaultTeamId;
+          if (next.defaultType && (!values.type || values.type === prev?.defaultType)) values.type = next.defaultType;
+        }
+        const errors = { ...e.errors };
+        delete errors.fields;
+        if (values.assigneeGroupId) delete errors.assignee;
+        return { values, errors, fieldErrors: {} };
+      }),
+
+    dismissRequired: () => set({ requiredPrompt: null }),
+
+    focusField: (key, slug) => set((s) => ({ requiredPrompt: null, focusRequest: { key, slug, seq: (s.focusRequest?.seq ?? 0) + 1 } })),
+
+    sendAnyway: async () => {
+      const prompt = get().requiredPrompt;
+      if (!prompt) return undefined;
+      set({ requiredPrompt: null });
+      return get().submit(prompt.key, prompt.statusIdOverride, undefined, { skipRequiredCheck: true });
     },
 
     patch: (key, partial) => {
@@ -567,10 +721,26 @@ export const useFormStore = create<FormState>()((set, get) => {
     },
 
     reset: (key) =>
-      update(key, (e) => ({ values: structuredClone(e.original), bodyHtml: '', bodyRev: e.bodyRev + 1, files: [], macroIds: [], callNumber: '', errors: {}, apiError: null })),
+      update(key, (e) => ({ values: structuredClone(e.original), bodyHtml: '', bodyRev: e.bodyRev + 1, files: [], macroIds: [], callNumber: '', errors: {}, fieldErrors: {}, apiError: null })),
 
-    submit: (key, statusIdOverride, resolutionWindow) => {
+    submit: (key, statusIdOverride, resolutionWindow, opts) => {
       lastOverride.set(key, statusIdOverride);
+      // Aviso antecipado (não bloqueia: o servidor continua sendo a fonte da verdade): ao resolver, lista os obrigatórios vazios.
+      if (!resolutionWindow && !opts?.skipRequiredCheck) {
+        const e = get().forms[key];
+        if (e && !e.isNew && !e.submitting) {
+          const statuses = useTickets.getState().statuses;
+          const target = statuses.find((s) => s.id === (statusIdOverride ?? e.values.statusId));
+          const current = statuses.find((s) => s.id === e.original.statusId);
+          if (target?.category === 'solved' && current?.category !== 'solved') {
+            const missing = pendingRequired(e.values);
+            if (missing.length > 0) {
+              set({ requiredPrompt: { key, statusIdOverride, fields: missing, source: 'client' } });
+              return Promise.resolve({ ok: false, kind: 'required_fields', error: `Faltam campos obrigatórios: ${missing.map((m) => m.title).join(', ')}.` });
+            }
+          }
+        }
+      }
       // Modo real: ao fechar (status resolvido), pede confirmação da janela de solução (franquia de horas).
       if (IS_REAL && !resolutionWindow) {
         const e = get().forms[key];
@@ -601,7 +771,7 @@ export const useFormStore = create<FormState>()((set, get) => {
       });
     },
 
-    clearErrors: (key) => update(key, () => ({ errors: {}, apiError: null })),
+    clearErrors: (key) => update(key, () => ({ errors: {}, fieldErrors: {}, apiError: null })),
 
     syncRelations: (key, ticket) => {
       const server = valuesFromTicket(ticket);

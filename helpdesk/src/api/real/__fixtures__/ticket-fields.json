@@ -1,0 +1,106 @@
+{
+  "count": 6,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "slug": "ag_front_contrato",
+      "title": "AG-front Contrato",
+      "description": "",
+      "type": "text",
+      "options": [],
+      "is_required": true,
+      "is_active": true,
+      "order": 0,
+      "is_system": false,
+      "values_count": 1,
+      "created_at": "2026-10-23T12:10:43.973293-03:00",
+      "updated_at": "2026-10-23T12:10:43.973317-03:00"
+    },
+    {
+      "id": 2,
+      "slug": "ag_front_severidade",
+      "title": "AG-front Severidade",
+      "description": "",
+      "type": "dropdown",
+      "options": [
+        {
+          "label": "Alta",
+          "value": "alta"
+        },
+        {
+          "label": "Baixa",
+          "value": "baixa"
+        }
+      ],
+      "is_required": false,
+      "is_active": true,
+      "order": 1,
+      "is_system": false,
+      "values_count": 1,
+      "created_at": "2026-10-23T12:10:44.012255-03:00",
+      "updated_at": "2026-10-23T12:10:44.012269-03:00"
+    },
+    {
+      "id": 3,
+      "slug": "ag_front_valor",
+      "title": "AG-front Valor",
+      "description": "",
+      "type": "number",
+      "options": [],
+      "is_required": false,
+      "is_active": true,
+      "order": 2,
+      "is_system": false,
+      "values_count": 1,
+      "created_at": "2026-10-23T12:10:44.051849-03:00",
+      "updated_at": "2026-10-23T12:10:44.051866-03:00"
+    },
+    {
+      "id": 4,
+      "slug": "ag_front_prazo",
+      "title": "AG-front Prazo",
+      "description": "",
+      "type": "date",
+      "options": [],
+      "is_required": false,
+      "is_active": true,
+      "order": 3,
+      "is_system": false,
+      "values_count": 1,
+      "created_at": "2026-10-23T12:10:44.091729-03:00",
+      "updated_at": "2026-10-23T12:10:44.091743-03:00"
+    },
+    {
+      "id": 5,
+      "slug": "ag_front_aceite",
+      "title": "AG-front Aceite",
+      "description": "",
+      "type": "checkbox",
+      "options": [],
+      "is_required": false,
+      "is_active": true,
+      "order": 4,
+      "is_system": false,
+      "values_count": 1,
+      "created_at": "2026-10-23T12:10:44.128580-03:00",
+      "updated_at": "2026-10-23T12:10:44.128592-03:00"
+    },
+    {
+      "id": 6,
+      "slug": "ag_front_obs",
+      "title": "AG-front Obs",
+      "description": "Observações",
+      "type": "textarea",
+      "options": [],
+      "is_required": false,
+      "is_active": true,
+      "order": 5,
+      "is_system": false,
+      "values_count": 0,
+      "created_at": "2026-10-23T12:10:44.164267-03:00",
+      "updated_at": "2026-10-23T12:10:44.164281-03:00"
+    }
+  ]
+}

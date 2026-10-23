@@ -41,7 +41,7 @@ Da lista anterior (11 itens) só o antigo item 6 (empresa e cliente exigem campo
 
 ### Funcionalidades que existem só no front (a criar no backend)
 
-Gatilhos editáveis, campos personalizados (inclui tópico, sentimento e idioma de IA), formulários de ticket e fusão (ticket, usuário, organização). Também: assunto e solicitante editados num ticket existente, e campos de status, macro, cliente e organização sem equivalente no backend.
+Gatilhos editáveis, fusão (ticket, usuário, organização) e os campos de IA do painel (resumo, tópico, sentimento e idioma; locais). Campos personalizados e formulários de ticket **saíram desta lista** (seção própria abaixo). Também: assunto e solicitante editados num ticket existente, e campos de status, macro, cliente e organização sem equivalente no backend.
 
 ### No front
 
@@ -50,7 +50,7 @@ Gatilhos editáveis, campos personalizados (inclui tópico, sentimento e idioma 
 3. **Paginação por visão: feito, com ressalva.** Visões com `query` (6 do Helpdesk menos `recent`/`solved-recent`, as do sistema e as pessoais) paginam de 100 em 100 com "Carregar mais" (verificado com 156 tickets: 100 de 149, depois 149, sem duplicados). **Histórico do cliente, painel do cliente no ticket e tickets da organização: resolvido**, vêm do servidor (`?requester=`/`?company=`; verificado: Ana 54, Beto 49, Acme 103, iguais às contagens do servidor, com mais de 100 na organização). **Ressalva (continua):** `recent` e `solved-recent` (locais) e as tags sugeridas contam apenas tickets já carregados e podem ficar incompletos com mais de 100 tickets. Filtros da gaveta numa visão paginada atuam só nas linhas carregadas. Seleção em lote atinge só linhas carregadas. `/ticket-views/?page=` não é usado: o array puro devolve todas as visões, e o front precisa do `count` de todas para o contador.
 4. **Abas de trabalho: `role=group` + `aria-current`, em vez de `tablist`/`tab`.** Trade-off: o brief 5.1 pedia `tablist` (e a violação `aria-required-children` do botão "Fechar aba" dentro do `tablist` era a única conhecida). Com `group` some a violação, mas as abas deixam de ter semântica de aba (sem "aba 1 de 3" nem `aria-selected`; a ordem de Tab continua a mesma). Não rodei axe (não está instalado); só inspecionei os papéis no navegador.
 5. **Menu ⋮ do ticket: feito, com ressalvas.** Criar macro vai ao backend (recusa nome repetido) e só aparece para quem tem `macro.manage` ou `settings.manage`; **apagar vai ao servidor** (só `settings.manage`; ver "Tipo, apagar, CC e seguidores, licenças e resumo de IA") e fundir segue **só local** ("somente neste navegador"); apagar, spam e fundir pedem confirmação. Suspender usa `PATCH /settings/users/{id}/` e depende do backend (nos dados de DEV os clientes sem telefone são recusados com "Informe ao menos um telefone"; o caminho de sucesso não foi verificado). Spam = suspender (se falhar, avisa que NÃO suspendeu) + apagar no servidor (só admin); não existe spam no backend.
-6. **Início do admin: feito.** Execuções/sem uso mostram — quando o backend não envia contadores. Licenças vêm do servidor (`/settings/licenses/`, barra "N de total" ou "N (sem limite)"); os "tetos" de campos (20) e gatilhos (10) continuam locais e sinalizados. A Visão geral da conta mostra as licenças do servidor.
+6. **Início do admin: feito.** Execuções/sem uso mostram — quando o backend não envia contadores. Licenças vêm do servidor (`/settings/licenses/`, barra "N de total" ou "N (sem limite)"); o teto de gatilhos (10) continua local e sinalizado; o de campos agora é o limite real do backend (60 ativos). A Visão geral da conta mostra as licenças do servidor.
 7. **Conta, Canais e Espaços: páginas informativas** (sem edição). Conta = sessão + agentes ativos; Canais = texto explicativo; Espaços = layouts (texto) + atalhos reais. Marca/cobrança/SSO seguem fora.
 8. **Visualizações pessoais: feito.** Criar/editar/clonar/apagar via `/ticket-views/` e filtros da gaveta (prioridade, status, assunto, solicitante, período) gravados e reidratados ao reabrir; verificado com curl. Tags não têm par no backend e não são gravadas; o tipo também não é gravado na visão pessoal (o backend recusa `type` em `filters`), mas o filtro de tipo da gaveta vai ao servidor ao listar. Clonar visão do Helpdesk/sistema grava `{view: slug}`.
 
@@ -92,6 +92,21 @@ Ressalvas: o 409 de horas lançadas, o 403 (agente não admin), o 429/502 do res
 - `type` não está na lista `VALIDADORES` de `SavedTicketView.filters`: visão pessoal não consegue gravar filtro de tipo (400 "Filtro desconhecido").
 - A mensagem de 409 `seat_limit_reached` cita "Configurações > Licenças", que não existe no Helpdesk.
 - Eventos de auditoria de propriedade (tipo, CC, seguidor, apagar) usam o mesmo formato de evento de status (`from_status` = `to_status` com `note`); o front precisa deduzir pelo `note` que não é troca de status.
+
+## Campos personalizados e formulários: feito
+
+`capabilities` `customFields` e `forms` são `'real'` (detalhes, contrato e ressalvas em `src/api/PENDENTE_NO_BACKEND.md`). Só equipe: cliente nunca vê. Admin > Campos e Admin > Formulários (CRUD, ordem, padrão, clonar, 409 com sugestão de desativar), painel do ticket com os campos do formulário (controle por tipo, obrigatório, valor salvo no mesmo `PATCH` das outras propriedades, troca de formulário), ticket novo com formulário (equipe/tipo padrão, obrigatórios validados antes de enviar) e fechar/resolver com diálogo de pendências quando falta obrigatório (cliente antecipa; servidor decide), inclusive no fechamento em lote. Verificado no navegador contra o backend novo (porta 8031, dados `AG-front`); 400 por campo e 403 foram verificados com resposta simulada.
+
+Ressalvas:
+- `custom_fields` não vem na lista, só no detalhe; não há coluna nem filtro por campo personalizado nas listas (nunca existiu no Helpdesk). `?cf_<slug>=` existe no backend, sem uso no front.
+- Isenções do backend: ticket criado pelo cliente, cliente encerrando o próprio ticket, fechamento automático, importação e conversão de chat não exigem obrigatórios.
+- O `failed[]` do `bulk-close` traz o motivo só em texto; os nomes dos campos são extraídos dele.
+- Os campos de IA do painel seguem locais ("somente neste navegador") e aparecem em Admin > Campos como "Campo padrão".
+- Ao trocar o formulário padrão pela tela, o antigo padrão com tickets só pode ser desativado, não apagado.
+
+### Defeitos/observações do backend (campos e formulários)
+- `bulk-close` devolve `failed[].detail` só em texto para `required_custom_fields` (sem `fields[]` estruturado, ao contrário de `close/` e `reply`).
+- O erro 400 de campo personalizado vem como objeto aninhado (`{custom_fields:{slug:msg}}`), diferente do formato `{campo:[msg]}` do resto da API.
 
 ## Decisão em aberto
 
