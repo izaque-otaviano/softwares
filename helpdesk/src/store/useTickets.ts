@@ -41,6 +41,14 @@ export function keepDetails(prev: Ticket[], next: Ticket[]): Ticket[] {
   });
 }
 
+/** Pedido de fechamento em lote: os tickets que de fato fecham e os que já estavam fechados (ignorados). */
+export interface BulkCloseRequest {
+  statusId: string;
+  ids: number[];
+  skippedIds: number[];
+  onDone?: () => void;
+}
+
 interface TicketsState {
   tickets: Ticket[];
   statuses: TicketStatus[];
@@ -56,6 +64,11 @@ interface TicketsState {
   viewMeta: Record<string, { total: number; loaded: number; hasMore: boolean }>;
 
   load: () => Promise<void>;
+  /**
+   * Modo real: traz do servidor TODOS os tickets de um cliente (`?requester=`) ou organização (`?company=`) e os junta à
+   * store, para o histórico não depender dos 100 primeiros da lista inicial. No mock a store já tem tudo (não faz nada).
+   */
+  loadRelated: (filter: { requesterId?: string; orgId?: string }) => Promise<void>;
   /** Só modo real: carrega do servidor a lista de uma visão com `query` (visões do sistema extras e pessoais). */
   loadView: (viewId: string, opts?: { limit?: number }) => Promise<void>;
   loadMoreView: (viewId: string) => Promise<void>;
@@ -83,6 +96,16 @@ interface TicketsState {
   /** Ação em lote (servidor no modo real). `true` só se TODOS foram alterados; as falhas por ticket vão em toast. */
   assignToMe: (ids: number[]) => Promise<boolean>;
   setStatus: (ids: number[], statusId: string) => Promise<boolean>;
+  /** Fechamento em lote aguardando a confirmação no diálogo (`null` = nenhum). */
+  bulkClose: BulkCloseRequest | null;
+  /**
+   * Muda o status de vários tickets. Se o destino é uma categoria resolvida, abre o diálogo de confirmação do lote
+   * (janela de cada ticket) em vez de gravar direto; `onDone` roda quando TODOS foram alterados.
+   */
+  requestSetStatus: (ids: number[], statusId: string, onDone?: () => void) => Promise<void>;
+  cancelBulkClose: () => void;
+  /** Confirma o lote com as janelas aprovadas: devolve o que fechou e as falhas por ticket (o diálogo as mostra). */
+  submitBulkClose: (resolutions: api.BulkResolution[]) => Promise<{ updated: number; failed: { id: number; message: string }[] }>;
   setPriority: (ids: number[], priority: Priority) => Promise<boolean>;
   deleteTickets: (ids: number[]) => Promise<boolean>;
   mergeTickets: (targetId: number, sourceIds: number[]) => Promise<boolean>;
@@ -99,6 +122,9 @@ export function localFieldsNote(t: Ticket): string {
   if (!IS_REAL || !t.localFields?.length) return '';
   return ` (${t.localFields.map((k) => FIELD_LABEL[k] ?? k).join(', ')}: somente neste navegador)`;
 }
+
+/** Históricos (cliente/organização) em carregamento: pedidos iguais compartilham a chamada. */
+const relatedLoads = new Map<string, Promise<void>>();
 
 /** Visões do servidor em carregamento (evita pedido duplicado). */
 const viewLoads = new Set<string>();
@@ -118,6 +144,17 @@ export const useTickets = create<TicketsState>()((set, get) => {
   /** Modo real: depois de qualquer escrita os contadores do servidor mudaram. */
   const afterWrite = () => {
     if (IS_REAL) void get().refreshCounts(true);
+  };
+  /** Executa a ação em lote e aplica o resultado na store. Devolve o resultado, ou o erro se a chamada toda falhou. */
+  const runBulk = async (ids: number[], change: api.BulkChange): Promise<{ result: api.BulkResult } | { error: string }> => {
+    try {
+      const result = await api.bulkUpdate(ids, change);
+      upsert(result.updated);
+      afterWrite();
+      return { result };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : 'Não foi possível concluir o fechamento. Tente novamente.' };
+    }
   };
   const bulk = async (ids: number[], change: api.BulkChange, okMessage: string): Promise<boolean> => {
     let result: api.BulkResult;
@@ -156,6 +193,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
     error: null,
     viewIds: {},
     viewMeta: {},
+    bulkClose: null,
 
     load: async () => {
       set({ loading: true, error: null });
@@ -205,6 +243,20 @@ export const useTickets = create<TicketsState>()((set, get) => {
       if (!quiet) set({ counts: nullCounts(get().views) });
       const { views, tickets, statuses } = get();
       set({ counts: mergeCounts(views, tickets, ctx(statuses), await api.getViewCounts()) });
+    },
+
+    loadRelated: async (filter) => {
+      if (!IS_REAL) return;
+      // Pedidos iguais em voo (StrictMode, painel + perfil abertos) compartilham a mesma chamada.
+      const key = `${filter.requesterId ?? ''}|${filter.orgId ?? ''}`;
+      const running = relatedLoads.get(key);
+      if (running) return running;
+      const promise = api
+        .listTickets(filter)
+        .then((list) => upsert(list))
+        .finally(() => relatedLoads.delete(key));
+      relatedLoads.set(key, promise);
+      return promise;
     },
 
     loadView: async (viewId, opts) => {
@@ -366,6 +418,44 @@ export const useTickets = create<TicketsState>()((set, get) => {
 
     assignToMe: (ids) => bulk(ids, { assigneeId: getMeId() }, ids.length === 1 ? `Ticket #${ids[0]} atribuído a você` : `${ids.length} tickets atribuídos a você`),
     setStatus: (ids, statusId) => bulk(ids, { statusId }, `Status alterado em ${ids.length} ${ids.length === 1 ? 'ticket' : 'tickets'}`),
+    requestSetStatus: async (ids, statusId, onDone) => {
+      const { statuses, tickets } = get();
+      const target = statuses.find((s) => s.id === statusId);
+      if (target?.category !== 'solved') {
+        if (await get().setStatus(ids, statusId)) onDone?.();
+        return;
+      }
+      // Fechar pede a janela da solução: tickets já fechados não entram (o backend os recusaria).
+      const closedIds = new Set(tickets.filter((t) => ids.includes(t.id) && statuses.find((s) => s.id === t.statusId)?.category === 'solved').map((t) => t.id));
+      const todo = ids.filter((id) => !closedIds.has(id));
+      if (todo.length === 0) {
+        toast.info(ids.length === 1 ? 'O ticket já está fechado.' : 'Os tickets selecionados já estão fechados.');
+        onDone?.();
+        return;
+      }
+      set({ bulkClose: { statusId, ids: todo, skippedIds: ids.filter((id) => closedIds.has(id)), onDone } });
+    },
+
+    cancelBulkClose: () => set({ bulkClose: null }),
+
+    submitBulkClose: async (resolutions) => {
+      const req = get().bulkClose;
+      if (!req) return { updated: 0, failed: [] };
+      const ids = resolutions.map((r) => r.id);
+      const outcome = await runBulk(ids, { statusId: req.statusId, resolutions });
+      if ('error' in outcome) return { updated: 0, failed: ids.map((id) => ({ id, message: outcome.error })) };
+      const { result } = outcome;
+      if (result.updated.length > 0) toast.success(result.updated.length === 1 ? 'Ticket fechado' : `${result.updated.length} tickets fechados`);
+      if (result.failed.length === 0) {
+        set({ bulkClose: null });
+        req.onDone?.();
+      } else {
+        // O diálogo fica aberto só com os que falharam (e o motivo de cada um).
+        set({ bulkClose: { ...req, ids: result.failed.map((f) => f.id) } });
+      }
+      return { updated: result.updated.length, failed: result.failed };
+    },
+
     setPriority: (ids, priority) => bulk(ids, { priority }, `Prioridade alterada em ${ids.length} ${ids.length === 1 ? 'ticket' : 'tickets'}`),
 
     deleteTickets: async (ids) => {

@@ -89,11 +89,24 @@ const FALLBACK_BY_STATUS: Record<number, string> = {
 const asList = (v: unknown): string[] =>
   (Array.isArray(v) ? v : [v]).filter((x) => x !== null && x !== undefined && x !== '').map((x) => (typeof x === 'string' ? x : JSON.stringify(x)));
 
-/** Converte o corpo de erro do Resolv ({detail} | {campo:[msg]} | {campo:msg} | [msg]) em ApiError. */
-export function toApiError(status: number, body: unknown): ApiError {
+/** Segundos de espera do cabeçalho `Retry-After` (inteiro ou data HTTP). `undefined` se ausente ou inválido. */
+export function parseRetryAfter(value: string | null | undefined, now: number = Date.now()): number | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - now) / 1000));
+}
+
+/**
+ * Converte o corpo de erro do Resolv ({detail} | {campo:[msg]} | {campo:msg} | [msg]) em ApiError.
+ * A espera do 429 vem do cabeçalho `Retry-After` (`headers`) ou de `retry_after` no corpo.
+ */
+export function toApiError(status: number, body: unknown, headers?: Pick<Headers, 'get'> | null): ApiError {
   let message: string | undefined;
   let code: string | undefined;
   let fieldErrors: Record<string, string[]> | undefined;
+  let retryAfter = parseRetryAfter(headers?.get('Retry-After'));
   if (typeof body === 'string' && body.trim() && !body.trimStart().startsWith('<')) {
     message = body.trim();
   } else if (Array.isArray(body)) {
@@ -101,10 +114,11 @@ export function toApiError(status: number, body: unknown): ApiError {
   } else if (body && typeof body === 'object') {
     const obj = body as Record<string, unknown>;
     if (typeof obj.code === 'string') code = obj.code;
+    if (retryAfter === undefined && typeof obj.retry_after === 'number' && Number.isFinite(obj.retry_after) && obj.retry_after >= 0) retryAfter = Math.ceil(obj.retry_after);
     if (typeof obj.detail === 'string' && obj.detail) message = obj.detail;
     const fields: Record<string, string[]> = {};
     for (const [key, value] of Object.entries(obj)) {
-      if (key === 'detail' || key === 'code') continue;
+      if (key === 'detail' || key === 'code' || key === 'retry_after') continue;
       const list = asList(value);
       if (list.length > 0) fields[key] = list;
     }
@@ -123,6 +137,7 @@ export function toApiError(status: number, body: unknown): ApiError {
     code,
     fieldErrors,
     body,
+    retryAfter,
   });
 }
 
@@ -180,7 +195,7 @@ export async function request<T = unknown>(path: string, opts: RequestOptions = 
   const data = await readBody(res);
   if (!res.ok) {
     if (res.status === 401 && !opts.skipUnauthorized) unauthorizedHandlers.forEach((h) => h());
-    throw toApiError(res.status, data);
+    throw toApiError(res.status, data, res.headers);
   }
   return data as T;
 }

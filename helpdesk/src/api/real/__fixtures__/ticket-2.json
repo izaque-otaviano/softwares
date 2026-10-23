@@ -18,6 +18,8 @@
     "internal_only": false
   },
   "requester_display": "Beto Barros",
+  "requester_id": 6,
+  "company_id": 1,
   "assignee_name": "Samuel Suporte",
   "assignee_avatar": null,
   "assignee_id": 3,
@@ -59,6 +61,7 @@
   "messages": [
     {
       "id": 1,
+      "author_id": 6,
       "author_name": "Beto Barros",
       "author_avatar": null,
       "author_is_internal": false,
@@ -76,6 +79,7 @@
     },
     {
       "id": 2,
+      "author_id": 3,
       "author_name": "Samuel Suporte",
       "author_avatar": null,
       "author_is_internal": true,

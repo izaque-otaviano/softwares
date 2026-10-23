@@ -110,6 +110,20 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
   const tickets = useTickets((s) => s.tickets);
   const loaded = useTickets((s) => s.loaded);
   const ticketsError = useTickets((s) => s.error);
+  const [historyLoading, setHistoryLoading] = useState(IS_REAL);
+  const [historyError, setHistoryError] = useState(false);
+  // Modo real: o histórico vem do servidor (`?requester=`), não só dos 100 primeiros tickets da lista inicial.
+  const loadHistory = useCallback(() => {
+    if (!IS_REAL) return;
+    setHistoryError(false);
+    setHistoryLoading(true);
+    useTickets
+      .getState()
+      .loadRelated({ requesterId: user.id })
+      .catch(() => setHistoryError(true))
+      .finally(() => setHistoryLoading(false));
+  }, [user.id]);
+  useEffect(loadHistory, [loadHistory]);
   const requested = useMemo(() => tickets.filter((t) => t.requesterId === user.id), [tickets, user.id]);
   const cc = useMemo(() => tickets.filter((t) => t.ccIds.includes(user.id)), [tickets, user.id]);
 
@@ -276,8 +290,8 @@ function CustomerProfile({ user, onUserChange }: { user: User; onUserChange: (u:
               tableId="customer-tickets"
               requested={requested}
               cc={cc}
-              loading={!loaded && !ticketsError}
-              error={ticketsError && !loaded ? { message: 'Não foi possível carregar os tickets.', onRetry: () => void useTickets.getState().load() } : undefined}
+              loading={(!loaded && !ticketsError) || historyLoading}
+              error={historyError ? { message: 'Não foi possível carregar os tickets deste cliente.', onRetry: loadHistory } : ticketsError && !loaded ? { message: 'Não foi possível carregar os tickets.', onRetry: () => void useTickets.getState().load() } : undefined}
             />
           </TabsContent>
           <TabsContent value="related">

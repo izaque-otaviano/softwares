@@ -1,0 +1,282 @@
+{
+ "kpis": [
+  {
+   "key": "opened",
+   "label": "Tickets abertos",
+   "description": "Total de tickets abertos no período.",
+   "unit": "count",
+   "direction": null,
+   "value": 175,
+   "variation": null
+  },
+  {
+   "key": "resolved",
+   "label": "Tickets resolvidos",
+   "description": "Tickets que foram fechados dentro do período.",
+   "unit": "count",
+   "direction": "up",
+   "value": 27,
+   "variation": null
+  },
+  {
+   "key": "resolved_on_time",
+   "label": "Tickets resolvidos no prazo",
+   "description": "Fechados antes do vencimento do SLA de solução.",
+   "unit": "count",
+   "direction": "up",
+   "value": 25,
+   "variation": null
+  },
+  {
+   "key": "first_response",
+   "label": "Tempo médio de primeira resposta",
+   "description": "Da abertura até a primeira resposta pública de um agente.",
+   "unit": "seconds",
+   "direction": "down",
+   "value": 5866.923076923077,
+   "variation": null
+  },
+  {
+   "key": "resolution",
+   "label": "Tempo médio de resolução",
+   "description": "Da abertura ao fechamento, dos tickets fechados no período.",
+   "unit": "seconds",
+   "direction": "down",
+   "value": 4098.259259259259,
+   "variation": null
+  },
+  {
+   "key": "csat",
+   "label": "Nota média de satisfação",
+   "description": "Média das respostas da pesquisa recebidas no período (0 a 10).",
+   "unit": "score",
+   "direction": "up",
+   "value": null,
+   "variation": null
+  }
+ ],
+ "by_status": [
+  {
+   "key": "new",
+   "label": "Novo",
+   "value": 141
+  },
+  {
+   "key": "open",
+   "label": "Aberto",
+   "value": 7
+  },
+  {
+   "key": "pending_customer",
+   "label": "Aguardando retorno",
+   "value": 1
+  },
+  {
+   "key": "closed",
+   "label": "Fechado",
+   "value": 26
+  }
+ ],
+ "by_priority": [
+  {
+   "key": "low",
+   "label": "Baixa",
+   "value": 5
+  },
+  {
+   "key": "normal",
+   "label": "Normal",
+   "value": 162
+  },
+  {
+   "key": "high",
+   "label": "Alta",
+   "value": 7
+  },
+  {
+   "key": "urgent",
+   "label": "Urgente",
+   "value": 1
+  }
+ ],
+ "first_response": [
+  {
+   "key": "no_sla",
+   "label": "Sem SLA",
+   "value": 6
+  },
+  {
+   "key": "on_time",
+   "label": "No prazo",
+   "value": 8
+  },
+  {
+   "key": "late",
+   "label": "Fora do prazo",
+   "value": 0
+  },
+  {
+   "key": "waiting",
+   "label": "Aguardando resposta",
+   "value": 161
+  }
+ ],
+ "resolution": [
+  {
+   "key": "undefined",
+   "label": "Não definido",
+   "value": 2
+  },
+  {
+   "key": "on_time",
+   "label": "No prazo",
+   "value": 25
+  },
+  {
+   "key": "late",
+   "label": "Fora do prazo",
+   "value": 0
+  }
+ ],
+ "resolved_by_agent": [
+  {
+   "label": "Alice Admin",
+   "value": 19
+  },
+  {
+   "label": "Samuel Suporte",
+   "value": 4
+  },
+  {
+   "label": "Sem responsável",
+   "value": 4
+  }
+ ],
+ "timeline": [
+  {
+   "date": "2026-10-14",
+   "opened": 1,
+   "resolved": 1,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-15",
+   "opened": 0,
+   "resolved": 0,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-16",
+   "opened": 0,
+   "resolved": 0,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-17",
+   "opened": 1,
+   "resolved": 0,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-18",
+   "opened": 0,
+   "resolved": 1,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-19",
+   "opened": 0,
+   "resolved": 0,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-20",
+   "opened": 1,
+   "resolved": 0,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-21",
+   "opened": 1,
+   "resolved": 0,
+   "resolved_on_time": 0,
+   "reopened": 0
+  },
+  {
+   "date": "2026-10-22",
+   "opened": 171,
+   "resolved": 25,
+   "resolved_on_time": 25,
+   "reopened": 8
+  }
+ ],
+ "satisfaction": {
+  "resolved": 27,
+  "answers": 0,
+  "average": null,
+  "distribution": [
+   {
+    "score": 0,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 1,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 2,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 3,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 4,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 5,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 6,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 7,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 8,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 9,
+    "count": 0,
+    "percent": 0.0
+   },
+   {
+    "score": 10,
+    "count": 0,
+    "percent": 0.0
+   }
+  ]
+ }
+}

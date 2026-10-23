@@ -25,7 +25,7 @@ edição (`Ticket.localFields`).
 | Chave | Situação | De onde vem |
 | --- | --- | --- |
 | `auth` | real | `/auth/login/`, `/auth/2fa/`, `/auth/me/`, `/auth/logout/`. |
-| `tickets` | real (leitura) | `GET /tickets/` (só a 1ª página, `HOME_PAGE`=100, no boot; o resto vem por visão) e `GET /tickets/{id}/` (detalhe sob demanda, também quando o ticket não está na lista). |
+| `tickets` | real (leitura) | `GET /tickets/` (só a 1ª página, `HOME_PAGE`=100, no boot; o resto vem por visão), `GET /tickets/{id}/` (detalhe sob demanda, também quando o ticket não está na lista) e `GET /tickets/?requester=`/`?company=` (histórico do cliente e da organização, até 500). A lista traz `requester_id`/`company_id` e as mensagens `author_id`: nada é casado por nome. |
 | `views` | real (leitura) | `GET /tickets/resumo/` (contadores), `GET /ticket-views/` (pessoais), `GET /tickets/?view=<slug>` (visões do sistema extras e pessoais, avaliadas no servidor). |
 | `statuses` | real (leitura) | `GET /settings/statuses/` (stages; a categoria `closed` = Resolvido, `pending_customer` = Pendente). |
 | `groups` | real (leitura) | `GET /settings/teams/roster/` (cai em `/teams/` sem permissão). |
@@ -40,17 +40,17 @@ edição (`Ticket.localFields`).
 
 | Ação no Helpdesk | Chamadas ao backend |
 | --- | --- |
-| Criar ticket | `POST /tickets/` (multipart se houver anexos: equipe, assunto, corpo em markdown, prioridade, solicitante) + `PATCH` (responsável, etiquetas) + `follow` + `apply-macro` + `bulk-status`/`close` (status), só as que forem necessárias |
+| Criar ticket | **1 chamada**: `POST /tickets/` (multipart se houver anexos: equipe, assunto, corpo em markdown, prioridade, solicitante, `assignee`, `stage`, `tags` por id, `is_public:false` para observação interna). Só o que o POST não cobre vai depois: `follow`, `apply-macro` e, se nasce fechado, `close/` |
 | Responder (público) | `POST /tickets/{id}/reply/` com `new_status` derivado do status escolhido (`open`, `pending_customer`, `closed`; "Novo" vira `open`), markdown e anexos em multipart |
 | Observação interna / chamada | `reply` com `is_public:false` (não muda status) |
-| Mudar status | categoria igual à do stage de fábrica: `reply`; stage personalizado: `reply` + `bulk-status`; sem texto: `bulk-status` (novo/aberto/pendente) ou `close/` (resolvido) |
-| Fechar | `close/` ou `reply` com `new_status:closed`, sempre com a janela da solução (abaixo) |
+| Mudar status | com resposta pública: um `reply` com `new_status` + `stage` (personalizado ou de fábrica; só "Novo" precisa de `bulk-status` depois); sem texto ou com nota interna: `bulk-status` (novo/aberto/pendente) ou `close/` (resolvido) |
+| Fechar | `close/` ou `reply` com `new_status:closed`, sempre com a janela da solução (abaixo) e `stage` do status escolhido (personalizado da categoria fechada ou de fábrica) |
 | Atribuir / aceitar, prioridade, grupo, etiquetas | um `PATCH /tickets/{id}/` (`assignee`, `priority`, `team`, `tags` por id) |
 | Seguir / deixar de seguir | `follow/` e `unfollow/` (só o próprio usuário) |
 | Macro | `apply-macro` no envio (soma categoria/prioridade/responsável/etiquetas e registra o evento); o texto é inserido no compositor com `{{solicitante}}`, `{{empresa}}`, `{{referencia}}` preenchidos |
-| Ações em lote | `bulk-assign`, `bulk-priority`, `bulk-status`; "resolvido" = um `close/` por ticket; falhas por ticket em `failed[]` |
-| Admin: status | `POST/PATCH /settings/statuses/` (nome, cor hex, categoria na criação, `is_active`) |
-| Admin: macros | `POST/PATCH/DELETE /settings/ticket-macros/` (corpo markdown, prioridade, etiquetas por id, ativo) |
+| Ações em lote | `bulk-assign`, `bulk-priority`, `bulk-status`, todos com `report_missing:true`; "resolvido" = `bulk-close` com `items:[{id, resolution_started_at, resolution_ended_at}]` depois do diálogo de confirmação (um `close/` por ticket só para status personalizado fechado); falhas por ticket em `failed[]`, mostradas no diálogo |
+| Admin: status | `POST/PATCH /settings/statuses/` (nome, cor hex, categoria na criação, `is_active`); os 400 (nome repetido, categoria com tickets, status de fábrica) aparecem no campo certo do formulário |
+| Admin: macros | `POST/PATCH/DELETE /settings/ticket-macros/` (corpo markdown, prioridade, etiquetas por id, ativo); só para quem tem `macro.manage` ou `settings.manage` em `me.permissions` |
 | Admin: membros | `POST /settings/teams/{id}/agents/` (com grupo) ou `POST /settings/users/` (interno); o backend envia o convite. Suspender = `is_active:false` |
 | Organizações | `POST/PATCH/DELETE /settings/companies/` (slug derivado do nome, plano escolhido no modal; apagar = desativar, some da lista) |
 | Clientes | `POST/PATCH/DELETE /settings/users/` (exige organização e telefone, pedidos no modal; apagar = desativar) |
@@ -67,21 +67,32 @@ apagar) vão ao backend (`/ticket-views/`); abas abertas e itens recentes seguem
 
 - **Sem transação entre chamadas.** `planTicketUpdate` (`real/mappers/outbound.ts`, pura e testada) monta os passos na
   ORDEM SEGURA: macro, propriedades (idempotentes e validadas cedo), seguir, mensagem (a única que duplica se repetida),
-  estágio personalizado. Falha no meio vira `PartialUpdateError`: "Aplicado: prioridade, etiquetas. Não aplicado:
+  status por coluna (`bulk-status`, só quando não há resposta pública nem fechamento: o `reply` e o `close/` já levam o `stage`). Falha no meio vira `PartialUpdateError`: "Aplicado: prioridade, etiquetas. Não aplicado:
   mensagem. Motivo: ...". O formulário mantém o texto ainda não gravado, trata o que valeu como aplicado (`original`) e o
   "Tentar novamente" refaz o plano contra o estado do servidor, mandando SÓ o que falta (mensagem já gravada não volta;
   ticket criado a meio vira a aba do ticket real e a repetição atualiza, nunca cria outro). Resposta perdida (rede/5xx)
   na mensagem: confere o ticket antes de permitir repetir. Toast de sucesso: "Ticket #N foi atualizado".
 - **Fechar (D4).** O backend exige `resolution_started_at`/`resolution_ended_at` (criação <= início <= fim <= agora, no
   minuto) e soma a janela na franquia de horas de manutenção da empresa. Pela tela do ticket o Helpdesk abre o diálogo
-  `CloseResolutionModal`; no fechamento em lote NÃO abre diálogo e usa a sugestão que o próprio backend documenta (D4):
-  início = primeira transição para "Aberto" do ciclo atual (depois da última reabertura), senão a criação; fim = agora no minuto. Em lote cada ticket tem a sua janela (`close/`
-  por ticket). Se o relógio do navegador estiver adiantado em mais de 1 min o backend responde "Término no futuro" e a
-  mensagem aparece. Diálogo de confirmação (`CloseResolutionModal`) com início/término editáveis; a sugestão D4 pré-preenche os campos (verificado no navegador contra o backend real).
+  `CloseResolutionModal` (início/término editáveis, pré-preenchidos com a sugestão D4 que o próprio backend documenta:
+  início = primeira transição para "Aberto" do ciclo atual, senão a criação; fim = agora no minuto). O status escolhido
+  vai em `stage` (`close/` e `reply` com `new_status:closed`); sem `stage` o backend usa o "Fechado" de fábrica.
+  **Em lote** ("Mudar status" > status resolvido, ou "Marcar como resolvido" numa linha) abre `BulkCloseModal` (também no
+  mock): quantidade, política (cada ticket usa a sua janela sugerida), início e fim de cada ticket e um término comum
+  editável (validado por ticket com as mesmas regras do backend). Confirmando, um `POST /tickets/bulk-close/` com
+  `items:[{id, resolution_started_at, resolution_ended_at}]`; falhas por ticket (`failed[]`, inclusive id inexistente via
+  `report_missing:true`) ficam no diálogo com o motivo de cada uma e "Tentar novamente" reenvia só elas. Tickets já
+  fechados ficam fora do lote (o diálogo avisa). O `bulk-close` não tem `stage`: para um status personalizado fechado o
+  lote faz um `close/` com `stage` por ticket. Se o relógio do navegador estiver adiantado em mais de 1 min o backend
+  responde "Término no futuro" e a mensagem aparece.
 - **Reabrir** só por resposta pública: mudar de "resolvido" para outro status sem mensagem é recusado ANTES de qualquer
-  chamada, com a explicação. Responder publicamente num ticket fechado reabre (`new_status:open`).
-- **Descrição como observação interna** em ticket novo não existe (o `POST` publica o corpo): é recusado antes de criar,
-  para nunca vazar texto interno ao cliente.
+  chamada, com a explicação. Responder publicamente num ticket fechado reabre (`new_status:open`); o backend troca a
+  coluna para o "Aberto" de fábrica ou para o `stage` escolhido (o front envia `stage` quando o usuário escolheu um status).
+- **Criar ticket triado.** `POST /tickets/` recebe `assignee`, `stage` (status por coluna, inclusive personalizado; o
+  "Novo" de fábrica não é enviado), `tags` (ids; multipart repete o campo) e `is_public:false` (a descrição vira
+  observação interna, que o cliente nunca vê). O backend confere tudo antes de gravar: recusa = 400 e NENHUM ticket
+  criado. Status de categoria fechada não vai no POST (pede as datas da solução): o ticket nasce e um `close/` com a
+  janela e o `stage` vem em seguida. Sem a permissão `ticket.edit_properties` o front não auto-atribui o criador.
 - **Corpo das mensagens: HTML do Tiptap -> markdown** (`mappers/htmlToMarkdown.ts`). Escolha: serializador próprio sobre
   `DOMParser` (~200 linhas, sem dependência). `turndown` (~30 kB), `prosemirror-markdown` (+ markdown-it) e
   `tiptap-markdown` (terceiros) duplicariam o `marked` da leitura e o Tiptap v2 não traz serializador oficial; o editor só
@@ -96,26 +107,36 @@ apagar) vão ao backend (`/ticket-views/`); abas abertas e itens recentes seguem
   tickets reais (que o servidor não conhece e que sumiriam). Os gatilhos continuam editáveis (faixa "somente neste
   navegador, não disparam"). No mock tudo segue como antes.
 - **Permissões.** 403 vira "Você não tem permissão para esta ação." + motivo do backend (telas de Admin e envio mantêm o
-  que foi digitado). `settings.manage` ausente: criar etiqueta é recusado sem chamar o backend.
+  que foi digitado). `settings.manage` ausente: criar etiqueta é recusado sem chamar o backend. `me.permissions` fica na
+  sessão (`lib/permissions.ts`): sem `macro.manage` nem `settings.manage` o agente não vê criar/editar/excluir macro
+  (a lista e a tela da macro ficam só para leitura); sem `ticket.add_internal_note` a criação como observação interna é
+  recusada antes de chamar o backend.
+- **Admin de status: erros do backend no formulário.** 400 `name` (nome repetido), `category` (troca com tickets em uso) e
+  `is_active` (status de fábrica) aparecem no campo certo ou em faixa, sem perder o digitado. A UI já avisa antes: status de
+  fábrica mostra "De fábrica", "Desativar" fica desabilitado e a categoria trava com a explicação; status personalizado em
+  uso (`ticket_count` > 0) trava a categoria com a contagem.
+- **Limite de login (429).** `toApiError` lê `Retry-After` (segundos ou data) e `retry_after` do corpo; a tela de login mostra o
+  `detail` do backend, a espera com contagem regressiva e mantém o botão desabilitado até o fim.
 - **Contadores** do servidor são recarregados depois de cada escrita; a store não perde mensagens já carregadas quando a
   lista enxuta volta (`keepDetails`).
 
-### Problemas do backend encontrados nas escritas (sem mudar o backend)
+### Problemas do backend nas escritas
 
-1. `POST /tickets/` só aceita equipe, assunto, corpo, prioridade e solicitante, e o corpo vira mensagem PÚBLICA:
-   responsável, status, etiquetas e seguir exigem 1 a 3 chamadas extras e não há como criar com nota interna.
-2. `bulk-close` usa UMA janela para todos e recusa o lote inteiro se algum ticket foi criado depois do início: o
-   Helpdesk fecha ticket a ticket. Não há endpoint que devolva a janela sugerida (D4); a janela entra na franquia de
-   manutenção, então um default mal escolhido altera consumo de horas.
-3. `bulk-priority` ignora em silêncio ids que não existem/não enxerga (não aparecem em `failed[]`).
-4. `PATCH /settings/statuses/{id}/` aceita `is_active:false` num status de FÁBRICA (o `DELETE` recusa); trocar a categoria
-   de um status personalizado também passa. Nomes de status repetidos são aceitos.
-5. `me.permissions` do agente inclui `macro.manage`, mas `POST /settings/ticket-macros/` responde 403 "Apenas
-   administradores"; a lista de permissões não reflete a regra real.
-6. Fechar sempre cai no stage de fábrica "Fechado": um stage personalizado da categoria fechada não é alcançável.
-7. `POST /settings/companies/` exige `slug` (o front precisa derivar) e `plan`; cliente exige `company` e telefone. O
-   convite é enviado na criação (sem `invite_status` além de pendente/aceito).
-8. Login: throttle de 20/h e `axes` atrapalham automação de testes (429), sem cabeçalho `Retry-After` legível na UI.
+Corrigidos no backend e **RESOLVIDOS** (verificados no Helpdesk contra o backend novo, porta 8001, dados do seed):
+
+1. ~~`POST /tickets/` só aceitava poucos campos e o corpo era sempre público~~ RESOLVIDO: `assignee`, `stage`, `tags`, `is_public`; criar interno e público verificados (1 chamada; mensagem interna `is_public:false`, histórico "atribuído a ...").
+2. ~~`bulk-close` com janela única; `bulk-priority` ignorava ids~~ RESOLVIDO: `items` por ticket e `report_missing` (verificado: `bulk-close` com 3 janelas diferentes; falha de um ticket já fechado em `failed[]`; id 99999 em `failed[]` com `report_missing`).
+3. ~~`PATCH` desativava status de fábrica; categoria/nome repetido~~ RESOLVIDO: 400 `is_active` / `category` / `name` (verificados por curl e no formulário).
+4. ~~`me.permissions` do agente incluía `macro.manage` sem poder escrever~~ RESOLVIDO: o agente de dev não a tem e o front esconde criar/editar macro.
+5. ~~Fechar sempre caía no "Fechado" de fábrica~~ RESOLVIDO: `stage` em `close/` e `reply` (verificado com status personalizado fechado, com e sem mensagem).
+6. ~~Limite de login 429 sem `Retry-After`~~ RESOLVIDO no backend (cabeçalho, `retry_after` e `detail` em pt-BR, `CORS_EXPOSE_HEADERS`); a tela foi testada com resposta simulada (sem esgotar o login real).
+
+Continuam (sem mudar o backend):
+
+7. `POST /settings/companies/` exige `slug` (o front precisa derivar) e `plan`; cliente exige `company` e telefone. O convite é enviado na criação (sem `invite_status` além de pendente/aceito).
+8. `bulk-close` não aceita `stage`: fechar em lote num status personalizado da categoria fechada exige um `close/` por ticket.
+9. `GET /tickets/` não tem filtro por lista de ids: depois de uma ação em lote o front relê os tickets alterados um a um.
+10. `GET /settings/teams/roster/` inclui equipes desativadas (o front as ignora ao escolher a equipe do ticket novo; antes escolhia a primeira da lista e o backend recusava com "Pk inválido").
 
 ### Decisões da leitura real (etapa 2)
 
@@ -129,20 +150,19 @@ apagar) vão ao backend (`/ticket-views/`); abas abertas e itens recentes seguem
   por abertura) são contadas localmente. As visões do sistema sem par (`todos`, `sem-atendimento`, `aguardando-voce`,
   `mencionam-voce`, `resolvidos`, `internos`, `em-kanban`) e as pessoais têm `View.query` e a lista vem do servidor
   (`runView`) só ao abrir a visão. Tempo real: `/ws/me/` só avisa (`ticket_event` com `kind` assigned/owner/updated/closed/reply) quem é solicitante, responsável, dono ou seguidor; não há evento de ticket novo nem reenvio de eventos perdidos.
-- **Custo medido (dados do seed, 6 tickets).** Home = 9 chamadas à API (tickets 1, status 1, visões 1, resumo 1,
-  clientes 1, agentes 1, empresas 1, contagem de "pendentes" 1, roster 1) e 0 chamadas ao detalhe; abrir um ticket =
-  1 a 2 `GET /tickets/{id}/`; abrir uma visão do servidor = 1 `GET /tickets/?view=`.
-- **Solicitante (a lista não traz `requester_id`/`company_id`).** Casamento SEGURO por nome + empresa contra o
-  diretório de clientes (só vale se houver exatamente UM cliente assim). Homônimos, nomes sem correspondência ou
-  diretório sem permissão: resolve pelo detalhe do ticket (`requester.id`), 6 em paralelo, cacheado por ticket. Ticket
-  com conteúdo restrito (`content_hidden`, solicitante "Usuário protegido") fica com `requesterId = ''` e mostra o nome.
-- **Autor da mensagem (o backend não manda `author_id`).** `author_name` + `author_is_internal` casados com o diretório
-  certo (agentes ou clientes) e só se o casamento for ÚNICO; o solicitante do ticket tem prioridade. Sem casamento
-  seguro (homônimos, usuário desativado/anonimizado, mensagem de sistema) `authorId` vira `name:<nome>` (nunca colide
-  com um id real) e a tela mostra `Comment.authorName`/`authorAvatarUrl`. Pedido ao backend: `author_id` em `messages[]`.
-- **Status.** `statusId = String(stage)`; `category` vem da categoria do stage. Se o stage for nulo OU contradisser
-  `status` (o backend reabre sem trocar o stage: o ticket reaberto continua com o stage "Fechado"), usa o stage de
-  fábrica da categoria `status`, que é a que o servidor usa em filtros e contadores. Não use ids literais ('solved',
+- **Custo medido (backend novo, 161 tickets, 1 cliente homônimo da Ana na mesma empresa).** Home = 12 chamadas (10 sem
+  as 2 de `/auth/me/` do StrictMode), **0 de detalhe**; antes eram 47 (35 `GET /tickets/{id}/` só para descobrir o
+  solicitante dos homônimos). Tela do ticket recarregada (F5) = 13 chamadas, 2 de detalhe do próprio ticket (uma é a
+  corrida entre a lista e o detalhe); antes 42 (31 de detalhe). Sem homônimos o casamento por nome já não custava
+  chamadas (Home 12, ticket 13), por isso o ganho aparece com homônimos e tickets restritos. Abrir uma visão do
+  servidor = 1 `GET /tickets/?view=`; histórico do cliente = 1 `GET /tickets/?requester=` por 100 tickets.
+- **Solicitante, empresa e autor (ids do backend).** A lista traz `requester_id` e `company_id` (nulos só em ticket
+  restrito: `requesterId = ''` e o nome mascarado aparece) e cada mensagem traz `author_id` (nulo em mensagem do sistema
+  ou autor que o usuário não pode ver: vira `system` ou `name:<nome>`, que nunca colide com um id real). Nenhum casamento
+  por nome e nenhum detalhe só para achar o solicitante. Os eventos do ticket ainda trazem só `actor_name` (casado por nome).
+- **Status.** `statusId = String(stage)`; `category` vem da categoria do stage. O backend novo troca a coluna ao reabrir
+  (TD-00005 agora está no "Aberto"); por defesa, se o stage for nulo OU contradisser `status` (dado antigo), usa o stage
+  de fábrica da categoria `status`, que é a que o servidor usa em filtros e contadores. Não use ids literais ('solved',
   'new'): `statusIdByCategory()` em `lib/status.ts`.
 - **Corpo das mensagens e macros: markdown no backend, HTML só nas bordas.** `markdownToHtml` (marked + o
   `sanitizeHtml` da conversa, agora em `lib/sanitizeHtml.ts`) escapa HTML cru (o backend também o mostra como texto),
@@ -167,15 +187,15 @@ Campos que o backend não tem aparecem vazios/padrão e ficam marcados em `capab
 CC e seguidores arbitrários, resumo/tópico/sentimento de IA, tags de usuário e de organização (sempre vazias),
 grupo padrão e "acesso dos usuários" da organização (padrão `own_tickets`), `endUserName`/descrição de status
 (= nome/vazio), macro: `availableTo` (todos), `usage7d` (0), ações de status e nota interna, e licenças (`total` fixo
-em 5, `used` = agentes ativos reais). Datas de criação/atualização do usuário não existem no Resolv (a tela mostra "-");
+em 5, `used` = agentes ativos reais). Criação/atualização do usuário vêm de `created_at`/`updated_at` (backend antigo sem eles: a tela mostra "-");
 canal "e-mail" não existe (tudo vira "Formulário web"; `chat` e `system` têm ícone próprio nas mensagens).
 
-### Problemas do backend encontrados na leitura (não bloqueiam; sem mudar o backend)
+### Problemas do backend encontrados na leitura
 
-1. Reabertura não restaura o stage: TD-00005 está com `status=open` e `stage_name="Fechado"` (o front usa a categoria).
-2. `GET /ticket-views/` devolve array puro (sem envelope), diferente do resto.
-3. Lista de tickets sem `requester_id`/`company_id`; mensagens sem `author_id`.
-4. `settings/users` não expõe `created_at`/`updated_at`.
+Os quatro (reabertura sem trocar o stage, `/ticket-views/` sem envelope, lista sem `requester_id`/`company_id` e mensagens
+sem `author_id`, usuário sem `created_at`/`updated_at`) foram corrigidos no backend e estão **RESOLVIDOS**, verificados
+contra o backend novo: TD-00005 reaberto no "Aberto"; `?page=`/`?limit=` devolvem o envelope (o Helpdesk segue usando o
+array puro, que traz todas as visões); ids e carimbos nas respostas. Ver as "Escritas" acima para o que continua.
 
 ## Sem equivalente no backend (permanecem locais)
 
@@ -197,8 +217,8 @@ DESLIGADO no modo real (ver "Decisões das escritas").
 
 ## Pedidos opcionais ao backend (etapa 8, não bloqueiam)
 
-`author_id` em `messages[]`; `requester_id` e `company_id` na lista de tickets; `updated_since`; status direto no
-`PATCH`; tags livres para agentes.
+`updated_since`; status direto no `PATCH`; tags livres para agentes; `actor_id` nos eventos; `stage` no `bulk-close`;
+filtro por lista de ids em `GET /tickets/`. (`author_id`, `requester_id` e `company_id` já foram entregues.)
 
 ## Camada local no modo real (só para o que o backend não tem)
 

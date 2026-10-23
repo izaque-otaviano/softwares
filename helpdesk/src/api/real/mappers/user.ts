@@ -15,8 +15,8 @@ export const INTERNAL_ROLE_LABEL: Record<string, string> = {
 };
 
 /**
- * Usuário do Resolv -> User. O backend não expõe criação/atualização, tags, detalhes/notas, e-mails extras, idioma
- * nem fuso do usuário: ficam vazios/padrão (e `createdAt`/`updatedAt` ausentes, a tela mostra "-").
+ * Usuário do Resolv -> User. O backend não expõe tags, detalhes/notas, e-mails extras, idioma
+ * nem fuso do usuário: ficam vazios/padrão (`createdAt`/`updatedAt` vêm do cadastro; ausentes em backend antigo, e a tela mostra "-").
  * `lastSeenAt`: último acesso, senão último login.
  */
 export function mapUser(dto: UserDto): User {
@@ -30,6 +30,8 @@ export function mapUser(dto: UserDto): User {
     language: 'pt-BR',
     timezone: 'America/Sao_Paulo',
     details: dto.job_title || undefined,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
     lastSeenAt: dto.last_seen_at ?? dto.last_login ?? undefined,
     suspended: dto.is_active === false,
     internalRole: dto.internal_role ?? undefined,

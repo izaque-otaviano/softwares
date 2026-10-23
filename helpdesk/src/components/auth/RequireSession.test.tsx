@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { authApi } from '@/api/auth';
+import { toApiError } from '@/api/real/http';
 import type { SessionUser } from '@/api/session';
 import Login from '@/pages/Login';
 import { useSession } from '@/store/useSession';
@@ -33,7 +35,7 @@ function renderAt(path: string) {
   );
 }
 
-const base = { twoFactor: null, error: null, expired: false } as const;
+const base = { twoFactor: null, error: null, expired: false, retryUntil: null } as const;
 
 beforeEach(() => {
   useSession.setState({ status: 'anonymous', user: null, ...base });
@@ -116,5 +118,82 @@ describe('Login: 2FA e erros', () => {
     useSession.setState({ error: 'Esta conta é de cliente.' });
     renderAt('/login');
     expect(await screen.findByText('Esta conta é de cliente.')).toBeInTheDocument();
+  });
+});
+
+describe('Login: limite de tentativas (429)', () => {
+  const throttled = (retryAfter = 3541) =>
+    toApiError(
+      429,
+      { detail: 'Muitas tentativas em pouco tempo. Aguarde 1 hora e tente de novo.', code: 'throttled', retry_after: retryAfter },
+      new Headers({ 'Retry-After': String(retryAfter) }),
+    );
+
+  beforeEach(() => {
+    // os testes acima trocam ações da store por vi.fn(): volta às ações reais
+    useSession.setState({ ...useSession.getInitialState(), status: 'anonymous', user: null, ...base });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function submit429(retryAfter?: number) {
+    vi.spyOn(authApi, 'login').mockRejectedValue(throttled(retryAfter));
+    renderAt('/login');
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(await screen.findByLabelText(/E-mail/), 'a@b.c');
+    await user.type(screen.getByLabelText(/Senha/), 'segredo');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+  }
+
+  it('mostra a mensagem do backend e o tempo de espera, e desabilita o botão', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await submit429(3541);
+    expect(await screen.findByText('Muitas tentativas em pouco tempo. Aguarde 1 hora e tente de novo.')).toBeInTheDocument();
+    expect(screen.getByText(/^59 min 0\d s$/)).toBeInTheDocument(); // 3541 s = 59 min 01 s (menos o tempo digitado)
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeDisabled();
+  });
+
+  it('a contagem regride e, no fim da espera, libera o botão e limpa o aviso', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await submit429(8);
+    const first = screen.getByText(/^\d s$/).textContent!;
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(Number.parseInt(screen.getByText(/^\d s$/).textContent!, 10)).toBeLessThan(Number.parseInt(first, 10));
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(9000);
+    });
+    expect(screen.queryByText(/Você poderá tentar de novo/)).toBeNull();
+    expect(screen.queryByText(/Muitas tentativas/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
+  });
+
+  it('durante a espera, enviar o formulário (Enter) não chama o backend', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await submit429(60);
+    const login = vi.mocked(authApi.login);
+    login.mockClear();
+    const form = screen.getByLabelText(/Senha/).closest('form')!;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it('erro de senha comum não bloqueia o botão', async () => {
+    vi.spyOn(authApi, 'login').mockRejectedValue(toApiError(400, { detail: 'E-mail ou senha incorretos.' }));
+    renderAt('/login');
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/E-mail/), 'a@b.c');
+    await user.type(screen.getByLabelText(/Senha/), 'x');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+    expect(await screen.findByText('E-mail ou senha incorretos.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
+    expect(screen.queryByText(/Você poderá tentar de novo/)).toBeNull();
   });
 });

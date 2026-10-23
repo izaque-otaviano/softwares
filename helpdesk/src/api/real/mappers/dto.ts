@@ -57,6 +57,9 @@ export interface UserDto {
   team_ids?: number[];
   avatar_url?: string;
   custom_role_name?: string | null;
+  /** Carimbos do cadastro (backend novo; ausentes em backend antigo). */
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CompanyDto {
@@ -121,10 +124,14 @@ export interface TicketDto {
   source: string;
   team: TicketTeamDto;
   requester_display: string;
+  /** Id do solicitante; `null` quando o conteúdo é restrito (mesma máscara de `requester_display`). */
+  requester_id?: number | null;
   assignee_id: number | null;
   assignee_name: string | null;
   assignee_avatar?: string | null;
   company_name: string | null;
+  /** Id da empresa; acompanha `company_name`. */
+  company_id?: number | null;
   sla?: { first_response?: SlaClockDto; resolution?: SlaClockDto };
   tags: { id?: number; name: string; slug?: string; color?: string }[];
   content_hidden?: boolean;
@@ -152,6 +159,8 @@ export interface MentionDto {
 
 export interface MessageDto {
   id: number;
+  /** Id de quem escreveu; `null` em mensagem do sistema (ou autor que o usuário não pode ver). */
+  author_id?: number | null;
   author_name: string;
   author_avatar: string | null;
   author_is_internal: boolean;

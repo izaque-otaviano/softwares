@@ -13,6 +13,8 @@ export interface TicketFilter {
   statusIds?: string[];
   channel?: Ticket['channel'];
   requesterId?: string;
+  /** Tickets de uma organização (empresa do solicitante). No modo real vai ao servidor (`?company=`). */
+  orgId?: string;
   assigneeId?: string;
   query?: string;
 }
@@ -24,6 +26,7 @@ export function listTickets(filter: TicketFilter = {}): Promise<Ticket[]> {
         (!filter.statusIds || filter.statusIds.includes(t.statusId)) &&
         (!filter.channel || t.channel === filter.channel) &&
         (!filter.requesterId || t.requesterId === filter.requesterId) &&
+        (!filter.orgId || (t.orgId ?? db.users.find((u) => u.id === t.requesterId)?.orgId) === filter.orgId) &&
         (!filter.assigneeId || t.assigneeId === filter.assigneeId) &&
         (!filter.query || t.subject.toLowerCase().includes(filter.query.toLowerCase())),
     ),
@@ -118,10 +121,44 @@ export function updateTicket(id: number, patch: TicketPatch = {}, comment?: NewC
   });
 }
 
+/** Janela da solução de um ticket no fechamento em lote (ISO UTC, no minuto). Só o modo real a envia ao backend. */
+export interface BulkResolution {
+  id: number;
+  started: string;
+  ended: string;
+}
+
 export interface BulkChange {
   assigneeId?: string;
   priority?: Priority;
   statusId?: string;
+  /**
+   * Fechamento em lote (statusId de categoria resolvida): a janela de CADA ticket, confirmada pelo agente.
+   * Sem ela, o modo real calcula a sugestão D4 por ticket (compatibilidade). O mock ignora.
+   */
+  resolutions?: BulkResolution[];
+}
+
+/** Sugestão de janela para um ticket do lote (para o diálogo de confirmação). */
+export interface ResolutionSuggestion {
+  id: number;
+  reference?: string;
+  subject: string;
+  createdAt: string;
+  started: string;
+  ended: string;
+}
+
+/** Janela sugerida de vários tickets (o diálogo do fechamento em lote). No mock: da criação até agora, só para exibir. */
+export async function suggestResolutionWindows(ids: number[]): Promise<ResolutionSuggestion[]> {
+  const ended = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString();
+  return ids.flatMap((id) => {
+    const t = db.tickets.find((x) => x.id === id);
+    if (!t) return [];
+    const created = new Date(Math.floor(Date.parse(t.createdAt) / 60000) * 60000).toISOString();
+    const started = created > ended ? ended : created; // ticket simulado "do futuro": a janela nunca começa depois do fim
+    return [{ id, subject: t.subject, createdAt: started, started, ended }];
+  });
 }
 export interface BulkResult {
   updated: Ticket[];
@@ -130,12 +167,13 @@ export interface BulkResult {
 
 /** Ação em lote: um `updateTicket` por ticket; falhas por ticket vêm em `failed`. */
 export async function bulkUpdate(ids: number[], change: BulkChange): Promise<BulkResult> {
+  const { resolutions: _resolutions, ...patch } = change; // as janelas só importam ao backend real
   const updated: Ticket[] = [];
   const failed: BulkResult['failed'] = [];
   await Promise.all(
     ids.map(async (id) => {
       try {
-        updated.push(await updateTicket(id, change));
+        updated.push(await updateTicket(id, patch));
       } catch (e) {
         failed.push({ id, message: e instanceof Error ? e.message : 'Não foi possível alterar o ticket.' });
       }

@@ -16,6 +16,20 @@ const Customer = lazy(() => import('@/pages/Customer'));
 const Orgs = lazy(() => import('@/pages/Orgs'));
 const Org = lazy(() => import('@/pages/Org'));
 
+const Board = lazy(() => import('@/pages/Board'));
+const Chat = lazy(() => import('@/pages/Chat'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const AdminSla = lazy(() => import('@/pages/admin/Sla'));
+const AdminCalendars = lazy(() => import('@/pages/admin/Calendars'));
+const AdminPlans = lazy(() => import('@/pages/admin/Plans'));
+const AdminBackups = lazy(() => import('@/pages/admin/Backups'));
+const AdminAudit = lazy(() => import('@/pages/admin/Audit'));
+const AdminRetention = lazy(() => import('@/pages/admin/Retention'));
+const AdminLgpd = lazy(() => import('@/pages/admin/Lgpd'));
+const AdminAnnouncements = lazy(() => import('@/pages/admin/Announcements'));
+const AdminNotificationPrefs = lazy(() => import('@/pages/admin/NotificationPrefs'));
+const AdminSecurity = lazy(() => import('@/pages/admin/Security'));
+
 const AdminHome = lazy(() => import('@/pages/admin/Home'));
 const AdminMembers = lazy(() => import('@/pages/admin/Members'));
 const AdminRoles = lazy(() => import('@/pages/admin/Roles'));
@@ -56,6 +70,10 @@ export const routes: RouteObject[] = [
       { path: 'orgs', element: <Orgs /> },
       { path: 'orgs/:id', element: <Org /> },
       { path: 'search', element: lazyEl(<Search />) },
+      { path: 'board', element: <Board /> },
+      { path: 'chat', element: <Chat /> },
+      { path: 'chat/:id', element: <Chat /> },
+      { path: 'reports', element: <Reports /> },
       { path: '*', element: <NotFound /> },
     ],
   },
@@ -79,6 +97,16 @@ export const routes: RouteObject[] = [
       { path: 'macros', element: <AdminMacros /> },
       { path: 'macros/new', element: <AdminMacroEdit /> },
       { path: 'macros/:id', element: <AdminMacroEdit /> },
+      { path: 'sla/*', element: <AdminSla /> },
+      { path: 'calendarios/*', element: <AdminCalendars /> },
+      { path: 'planos/*', element: <AdminPlans /> },
+      { path: 'backups/*', element: <AdminBackups /> },
+      { path: 'auditoria/*', element: <AdminAudit /> },
+      { path: 'retencao/*', element: <AdminRetention /> },
+      { path: 'lgpd/*', element: <AdminLgpd /> },
+      { path: 'avisos/*', element: <AdminAnnouncements /> },
+      { path: 'notificacoes/*', element: <AdminNotificationPrefs /> },
+      { path: 'seguranca/*', element: <AdminSecurity /> },
       { path: 'conta/visao-geral', element: <AdminAccountOverview /> },
       { path: 'canais/:slug', element: <AdminChannelsInfo /> },
       { path: 'espacos/:slug', element: <AdminWorkspaceInfo /> },

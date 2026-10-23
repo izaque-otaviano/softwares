@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { User } from '@/types/domain';
 import companies from '../__fixtures__/companies.json';
 import macros from '../__fixtures__/macros.json';
 import roster from '../__fixtures__/teams-roster.json';
@@ -37,9 +36,8 @@ import {
   mapTicketListItem,
   mapUser,
   markdownToHtml,
-  matchRequesterId,
   personalViewId,
-  resolveAuthorId,
+  messageAuthorId,
   resolveStatusId,
   toBackendCategory,
 } from '.';
@@ -48,7 +46,6 @@ const STATUSES = (statuses.results as StatusDto[]).map(mapStatus);
 const CLIENTS = (usersClient.results as unknown as UserDto[]).map(mapUser);
 const STAFF = (usersInternal.results as unknown as UserDto[]).map(mapUser);
 const LIST = tickets.results as unknown as TicketDto[];
-const orgName = (id?: string) => (companies.results as CompanyDto[]).find((c) => String(c.id) === id)?.name;
 
 describe('mappers: status', () => {
   it('categorias do Resolv -> categorias do Helpdesk e de volta', () => {
@@ -68,11 +65,15 @@ describe('mappers: status', () => {
     expect(factoryStatusFor(STATUSES, 'solved')?.id).toBe('4');
   });
 
-  it('stage inconsistente com a categoria (ticket reaberto) usa o stage de fábrica da categoria', () => {
+  it('reabertura (TD-00005): o backend novo já troca a coluna junto com o status', () => {
     const t5 = LIST.find((t) => t.id === 5)!;
     expect(t5.status).toBe('open');
-    expect(t5.stage).toBe(4); // stage "Fechado" ficou para trás na reabertura (comportamento do backend)
+    expect(t5.stage).toBe(2);
     expect(resolveStatusId(t5, STATUSES)).toBe('2');
+  });
+
+  it('dado antigo com stage em outra categoria ainda usa o stage de fábrica da categoria (defesa)', () => {
+    expect(resolveStatusId({ status: 'open', stage: 4 }, STATUSES)).toBe('2');
     expect(resolveStatusId({ status: 'pending_customer', stage: 3 }, STATUSES)).toBe('3');
     expect(resolveStatusId({ status: 'open', stage: null }, STATUSES)).toBe('2');
   });
@@ -85,7 +86,7 @@ describe('mappers: status', () => {
 
 describe('mappers: ticket (lista)', () => {
   it('mapeia campos escalares do item da lista', () => {
-    const t = mapTicketListItem(LIST[0]!, { statuses: STATUSES, requesterId: '5' });
+    const t = mapTicketListItem(LIST[0]!, { statuses: STATUSES });
     expect(t).toMatchObject({
       id: 1,
       reference: 'TD-00001',
@@ -93,6 +94,7 @@ describe('mappers: ticket (lista)', () => {
       requesterId: '5',
       requesterName: 'Ana Almeida',
       companyName: 'Acme Marketing',
+      orgId: '1',
       assigneeGroupId: '1',
       assigneeId: undefined,
       priority: 'normal',
@@ -108,7 +110,17 @@ describe('mappers: ticket (lista)', () => {
 
   it('responsável vira string e traz o nome', () => {
     const dto = LIST.find((t) => t.id === 6)!;
-    expect(mapTicketListItem(dto, { statuses: STATUSES })).toMatchObject({ assigneeId: '4', assigneeName: 'Fátima Financeiro', assigneeGroupId: '2', requesterId: '' });
+    expect(mapTicketListItem(dto, { statuses: STATUSES })).toMatchObject({ assigneeId: '4', assigneeName: 'Fátima Financeiro', assigneeGroupId: '2', requesterId: '5', orgId: '1' });
+  });
+
+  it('ticket restrito (requester_id/company_id nulos) fica sem solicitante e mostra o nome mascarado', () => {
+    const restricted = { ...LIST[0]!, requester_display: 'Usuário protegido', requester_id: null, company_id: null, company_name: null, content_hidden: true };
+    expect(mapTicketListItem(restricted, { statuses: STATUSES })).toMatchObject({ requesterId: '', requesterName: 'Usuário protegido', orgId: undefined });
+  });
+
+  it('backend antigo sem requester_id: NÃO adivinha por nome (id vazio)', () => {
+    const { requester_id: _r, company_id: _c, ...legacy } = LIST[0]!;
+    expect(mapTicketListItem(legacy as TicketDto, { statuses: STATUSES })).toMatchObject({ requesterId: '', requesterName: 'Ana Almeida', orgId: undefined });
   });
 
   it('SLA: o relógio pendente mais urgente; at_risk vira warning; sem prazos é undefined', () => {
@@ -130,40 +142,34 @@ describe('mappers: ticket (lista)', () => {
   });
 });
 
-describe('mappers: solicitante (casamento seguro) e autor', () => {
-  it('casa por nome + empresa quando é único', () => {
-    expect(matchRequesterId(LIST[0]!, CLIENTS, orgName)).toBe('5');
-    expect(matchRequesterId(LIST.find((t) => t.id === 3)!, CLIENTS, orgName)).toBe('7');
+describe('mappers: solicitante e autor vêm dos ids do backend', () => {
+  it('a lista de fixtures traz requester_id e company_id coerentes com o diretório de clientes', () => {
+    for (const t of LIST) {
+      const mapped = mapTicketListItem(t, { statuses: STATUSES });
+      const client = CLIENTS.find((c) => c.id === mapped.requesterId);
+      expect(client?.name).toBe(t.requester_display);
+      expect(client?.orgId).toBe(mapped.orgId);
+    }
   });
 
-  it('homônimo, desconhecido ou ticket mascarado NÃO casa (resolve pelo detalhe)', () => {
-    const twin: User = { ...CLIENTS[0]!, id: '99', email: 'outra@acme.test' };
-    expect(matchRequesterId(LIST[0]!, [...CLIENTS, twin], orgName)).toBeUndefined();
-    expect(matchRequesterId({ requester_display: 'Fulano', company_name: 'Acme Marketing' }, CLIENTS, orgName)).toBeUndefined();
-    expect(matchRequesterId({ requester_display: 'Usuário protegido', company_name: null, content_hidden: true }, CLIENTS, orgName)).toBeUndefined();
+  it('autor: author_id do backend; sistema; sem id vira name:<nome> (nunca colide com um id real)', () => {
+    const msg = (author_id: number | null, author_name: string, source = 'web') => ({ author_id, author_name, source });
+    expect(messageAuthorId(msg(6, 'Beto Barros'))).toBe('6');
+    expect(messageAuthorId(msg(3, 'Samuel Suporte'))).toBe('3');
+    expect(messageAuthorId(msg(null, 'Sistema', 'system'))).toBe('system');
+    expect(messageAuthorId(msg(null, 'Fulano'))).toBe('name:Fulano');
+    expect(messageAuthorId({ author_name: 'Fulano', source: 'web' })).toBe('name:Fulano');
   });
 
-  it('mesmo nome em empresas diferentes casa pela empresa', () => {
-    const other: User = { ...CLIENTS[0]!, id: '98', orgId: '2' };
-    expect(matchRequesterId(LIST[0]!, [...CLIENTS, other], orgName)).toBe('5');
-  });
-
-  it('autor: solicitante, agente por nome; sem casamento seguro usa name:<nome>; sistema', () => {
-    const ctx = { requesterId: '6', requesterName: 'Beto Barros', staff: STAFF, clients: CLIENTS };
-    const msg = (author_name: string, author_is_internal: boolean, source = 'web') => ({ author_name, author_is_internal, source });
-    expect(resolveAuthorId(msg('Beto Barros', false), ctx)).toBe('6');
-    expect(resolveAuthorId(msg('beto  barros', false), ctx)).toBe('6');
-    expect(resolveAuthorId(msg('Samuel Suporte', true), ctx)).toBe('3');
-    expect(resolveAuthorId(msg('Samuel Suporte', false), ctx)).toBe('name:Samuel Suporte'); // cliente homônimo de agente não vira o agente
-    expect(resolveAuthorId(msg('Fulano', true), ctx)).toBe('name:Fulano');
-    expect(resolveAuthorId(msg('Sistema', true, 'system'), ctx)).toBe('system');
-    const dupStaff: User[] = [...STAFF, { ...STAFF[0]!, id: '77' }];
-    expect(resolveAuthorId(msg(STAFF[0]!.name, true), { ...ctx, staff: dupStaff })).toBe(`name:${STAFF[0]!.name}`);
+  it('homônimos não se confundem: dois autores com o mesmo nome e ids diferentes', () => {
+    const base = ticket2.messages[0] as unknown as MessageDto;
+    expect(mapMessage({ ...base, author_id: 6 }).authorId).toBe('6');
+    expect(mapMessage({ ...base, author_id: 99 }).authorId).toBe('99');
   });
 });
 
 describe('mappers: ticket (detalhe)', () => {
-  const ctx = { statuses: STATUSES, staff: STAFF, clients: CLIENTS };
+  const ctx = { statuses: STATUSES, staff: STAFF };
 
   it('mensagens, eventos, solicitante (do detalhe) e autores', () => {
     const t = mapTicketDetail(ticket2 as unknown as TicketDetailDto, ctx);
@@ -226,23 +232,23 @@ describe('mappers: corpo markdown -> HTML sanitizado', () => {
       created_at: '2026-10-22T10:00:00Z', attachments: [{ id: 5, filename: 'log.txt', size_bytes: 120, url: '/api/v1/attachments/5/', is_downloadable: false }],
       edited_at: null, is_deleted: false, signature_html: '<p>Att,<script>x</script> Samuel</p>',
     };
-    const ctx = { staff: STAFF, clients: CLIENTS };
-    const c = mapMessage(base, ctx);
+    const c = mapMessage(base);
     expect(c.bodyHtml).toBe('<p>oi</p><div><p>Att, Samuel</p></div>');
     expect(c.attachments).toEqual([{ name: 'log.txt', size: 120, url: '/api/v1/attachments/5/', downloadable: false }]);
-    const deleted = mapMessage({ ...base, is_deleted: true, signature_html: '' }, ctx);
+    const deleted = mapMessage({ ...base, is_deleted: true, signature_html: '' });
     expect(deleted.bodyHtml).toContain('Mensagem apagada');
     expect(deleted.deleted).toBe(true);
-    expect(mapMessage({ ...base, source: 'chat' }, ctx).channel).toBe('chat');
-    expect(mapMessage({ ...base, source: 'system', author_name: 'Sistema' }, ctx).authorId).toBe('system');
+    expect(mapMessage({ ...base, source: 'chat' }).channel).toBe('chat');
+    expect(mapMessage({ ...base, source: 'system', author_name: 'Sistema' }).authorId).toBe('system');
   });
 });
 
 describe('mappers: pessoas, empresas, grupos, macros', () => {
-  it('usuários: cliente x agente x admin; sem datas inventadas', () => {
+  it('usuários: cliente x agente x admin; created_at/updated_at do backend', () => {
     expect(CLIENTS[0]).toMatchObject({ id: '5', name: 'Ana Almeida', role: 'end_user', orgId: '1', suspended: false });
-    expect(CLIENTS[0]!.createdAt).toBeUndefined();
-    expect(CLIENTS[0]!.updatedAt).toBeUndefined();
+    expect(CLIENTS[0]!.createdAt).toMatch(/^2026-10-22T/);
+    expect(CLIENTS[0]!.updatedAt).toMatch(/^2026-10-22T/);
+    expect(mapUser({ ...(usersClient.results[0] as unknown as UserDto), created_at: undefined, updated_at: undefined })).toMatchObject({ createdAt: undefined, updatedAt: undefined }); // backend antigo
     expect(STAFF.find((u) => u.id === '1')).toMatchObject({ role: 'admin', internalRole: 'admin' });
     expect(STAFF.find((u) => u.id === '2')).toMatchObject({ role: 'agent', internalRole: 'supervisor' });
     expect(mapUser({ ...(usersClient.results[0] as unknown as UserDto), is_active: false, last_seen_at: '2026-10-01T00:00:00Z' })).toMatchObject({ suspended: true, lastSeenAt: '2026-10-01T00:00:00Z' });

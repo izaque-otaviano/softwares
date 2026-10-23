@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../errors';
-import { apiBaseUrl, buildQueryString, getAllPages, http, onUnauthorized, readCsrfToken, relativeNext, request, toApiError } from './http';
+import { apiBaseUrl, buildQueryString, getAllPages, http, onUnauthorized, parseRetryAfter, readCsrfToken, relativeNext, request, toApiError } from './http';
 
 const json = (body: unknown, status = 200): Response =>
   new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -104,6 +104,29 @@ describe('http: erros', () => {
     expect(err.code).toBe('quota_exceeded');
     expect(err.message).toBe('Cota excedida.');
     expect(err.fieldErrors).toEqual({ used: ['5'], limit: ['5'] });
+  });
+
+  it('429 do throttle: mensagem do backend, code e espera do cabeçalho Retry-After (e retry_after não vira campo)', async () => {
+    const body = { detail: 'Muitas tentativas em pouco tempo. Aguarde 1 hora e tente de novo.', code: 'throttled', retry_after: 3541 };
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify(body), { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '3541' } }));
+    const err = (await http.post('/auth/login/', {}, { skipUnauthorized: true }).catch((e) => e)) as ApiError;
+    expect(err).toMatchObject({ status: 429, code: 'throttled', retryAfter: 3541, message: body.detail });
+    expect(err.fieldErrors).toBeUndefined();
+  });
+
+  it('retry_after do corpo vale quando o cabeçalho não é legível (CORS) e o cabeçalho vence quando há os dois', () => {
+    expect(toApiError(429, { detail: 'x', retry_after: 90.2 }).retryAfter).toBe(91);
+    expect(toApiError(429, { detail: 'x', retry_after: 90 }, new Headers({ 'Retry-After': '30' })).retryAfter).toBe(30);
+    expect(toApiError(400, { detail: 'x' }).retryAfter).toBeUndefined();
+  });
+
+  it('Retry-After aceita segundos e data HTTP; valor inválido é ignorado', () => {
+    const now = Date.parse('2026-10-22T12:00:00Z');
+    expect(parseRetryAfter('120', now)).toBe(120);
+    expect(parseRetryAfter('Thu, 22 Oct 2026 12:01:30 GMT', now)).toBe(90);
+    expect(parseRetryAfter('Thu, 22 Oct 2026 11:00:00 GMT', now)).toBe(0);
+    expect(parseRetryAfter('logo', now)).toBeUndefined();
+    expect(parseRetryAfter(null, now)).toBeUndefined();
   });
 
   it('corpo não JSON/HTML cai na mensagem padrão do status', async () => {

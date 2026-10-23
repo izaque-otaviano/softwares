@@ -1,0 +1,71 @@
+{
+  "count": 8,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 5,
+      "contexto": "ticket",
+      "rotulo": "Ainda estou com o problema",
+      "texto": "O problema continua acontecendo. ",
+      "is_active": true,
+      "order": 0
+    },
+    {
+      "id": 1,
+      "contexto": "chat",
+      "rotulo": "Problema com um pedido",
+      "texto": "Estou com um problema no pedido nº ",
+      "is_active": true,
+      "order": 0
+    },
+    {
+      "id": 2,
+      "contexto": "chat",
+      "rotulo": "Erro na integração",
+      "texto": "A integração parou de funcionar. O erro que aparece é: ",
+      "is_active": true,
+      "order": 1
+    },
+    {
+      "id": 6,
+      "contexto": "ticket",
+      "rotulo": "Já resolvi, pode fechar",
+      "texto": "Consegui resolver por aqui, pode encerrar o ticket. Obrigado!",
+      "is_active": true,
+      "order": 1
+    },
+    {
+      "id": 3,
+      "contexto": "chat",
+      "rotulo": "Dúvida sobre cobrança",
+      "texto": "Tenho uma dúvida sobre a cobrança de ",
+      "is_active": true,
+      "order": 2
+    },
+    {
+      "id": 7,
+      "contexto": "ticket",
+      "rotulo": "Vou verificar e retorno",
+      "texto": "Recebi, vou verificar por aqui e retorno com a informação.",
+      "is_active": true,
+      "order": 2
+    },
+    {
+      "id": 4,
+      "contexto": "chat",
+      "rotulo": "Erro na loja",
+      "texto": "A loja está apresentando este erro: ",
+      "is_active": true,
+      "order": 3
+    },
+    {
+      "id": 8,
+      "contexto": "ticket",
+      "rotulo": "Segue o print",
+      "texto": "Segue em anexo o print do que está acontecendo.",
+      "is_active": true,
+      "order": 3
+    }
+  ]
+}

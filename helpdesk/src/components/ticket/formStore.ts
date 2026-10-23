@@ -1,3 +1,4 @@
+import { TICKET_EDIT_PROPERTIES, can } from '@/lib/permissions';
 import { create } from 'zustand';
 import { triggersApi } from '@/api';
 import { IS_REAL } from '@/api/mode';
@@ -384,7 +385,8 @@ export const useFormStore = create<FormState>()((set, get) => {
         let assigneeId = values.assigneeId;
         const meId = getMeId();
         const group = useRefData.getState().groups.find((g) => g.id === values.assigneeGroupId);
-        if (!assigneeId && group?.agentIds.includes(meId)) assigneeId = meId; // auto-atribui ao criador
+        // auto-atribui ao criador; no modo real só se o papel pode editar propriedades (senão o backend recusaria a criação toda)
+        if (!assigneeId && group?.agentIds.includes(meId) && can(TICKET_EDIT_PROPERTIES)) assigneeId = meId;
         assigneeChanged = Boolean(assigneeId);
         const input: NewTicketInput = {
           subject: values.subject.trim(),

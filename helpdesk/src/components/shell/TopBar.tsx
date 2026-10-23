@@ -1,7 +1,8 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, ChevronDown, LogOut, MessageSquare, Phone } from 'lucide-react';
+import { ChevronDown, LogOut, MessageSquare, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, IconButton, Menu, MenuContent, MenuItem, MenuTrigger, PRESENCE_LABEL, StatusDot, type Presence } from '@/components/ui';
+import { NotificationBell } from '@/components/admin/notifications/NotificationBell';
 import { cn } from '@/lib/cn';
 import { IS_REAL } from '@/api/mode';
 import { useSession } from '@/store/useSession';
@@ -10,7 +11,6 @@ import { GlobalSearch } from './GlobalSearch';
 import { useAgentPresence } from './presence';
 import { WorkTabs } from './WorkTabs';
 
-const UNREAD_NOTIFICATIONS = 3;
 const CONVERSATIONS_COUNT = 0;
 
 function ProductSwitcher() {
@@ -128,15 +128,7 @@ export function TopBar() {
           <span className="rounded-pill bg-surface px-1.5 text-xs">{CONVERSATIONS_COUNT}</span>
         </button>
         <IconButton label="Telefone" icon={<Phone />} onClick={() => toast.info('Telefonia não faz parte desta versão.')} />
-        <span className="relative inline-flex">
-          <IconButton label={`Notificações, ${UNREAD_NOTIFICATIONS} não lidas`} icon={<Bell />} />
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-pill bg-danger px-1 text-2xs font-semibold text-fg-inverse"
-          >
-            {UNREAD_NOTIFICATIONS}
-          </span>
-        </span>
+        <NotificationBell />
         <AgentMenu />
       </div>
     </header>

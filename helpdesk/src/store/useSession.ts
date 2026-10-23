@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { ApiError } from '@/api/errors';
 import { authApi, type SessionUser, type TwoFactorMethod } from '@/api/auth';
 import { IS_REAL } from '@/api/mode';
 import { onUnauthorized } from '@/api/real/http';
@@ -14,6 +15,8 @@ export interface SessionState {
   error: string | null;
   /** Sessão expirou (401) durante o uso: a tela de login explica. */
   expired: boolean;
+  /** Limite de tentativas (429): instante (ms) em que o login volta a ser aceito; `null` = sem espera. */
+  retryUntil: number | null;
 
   /** Consulta /auth/me/ (mock: já autenticado). Chamada pelo guard ao montar. */
   restore: () => Promise<void>;
@@ -25,14 +28,19 @@ export interface SessionState {
   /** 401 global: derruba a sessão local sem chamar o backend. */
   expire: () => void;
   clearError: () => void;
+  /** Fim da espera do limite de tentativas: libera o botão e limpa o aviso. */
+  clearWait: () => void;
 }
 
 const messageOf = (e: unknown, fallback: string): string => (e instanceof Error && e.message ? e.message : fallback);
 
-const initial = (): Pick<SessionState, 'status' | 'user' | 'twoFactor' | 'error' | 'expired'> =>
+/** `retryUntil` de um erro com espera (429 `Retry-After`); `null` se o erro não pediu espera. */
+const waitOf = (e: unknown): number | null => (e instanceof ApiError && e.retryAfter && e.retryAfter > 0 ? Date.now() + e.retryAfter * 1000 : null);
+
+const initial = (): Pick<SessionState, 'status' | 'user' | 'twoFactor' | 'error' | 'expired' | 'retryUntil'> =>
   authApi.initialUser
-    ? { status: 'authenticated', user: authApi.initialUser, twoFactor: null, error: null, expired: false }
-    : { status: 'loading', user: null, twoFactor: null, error: null, expired: false };
+    ? { status: 'authenticated', user: authApi.initialUser, twoFactor: null, error: null, expired: false, retryUntil: null }
+    : { status: 'loading', user: null, twoFactor: null, error: null, expired: false, retryUntil: null };
 
 export const useSession = create<SessionState>()((set, get) => ({
   ...initial(),
@@ -48,7 +56,7 @@ export const useSession = create<SessionState>()((set, get) => ({
   },
 
   login: async (email, password) => {
-    set({ error: null, expired: false });
+    set({ error: null, expired: false, retryUntil: null });
     try {
       const res = await authApi.login(email.trim(), password);
       if (res.status === 'two_factor') {
@@ -58,13 +66,13 @@ export const useSession = create<SessionState>()((set, get) => ({
       set({ status: 'authenticated', user: res.user, twoFactor: null });
       return 'ok';
     } catch (e) {
-      set({ status: 'anonymous', user: null, error: messageOf(e, 'Não foi possível entrar.') });
+      set({ status: 'anonymous', user: null, error: messageOf(e, 'Não foi possível entrar.'), retryUntil: waitOf(e) });
       return 'error';
     }
   },
 
   verifyTwoFactor: async (code) => {
-    set({ error: null });
+    set({ error: null, retryUntil: null });
     try {
       const user = await authApi.verifyTwoFactor(code.trim());
       set({ status: 'authenticated', user, twoFactor: null });
@@ -72,7 +80,8 @@ export const useSession = create<SessionState>()((set, get) => ({
     } catch (e) {
       const status = (e as { status?: number }).status;
       // Código esgotado/sessão pendente expirada: volta ao início; erro de digitação mantém a etapa.
-      set(status === 401 || status === 403 ? { status: 'anonymous', twoFactor: null, user: null, error: messageOf(e, 'Código inválido.') } : { error: messageOf(e, 'Código inválido.') });
+      const retryUntil = waitOf(e);
+      set(status === 401 || status === 403 ? { status: 'anonymous', twoFactor: null, user: null, error: messageOf(e, 'Código inválido.'), retryUntil } : { error: messageOf(e, 'Código inválido.'), retryUntil });
       return false;
     }
   },
@@ -94,7 +103,7 @@ export const useSession = create<SessionState>()((set, get) => ({
     } catch {
       /* encerra localmente mesmo se o backend não responder */
     }
-    set({ status: 'anonymous', user: null, twoFactor: null, error: null, expired: false });
+    set({ status: 'anonymous', user: null, twoFactor: null, error: null, expired: false, retryUntil: null });
   },
 
   expire: () => {
@@ -103,6 +112,8 @@ export const useSession = create<SessionState>()((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  clearWait: () => set({ retryUntil: null, error: null }),
 }));
 
 // 401 global (só no modo real há chamadas HTTP): sessão expirada leva ao /login.

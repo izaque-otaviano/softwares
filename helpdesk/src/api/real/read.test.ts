@@ -27,15 +27,16 @@ import * as realUsers from './users';
 
 type Json = unknown;
 const envelope = (results: Json[], count = results.length) => ({ count, next: null, previous: null, results });
-const ticketList = tickets.results as { id: number; requester_display: string }[];
+const ticketList = tickets.results as { id: number; requester_display: string; requester_id: number | null }[];
 const DETAILS: Record<number, Json> = { 1: ticket1, 2: ticket2, 3: ticket3, 5: ticket5 };
-const CLIENT_IDS: Record<string, number> = { 'Ana Almeida': 5, 'Beto Barros': 6, 'Carla Costa': 7, 'Davi Dias': 8 };
 
 interface Opts {
   extraClients?: unknown[];
   forbidSettingsUsers?: boolean;
   ticketCount?: number;
   personalViews?: unknown[];
+  restrictFirst?: boolean;
+  relatedPage?: number;
 }
 let calls: { method: string; path: string; query: URLSearchParams }[] = [];
 let opts: Opts = {};
@@ -47,7 +48,15 @@ function route(method: string, path: string, q: URLSearchParams): { status?: num
     if (q.get('q') === 'fatura') return { body: envelope([ticketList.find((t) => t.id === 6)!]) };
     if (q.get('view') === 'sem-atendimento') return { body: envelope([ticketList[0]!]) };
     if (q.get('status') === 'pending_customer') return { body: envelope([ticketList.find((t) => t.id === 3)!], 1) };
-    return { body: envelope(ticketList, opts.ticketCount ?? ticketList.length) };
+    if (q.get('requester') || q.get('company')) {
+      // o servidor filtra por solicitante/empresa e pagina (page size fixo de 2 para exercitar a paginação)
+      const all = ticketList.filter((t) => (!q.get('requester') || String(t.requester_id) === q.get('requester')) && (!q.get('company') || String((t as { company_id?: number }).company_id) === q.get('company')));
+      const offset = Number(q.get('offset') ?? 0);
+      const page = all.slice(offset, offset + (opts.relatedPage ?? 100));
+      return { body: { count: all.length, next: offset + page.length < all.length ? 'more' : null, previous: null, results: page } };
+    }
+    const list = opts.restrictFirst ? ticketList.map((t, i) => (i === 0 ? { ...t, requester_display: 'Usuário protegido', requester_id: null, company_id: null, company_name: null, content_hidden: true } : t)) : ticketList;
+    return { body: envelope(list, opts.ticketCount ?? list.length) };
   }
   const detail = /^\/tickets\/(\d+)\/$/.exec(p);
   if (detail) {
@@ -56,7 +65,7 @@ function route(method: string, path: string, q: URLSearchParams): { status?: num
     if (known) return { body: known };
     const item = ticketList.find((t) => t.id === id);
     if (!item) return { status: 404, body: { detail: 'Não encontrado.' } };
-    return { body: { ...item, messages: [], events: [], watchers: [], requester: { id: CLIENT_IDS[item.requester_display] ?? 5, name: item.requester_display, email: 'x@y.z' } } };
+    return { body: { ...item, messages: [], events: [], watchers: [], requester: { id: item.requester_id ?? 5, name: item.requester_display, email: 'x@y.z' } } };
   }
   if (p === '/tickets/resumo/') return { body: summary };
   if (p === '/ticket-views/') return { body: opts.personalViews ?? [] };
@@ -102,34 +111,72 @@ afterEach(() => vi.unstubAllGlobals());
 
 const detailCalls = () => calls.filter((c) => /^\/api\/v1\/tickets\/\d+\/$/.test(c.path));
 
+describe('real/tickets: histórico de cliente e organização direto no servidor', () => {
+  it('requesterId vai como ?requester= e NÃO depende da lista inicial', async () => {
+    const list = await realTickets.listTickets({ requesterId: '5' });
+    expect(list.map((t) => t.id)).toEqual([1, 6, 5]);
+    const calls_ = calls.filter((c) => c.path === '/api/v1/tickets/');
+    expect(calls_).toHaveLength(1);
+    expect(calls_[0]!.query.get('requester')).toBe('5');
+    expect(calls_[0]!.query.get('company')).toBeNull();
+  });
+
+  it('orgId vai como ?company= e traz os tickets de todos os solicitantes da empresa', async () => {
+    const list = await realTickets.listTickets({ orgId: '1' });
+    expect(list.map((t) => t.id).sort()).toEqual([1, 2, 5, 6]);
+    expect(calls.find((c) => c.path === '/api/v1/tickets/')!.query.get('company')).toBe('1');
+  });
+
+  it('segue as páginas do servidor até acabar (além da 1ª página)', async () => {
+    opts.relatedPage = 2;
+    const list = await realTickets.listTickets({ requesterId: '5' });
+    expect(list.map((t) => t.id)).toEqual([1, 6, 5]);
+    const offsets = calls.filter((c) => c.path === '/api/v1/tickets/').map((c) => c.query.get('offset'));
+    expect(offsets).toEqual(['0', '2']);
+  });
+
+  it('combina com os demais filtros (status) no navegador', async () => {
+    const list = await realTickets.listTickets({ requesterId: '5', statusIds: ['2'] });
+    expect(list.map((t) => t.id)).toEqual([6, 5]);
+  });
+
+  it('id sem par no backend (local) devolve vazio sem chamar o servidor', async () => {
+    expect(await realTickets.listTickets({ requesterId: 'u-local' })).toEqual([]);
+    expect(calls.filter((c) => c.path === '/api/v1/tickets/')).toHaveLength(0);
+  });
+});
+
 describe('real/tickets: lista', () => {
-  it('carrega tudo e resolve o solicitante por casamento único, sem chamar o detalhe', async () => {
+  it('carrega tudo e lê requester_id/company_id da lista, sem chamar o detalhe', async () => {
     const list = await realTickets.listTickets();
     expect(list).toHaveLength(6);
-    expect(list.map((t) => [t.id, t.requesterId])).toEqual([[1, '5'], [6, '5'], [2, '6'], [3, '7'], [4, '8'], [5, '5']]);
+    expect(list.map((t) => [t.id, t.requesterId, t.orgId])).toEqual([[1, '5', '1'], [6, '5', '1'], [2, '6', '1'], [3, '7', '2'], [4, '8', '3'], [5, '5', '1']]);
     expect(detailCalls()).toHaveLength(0);
     expect(list.every((t) => t.detailed === false && t.comments.length === 0)).toBe(true);
-    expect(list.find((t) => t.id === 5)!.statusId).toBe('2'); // stage "Fechado" contradiz status=open
+    expect(list.find((t) => t.id === 5)!.statusId).toBe('2'); // reaberto: o backend novo troca a coluna junto
     expect(list.find((t) => t.id === 3)!.statusId).toBe('3');
     expect(list.find((t) => t.id === 6)).toMatchObject({ assigneeId: '4', assigneeGroupId: '2', reference: 'TD-00006' });
   });
 
-  it('homônimos: resolve pelo detalhe do ticket e guarda em cache', async () => {
+  it('homônimos (mesmo nome e empresa) NÃO geram chamadas ao detalhe: o id vem da lista', async () => {
     opts.extraClients = [{ ...usersClient.results[0]!, id: 55, email: 'ana2@acme.test' }];
-    const first = await realTickets.listTickets();
-    expect(first.filter((t) => t.requesterName === 'Ana Almeida').map((t) => t.requesterId)).toEqual(['5', '5', '5']);
-    expect(detailCalls().map((c) => c.path).sort()).toEqual(['/api/v1/tickets/1/', '/api/v1/tickets/5/', '/api/v1/tickets/6/']);
-    calls = [];
-    resetRealCache();
-    await realTickets.listTickets();
-    expect(detailCalls()).toHaveLength(0); // solicitante já descoberto
+    const list = await realTickets.listTickets();
+    expect(list.filter((t) => t.requesterName === 'Ana Almeida').map((t) => t.requesterId)).toEqual(['5', '5', '5']);
+    expect(detailCalls()).toHaveLength(0);
   });
 
-  it('diretório de clientes sem permissão (403): cai em /users/ e ainda resolve', async () => {
+  it('ticket restrito (requester_id nulo): fica sem solicitante, mostra o nome mascarado e não chama o detalhe', async () => {
+    opts.restrictFirst = true;
+    const list = await realTickets.listTickets();
+    expect(list.find((t) => t.id === 1)).toMatchObject({ requesterId: '', requesterName: 'Usuário protegido', orgId: undefined });
+    expect(detailCalls()).toHaveLength(0);
+  });
+
+  it('diretório de clientes sem permissão (403): a lista não depende dele', async () => {
     opts.forbidSettingsUsers = true;
     const list = await realTickets.listTickets();
     expect(list.find((t) => t.id === 3)!.requesterId).toBe('7');
-    expect(calls.some((c) => c.path === '/api/v1/users/')).toBe(true);
+    expect(calls.some((c) => c.path.includes('/users/'))).toBe(false);
   });
 
   it('lista inicial carrega só a 1ª página (HOME_PAGE) e marca truncated se o total for maior', async () => {

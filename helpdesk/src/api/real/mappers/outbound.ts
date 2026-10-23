@@ -121,7 +121,7 @@ export interface PlanInput {
  *  1. `props`   PATCH /tickets/{id}/  (prioridade, equipe, responsável, etiquetas): idempotente, valida cedo;
  *  2. `follow`/`unfollow` do PRÓPRIO usuário: idempotente;
  *  3. `reply` (mensagem; resposta pública leva `new_status`) ou `close`: a parte NÃO idempotente (duplica se repetir);
- *  4. `stage` (bulk-status): refina para um status personalizado que o `reply` não alcança.
+ *  4. `stage` (bulk-status): só para mudar de status SEM resposta pública (o `reply` e o `close/` já levam o `stage`).
  * Mensagem antes do estágio: o texto digitado é o que o agente mais perde se algo falhar no meio.
  */
 export function planTicketUpdate(input: PlanInput): TicketPlan {
@@ -183,7 +183,7 @@ export function planTicketUpdate(input: PlanInput): TicketPlan {
 
   const statusStep = (): PlanStep | 'blocked' | null => {
     if (!target) return null;
-    if (target.category === 'solved') return curCategory === 'solved' ? null : { kind: 'close', covers: ['statusId'], needsWindow: true };
+    if (target.category === 'solved') return curCategory === 'solved' ? null : { kind: 'close', covers: ['statusId'], needsWindow: true, body: { stage: Number(target.id) } };
     if (curCategory === 'solved') return 'blocked';
     if (target.id === current.statusId) return null;
     return { kind: 'stage', covers: ['statusId'], body: { stage_id: Number(target.id) } };
@@ -193,12 +193,14 @@ export function planTicketUpdate(input: PlanInput): TicketPlan {
     const category: StatusCategory = target ? target.category : curCategory === 'solved' ? 'open' : curCategory;
     const newStatus = replyStatusFor(category);
     const body: Record<string, unknown> = { body: comment!.markdown, is_public: true, new_status: newStatus, with_signature: false };
+    // O backend aceita `stage` no `reply` (resposta pública com `new_status`): fecha/reabre/muda já na coluna escolhida,
+    // personalizada ou não, em UMA chamada. Só a categoria "Novo" não tem `new_status` próprio (responder abre).
+    if (target && target.category !== 'new') body.stage = Number(target.id);
     const reply: PlanStep = { kind: 'reply', covers: ['comment', ...(explicit ? (['statusId'] as Covers[]) : [])], body, files: comment!.files, needsWindow: newStatus === 'closed' };
     steps.push(reply);
-    if (target && target.category !== 'solved') {
-      // Onde o backend vai cair com `new_status`: no mesmo stage (categoria igual) ou no stage de fábrica da categoria nova.
-      const landing = curCategory === target.category ? (input.currentStageId ?? current.statusId) : factoryStatusFor(statuses, target.category)?.id;
-      if (landing !== target.id) steps.push({ kind: 'stage', covers: ['statusId'], body: { stage_id: Number(target.id) } });
+    if (target && target.category === 'new') {
+      // "Novo" não se alcança pelo `reply` (que abre): a mensagem abre o ticket e a coluna "Novo" vem num passo à parte.
+      steps.push({ kind: 'stage', covers: ['statusId'], body: { stage_id: Number(target.id) } });
     }
   } else {
     if (hasMsg) steps.push({ kind: 'reply', covers: ['comment'], body: { body: comment!.markdown, is_public: false, with_signature: false }, files: comment!.files });
@@ -284,10 +286,22 @@ export interface CreateTicketInput {
   markdown: string;
   teamId: number;
   priority?: Priority;
+  /** Responsável já na criação (id de agente ativo). */
+  assigneeId?: string;
+  /** Status inicial por coluna (id do stage; inclui personalizados). */
+  stageId?: string;
+  /** Etiquetas por id. */
+  tagIds?: number[];
+  /** `false` = a descrição nasce como observação interna (o solicitante nunca a vê). Padrão: pública. */
+  isPublic?: boolean;
   files?: File[];
 }
 
-/** POST /tickets/: o backend só aceita equipe, assunto, corpo, prioridade e solicitante (o resto vem em chamadas seguintes). */
+/**
+ * POST /tickets/ já triado: além de equipe, assunto, corpo, prioridade e solicitante, o backend aceita `assignee`,
+ * `stage`, `tags` (ids) e `is_public`. Tudo é conferido ANTES de gravar: uma recusa (400) não deixa ticket pela metade.
+ * Campos vazios não são enviados (o padrão do backend é: status novo, sem responsável, sem etiquetas, pública).
+ */
 export function createTicketBody(i: CreateTicketInput): Record<string, unknown> {
   return {
     team_id: i.teamId,
@@ -295,8 +309,63 @@ export function createTicketBody(i: CreateTicketInput): Record<string, unknown> 
     body: i.markdown,
     requester_id: Number(i.requesterId),
     ...(i.priority ? { priority: i.priority } : {}),
+    ...(i.assigneeId ? { assignee: Number(i.assigneeId) } : {}),
+    ...(i.stageId ? { stage: Number(i.stageId) } : {}),
+    ...(i.tagIds?.length ? { tags: i.tagIds } : {}),
+    ...(i.isPublic === false ? { is_public: false } : {}),
     with_signature: false,
   };
+}
+
+export interface NewTicketFormInput {
+  subject: string;
+  requesterId: string;
+  markdown: string;
+  teamId: number;
+  priority?: Priority;
+  assigneeId?: string;
+  /** Status escolhido no formulário (id do stage do Helpdesk). */
+  statusId?: string;
+  tags?: string[];
+  public?: boolean;
+  followerIds?: string[];
+  type?: PatchInput['type'];
+  ccIds?: string[];
+  customFields?: PatchInput['customFields'];
+  files?: File[];
+}
+
+/**
+ * Divide o que o agente pediu ao criar em: (1) o corpo do ÚNICO `POST /tickets/` e (2) o que o POST não cobre e
+ * precisa de chamadas depois (seguir, fechar já na criação, campos só locais). Sem (2) a criação é 1 chamada.
+ *  - status "Novo" de fábrica não é enviado (é o padrão do backend);
+ *  - status de categoria fechada NÃO vai no POST (fechar pede as datas da solução): vira o passo `close` depois;
+ *  - os demais vão por `stage` (alcança também os personalizados).
+ */
+export function planNewTicket(input: NewTicketFormInput, ctx: { statuses: TicketStatus[]; tags: Pick<TagDto, 'id' | 'name'>[] }): { body: Record<string, unknown>; followUp: PatchInput } {
+  const target = input.statusId ? ctx.statuses.find((s) => s.id === input.statusId) : undefined;
+  const newFactory = factoryStatusFor(ctx.statuses, 'new');
+  const closing = target?.category === 'solved';
+  const stageId = target && !closing && target.id !== newFactory?.id ? target.id : undefined;
+  const body = createTicketBody({
+    subject: input.subject,
+    requesterId: input.requesterId,
+    markdown: input.markdown,
+    teamId: input.teamId,
+    priority: input.priority,
+    assigneeId: input.assigneeId,
+    stageId,
+    tagIds: input.tags?.length ? resolveTagIds(input.tags, ctx.tags).ids : undefined,
+    isPublic: input.public,
+  });
+  const followUp: PatchInput = {
+    ...(closing ? { statusId: target!.id } : {}),
+    ...(input.followerIds?.length ? { followerIds: input.followerIds } : {}),
+    ...(input.type ? { type: input.type } : {}),
+    ...(input.ccIds?.length ? { ccIds: input.ccIds } : {}),
+    ...(input.customFields && Object.keys(input.customFields).length ? { customFields: input.customFields } : {}),
+  };
+  return { body, followUp };
 }
 
 /** JSON -> multipart (o backend recebe anexos em `files`). */
@@ -304,6 +373,10 @@ export function toFormData(fields: Record<string, unknown>, files: File[] = []):
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) {
     if (v === undefined || v === null) continue;
+    if (Array.isArray(v)) {
+      for (const item of v) fd.append(k, String(item)); // listas (tags) viajam repetidas, como o backend espera
+      continue;
+    }
     fd.append(k, typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v));
   }
   for (const f of files) fd.append('files', f, f.name);

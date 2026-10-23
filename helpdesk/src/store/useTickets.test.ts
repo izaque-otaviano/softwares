@@ -33,6 +33,16 @@ describe('useTickets', () => {
     expect(after['all-unsolved']).toBe((before['all-unsolved'] ?? 0) - 1);
     expect(after['solved-recent']).toBe((before['solved-recent'] ?? 0) + 1);
   });
+  it('loadRelated não faz nada no mock (a store já tem tudo) e o filtro orgId do mock acha os tickets da organização', async () => {
+    const before = useTickets.getState().tickets;
+    await useTickets.getState().loadRelated({ requesterId: 'u1' });
+    expect(useTickets.getState().tickets).toBe(before);
+    const { listTickets } = await import('@/api/tickets');
+    const orgId = (await import('@/api/mock/db')).db.users.find((u) => u.id === 'u1')!.orgId!;
+    const list = await listTickets({ orgId });
+    expect(list.length).toBeGreaterThan(0);
+    expect(list.every((t) => (before.find((x) => x.id === t.id) ? true : false))).toBe(true);
+  });
   it('atribuir a mim tira da fila de não atribuídos', async () => {
     const [t] = useTickets.getState().ticketsForView('unassigned');
     await useTickets.getState().assignToMe([t.id]);

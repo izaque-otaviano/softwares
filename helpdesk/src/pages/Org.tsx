@@ -116,10 +116,25 @@ function OrgProfile({ org, onOrgChange }: { org: Org; onOrgChange: (o: Org) => v
   }, [dirty, tabKey]);
   useEffect(() => () => useTabs.getState().setDirty(tabKey, false), [tabKey]);
 
+  const [historyLoading, setHistoryLoading] = useState(IS_REAL);
+  const [historyError, setHistoryError] = useState(false);
+  // Modo real: os tickets da organização vêm do servidor (`?company=`), não só dos 100 primeiros da lista inicial.
+  const loadHistory = useCallback(() => {
+    if (!IS_REAL) return;
+    setHistoryError(false);
+    setHistoryLoading(true);
+    useTickets
+      .getState()
+      .loadRelated({ orgId: org.id })
+      .catch(() => setHistoryError(true))
+      .finally(() => setHistoryLoading(false));
+  }, [org.id]);
+  useEffect(loadHistory, [loadHistory]);
+
   const orgTickets = useMemo(() => {
     const ids = new Set((members ?? []).map((u) => u.id));
-    return tickets.filter((t) => ids.has(t.requesterId));
-  }, [tickets, members]);
+    return tickets.filter((t) => t.orgId === org.id || ids.has(t.requesterId));
+  }, [tickets, members, org.id]);
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
 
@@ -225,8 +240,8 @@ function OrgProfile({ org, onOrgChange }: { org: Org; onOrgChange: (o: Org) => v
             <ProfileTickets
               tableId="org-tickets"
               requested={orgTickets}
-              loading={(!loaded && !ticketsError) || (members === null && !membersError)}
-              error={ticketsError && !loaded ? { message: 'Não foi possível carregar os tickets.', onRetry: () => void useTickets.getState().load() } : undefined}
+              loading={(!loaded && !ticketsError) || (members === null && !membersError) || historyLoading}
+              error={historyError ? { message: 'Não foi possível carregar os tickets desta organização.', onRetry: loadHistory } : ticketsError && !loaded ? { message: 'Não foi possível carregar os tickets.', onRetry: () => void useTickets.getState().load() } : undefined}
             />
           </TabsContent>
           <TabsContent value="users" className="min-h-0 flex-1 pt-3">

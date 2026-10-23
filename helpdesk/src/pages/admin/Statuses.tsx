@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { ListToolbar, matchesActive, type ActiveFilter } from '@/components/admin/lists/ListToolbar';
 import { StatusModal } from '@/components/admin/status/StatusModal';
-import { CATEGORY_DESCRIPTION, SYSTEM_STATUS_IDS, isActive } from '@/components/admin/status/statusRules';
+import { CATEGORY_DESCRIPTION, FACTORY_NOTE, isActive, isFactory } from '@/components/admin/status/statusRules';
 import { Button, Pill, StatusBadge, StatusDot, Table, Tabs, TabsContent, TabsList, TabsTrigger, type ColumnDef, type MenuItemSpec } from '@/components/ui';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/lib/status';
 import { useTickets } from '@/store/useTickets';
@@ -61,6 +61,7 @@ export default function Statuses() {
         <span className="flex items-center gap-2">
           <StatusDot color={s.color} />
           <span className="truncate">{s.agentName}</span>
+          {isFactory(s) ? <Pill title={FACTORY_NOTE}>De fábrica</Pill> : null}
           {isActive(s) ? null : <Pill>Inativo</Pill>}
         </span>
       ),
@@ -72,7 +73,7 @@ export default function Statuses() {
   const rowActions = (s: TicketStatus): MenuItemSpec[] => [
     { id: 'edit', label: 'Editar', onSelect: () => setModal({ open: true, status: s }) },
     isActive(s)
-      ? { id: 'deactivate', label: 'Desativar', disabled: s.system ?? SYSTEM_STATUS_IDS.includes(s.id), onSelect: () => void toggleActive(s) }
+      ? { id: 'deactivate', label: isFactory(s) ? 'Desativar (status de fábrica)' : 'Desativar', disabled: isFactory(s), onSelect: () => void toggleActive(s) }
       : { id: 'activate', label: 'Ativar', onSelect: () => void toggleActive(s) },
   ];
 

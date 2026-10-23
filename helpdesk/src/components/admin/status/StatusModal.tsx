@@ -5,7 +5,7 @@ import { IS_REAL } from '@/api/mode';
 import { toast } from '@/store/useUi';
 import { useTickets } from '@/store/useTickets';
 import type { StatusCategory, TicketStatus } from '@/types/domain';
-import { DEFAULT_COLOR_BY_CATEGORY, STATUS_COLOR_OPTIONS } from './statusRules';
+import { DEFAULT_COLOR_BY_CATEGORY, STATUS_COLOR_OPTIONS, categoryLockReason, statusFormErrors, type StatusFormErrors } from './statusRules';
 
 export interface StatusModalProps {
   open: boolean;
@@ -26,7 +26,7 @@ const blank: Draft = { category: 'open', agentName: '', endUserName: '', agentDe
 
 export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
   const [draft, setDraft] = useState<Draft>(blank);
-  const [errors, setErrors] = useState<{ agentName?: string; endUserName?: string }>({});
+  const [errors, setErrors] = useState<{ agentName?: string; endUserName?: string; category?: string; color?: string }>({});
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -36,6 +36,8 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
     setApiError(null);
     setDraft(status ? { category: status.category, agentName: status.agentName, endUserName: status.endUserName, agentDescription: status.agentDescription, color: status.color } : blank);
   }, [open, status]);
+
+  const lockReason = categoryLockReason(status);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
@@ -60,7 +62,10 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
       toast.success(status ? 'Status do ticket atualizado' : 'Status do ticket criado');
       onOpenChange(false);
     } catch (e) {
-      setApiError(e instanceof Error ? e.message : 'Não foi possível salvar. Tente novamente.');
+      // Os 400 do backend (nome repetido, categoria em uso, status de fábrica) aparecem no campo certo; o digitado fica.
+      const mapped: StatusFormErrors = statusFormErrors(e);
+      setErrors((prev) => ({ ...prev, ...mapped.fields }));
+      setApiError(mapped.general ?? null);
     } finally {
       setSaving(false);
     }
@@ -85,14 +90,16 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
     >
       <div className="flex flex-col gap-4">
         {apiError ? (
-          <Banner tone="error" onRetry={() => void save()}>
+          <Banner tone="error">
             {apiError} O que você digitou foi mantido.
           </Banner>
         ) : null}
-        <Field label="Categoria do status" required>
+        <Field label="Categoria do status" required error={errors.category} hint={lockReason}>
           <Select
             value={draft.category}
+            disabled={Boolean(lockReason)}
             onValueChange={(v) => {
+              setErrors((x) => ({ ...x, category: undefined }));
               const category = v as StatusCategory;
               setDraft((d) => ({ ...d, category, color: d.color === DEFAULT_COLOR_BY_CATEGORY[d.category] ? DEFAULT_COLOR_BY_CATEGORY[category] : d.color }));
             }}
@@ -100,7 +107,7 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
           />
         </Field>
         <Field label="Nome do status para o agente" required error={errors.agentName}>
-          <Input value={draft.agentName} onChange={(e) => set('agentName', e.target.value)} maxLength={60} />
+          <Input value={draft.agentName} onChange={(e) => { set('agentName', e.target.value); setErrors((x) => ({ ...x, agentName: undefined })); }} maxLength={60} />
         </Field>
         <Field label="Nome do status para o usuário final" required error={errors.endUserName} hint={IS_REAL ? 'Somente neste navegador: o backend usa um só nome.' : undefined}>
           <Input value={draft.endUserName} onChange={(e) => set('endUserName', e.target.value)} maxLength={60} />
@@ -108,7 +115,7 @@ export function StatusModal({ open, onOpenChange, status }: StatusModalProps) {
         <Field label="Descrição para o agente" hint={IS_REAL ? 'Somente neste navegador.' : undefined}>
           <Textarea value={draft.agentDescription} onChange={(e) => set('agentDescription', e.target.value)} rows={3} />
         </Field>
-        <Field label="Cor">
+        <Field label="Cor" error={errors.color}>
           <Select
             value={draft.color}
             onValueChange={(v) => set('color', v)}

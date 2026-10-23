@@ -1,0 +1,140 @@
+{
+ "events": [
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-23T11:48:01.938760+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "Chrome \u00b7 Linux",
+   "created_at": "2026-10-23T01:29:42.706254+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T23:23:44.779041+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T22:41:03.158761+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T21:15:11.125806+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "Chrome \u00b7 Linux",
+   "created_at": "2026-10-22T21:14:57.673067+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "Chrome \u00b7 Linux",
+   "created_at": "2026-10-22T21:14:34.103290+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T21:14:19.980629+00:00",
+   "success": true
+  }
+ ],
+ "logins": [
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-23T11:48:01.938760+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "Chrome \u00b7 Linux",
+   "created_at": "2026-10-23T01:29:42.706254+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T23:23:44.779041+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T22:41:03.158761+00:00",
+   "success": true
+  },
+  {
+   "kind": "login",
+   "kind_label": "Login",
+   "ip": "127.0.0.1",
+   "browser": "curl/8.5.0",
+   "created_at": "2026-10-22T21:15:11.125806+00:00",
+   "success": true
+  }
+ ],
+ "sessions": [
+  {
+   "key": "fake-session-key-0",
+   "browser": "curl/8.5.0",
+   "ip": "127.0.0.1",
+   "user_agent": "curl/8.5.0",
+   "started_at": "2026-10-23T11:48:01.938281+00:00",
+   "expires_at": "2026-11-06T11:48:02.687271+00:00",
+   "current": true
+  },
+  {
+   "key": "fake-session-key-1",
+   "browser": "Chrome \u00b7 Linux",
+   "ip": "127.0.0.1",
+   "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
+   "started_at": "2026-10-23T01:29:42.705745+00:00",
+   "expires_at": "2026-11-06T01:29:42.793265+00:00",
+   "current": false
+  },
+  {
+   "key": "fake-session-key-2",
+   "browser": "curl/8.5.0",
+   "ip": "127.0.0.1",
+   "user_agent": "curl/8.5.0",
+   "started_at": "2026-10-22T23:23:44.778537+00:00",
+   "expires_at": "2026-11-05T23:23:44.869780+00:00",
+   "current": false
+  }
+ ],
+ "session_limit": 3
+}

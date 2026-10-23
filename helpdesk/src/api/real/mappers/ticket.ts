@@ -2,7 +2,6 @@ import { sanitizeHtml } from '@/lib/sanitizeHtml';
 import type { AuditEvent, Comment, Priority, SlaState, Ticket, TicketSla, TicketStatus, User } from '@/types/domain';
 import type { MessageDto, SlaClockDto, TicketDetailDto, TicketDto, TicketEventDto } from './dto';
 import { markdownToHtml } from './markdown';
-import { resolveAuthorId } from './requester';
 import { mapCategory, resolveStatusId } from './status';
 
 const PRIORITIES: ReadonlySet<string> = new Set(['low', 'normal', 'high', 'urgent']);
@@ -34,8 +33,6 @@ export function mapSla(sla: TicketDto['sla']): TicketSla | undefined {
 
 export interface TicketMapContext {
   statuses: TicketStatus[];
-  /** Id do solicitante já resolvido (casamento seguro ou detalhe). */
-  requesterId?: string;
 }
 
 /** Item da LISTA (`TicketListSerializer`): sem mensagens/eventos; `detailed:false`. */
@@ -44,9 +41,11 @@ export function mapTicketListItem(dto: TicketDto, ctx: TicketMapContext): Ticket
     id: dto.id,
     reference: dto.reference,
     subject: dto.subject,
-    requesterId: ctx.requesterId ?? '',
+    // `requester_id` vem do backend; nulo = ticket restrito (o nome mascarado segue em `requesterName`).
+    requesterId: dto.requester_id != null ? String(dto.requester_id) : '',
     requesterName: dto.requester_display,
     companyName: dto.company_name ?? undefined,
+    orgId: dto.company_id != null ? String(dto.company_id) : undefined,
     assigneeGroupId: String(dto.team.id),
     assigneeId: dto.assignee_id != null ? String(dto.assignee_id) : undefined,
     assigneeName: dto.assignee_name ?? undefined,
@@ -70,20 +69,22 @@ export function mapTicketListItem(dto: TicketDto, ctx: TicketMapContext): Ticket
 
 const CHANNEL_BY_SOURCE: Record<string, Comment['channel']> = { web: 'web_form', chat: 'chat', system: 'system' };
 
-export interface MessageMapContext {
-  requesterId?: string;
-  requesterName?: string;
-  staff: User[];
-  clients: User[];
+/**
+ * Autor da mensagem: `author_id` do backend. Mensagem do sistema -> `system`. Sem id (autor que o usuário não pode
+ * ver, ou conta removida) -> `name:<nome>`, que nunca colide com um id real; a tela usa `authorName`/`authorAvatarUrl`.
+ */
+export function messageAuthorId(m: Pick<MessageDto, 'author_id' | 'author_name' | 'source'>): string {
+  if (m.author_id != null) return String(m.author_id);
+  return m.source === 'system' ? 'system' : `name:${m.author_name}`;
 }
 
-/** Mensagem -> Comment: corpo markdown -> HTML sanitizado; autor resolvido por nome (ver `resolveAuthorId`). */
-export function mapMessage(m: MessageDto, ctx: MessageMapContext): Comment {
+/** Mensagem -> Comment: corpo markdown -> HTML sanitizado. */
+export function mapMessage(m: MessageDto): Comment {
   const signature = m.signature_html ? signatureHtml(m.signature_html) : '';
   const body = m.is_deleted ? '<p><em>Mensagem apagada.</em></p>' : markdownToHtml(m.body, m.mentions);
   return {
     id: String(m.id),
-    authorId: resolveAuthorId(m, ctx),
+    authorId: messageAuthorId(m),
     authorName: m.author_name,
     authorInternal: m.author_is_internal,
     authorAvatarUrl: m.author_avatar,
@@ -128,19 +129,19 @@ export function mapEvent(e: TicketEventDto, users: { staff: User[] }): AuditEven
 
 export interface DetailMapContext extends TicketMapContext {
   staff: User[];
-  clients: User[];
 }
 
 /** DETALHE: lista + mensagens + eventos + seguidores; o solicitante vem de `requester.id` (autoritativo). */
 export function mapTicketDetail(dto: TicketDetailDto, ctx: DetailMapContext): Ticket {
-  const requesterId = dto.requester ? String(dto.requester.id) : ctx.requesterId;
-  const base = mapTicketListItem(dto, { statuses: ctx.statuses, requesterId });
+  const base = mapTicketListItem(dto, { statuses: ctx.statuses });
+  const requesterId = dto.requester ? String(dto.requester.id) : base.requesterId;
   const requesterName = dto.requester?.name ?? dto.requester_display;
   return {
     ...base,
+    requesterId,
     requesterName,
     followerIds: dto.watchers.map((w) => String(w.id)),
-    comments: dto.messages.map((m) => mapMessage(m, { requesterId, requesterName, staff: ctx.staff, clients: ctx.clients })),
+    comments: dto.messages.map(mapMessage),
     events: dto.events.map((e) => mapEvent(e, { staff: ctx.staff })),
     detailed: true,
   };

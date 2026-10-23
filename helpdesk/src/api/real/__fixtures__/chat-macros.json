@@ -1,0 +1,21 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Pedir mais informação",
+      "body": "Olá, {{solicitante}}! Para seguir com este ticket preciso de mais um detalhe:\n\n- \n\nAssim que você responder, retomo daqui.",
+      "chat_name": "",
+      "category": 1,
+      "category_name": "Dúvida",
+      "priority": "",
+      "assignee": null,
+      "assignee_name": null,
+      "tags": [],
+      "is_active": true,
+      "order": 1
+    }
+  ]
+}
