@@ -91,7 +91,7 @@ describe('limite de trabalho e datas', () => {
 
 describe('contraste do texto do cabeçalho', () => {
   it('token new e cores claras usam texto escuro; escuras usam branco', () => {
-    expect(onStatusColorClass('new')).toBe('text-note-badgeText');
+    expect(onStatusColorClass('new')).toBe('text-fg-inverse');
     expect(onStatusColorClass('open')).toBe('text-fg-inverse');
     expect(onStatusColorClass('#E9A23B')).toBe('text-note-badgeText');
     expect(onStatusColorClass('#39434B')).toBe('text-fg-inverse');

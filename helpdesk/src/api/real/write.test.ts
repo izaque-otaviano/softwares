@@ -713,7 +713,7 @@ describe('administração (real)', () => {
   it('status: cria com categoria e cor em hex; endUserName/descrição ficam locais; desativar = is_active:false', async () => {
     const created = await realMeta.saveStatus({ category: 'open', agentName: ' Triagem ', endUserName: 'Em triagem', agentDescription: 'obs', color: 'pending' });
     expect(writes()).toEqual(['POST /settings/statuses/']);
-    expect(calls[0]!.body).toEqual({ name: 'Triagem', color: '#1F73B7', is_active: true, category: 'open' });
+    expect(calls[0]!.body).toEqual({ name: 'Triagem', color: '#465365', is_active: true, category: 'open' });
     expect(created).toMatchObject({ agentName: 'Triagem', endUserName: 'Em triagem', agentDescription: 'obs', category: 'open' });
     calls = [];
     await realMeta.saveStatus({ ...created, active: false });

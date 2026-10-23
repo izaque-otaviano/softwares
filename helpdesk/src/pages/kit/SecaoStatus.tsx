@@ -44,7 +44,7 @@ function StatusBadges() {
   );
 }
 
-const PRESENCAS: Presence[] = ['available', 'away', 'offline'];
+const PRESENCAS: Presence[] = ['available', 'away', 'dnd', 'offline'];
 
 function Presencas() {
   return (

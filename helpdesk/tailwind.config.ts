@@ -30,7 +30,10 @@ export default {
         },
         danger: '#CC3340',
         ai: '#8E5FD1',
-        status: { new: '#F5A04A', open: '#CC3340', hold: '#8F2A35', pending: '#1F73B7', solved: '#39434B' },
+        status: { new: '#855800', open: '#A12620', hold: '#394B80', pending: '#465365', solved: '#216338' },
+        presence: { available: '#16A34A', away: '#D97706', offline: '#64748B', dnd: '#BE123C' },
+        'presence-soft': { available: '#DCFCE7', away: '#FEF3C7', offline: '#F1F3F5', dnd: '#FFE4E6' },
+        'status-soft': { new: '#FFF4DB', open: '#FCE8E6', hold: '#E8EAF6', pending: '#F1F3F5', solved: '#E4F3E8' },
       },
       fontSize: {
         '2xs': ['10px', '12px'],

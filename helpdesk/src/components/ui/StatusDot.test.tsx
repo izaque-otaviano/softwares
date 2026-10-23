@@ -26,24 +26,18 @@ describe('StatusDot', () => {
   });
 
   it.each([
-    ['available', 'bg-sla-text'],
-    ['away', 'bg-note-badge'],
-    ['offline', 'bg-fg-subtle'],
+    ['available', 'bg-presence-available'],
+    ['away', 'bg-presence-away'],
+    ['dnd', 'bg-presence-dnd'],
+    ['offline', 'bg-presence-offline'],
   ] as const)('presença %s usa %s', (presence, cls) => {
     const { container } = render(<StatusDot presence={presence} />);
     expect(container.firstElementChild).toHaveClass(cls);
   });
 
-  it('presença "ausente" ganha contorno escuro de 1px para atingir 3:1 sobre o fundo (o âmbar sozinho tem 2:1)', () => {
-    const { container } = render(<StatusDot presence="away" />);
-    expect(container.firstElementChild).toHaveClass('border', 'border-note-badgeText', 'h-2.5', 'w-2.5');
-    const available = render(<StatusDot presence="available" />).container.firstElementChild;
-    expect(available).not.toHaveClass('border');
-  });
-
   it('sem cor nem presença cai para offline (cinza)', () => {
     const { container } = render(<StatusDot />);
-    expect(container.firstElementChild).toHaveClass('bg-fg-subtle');
+    expect(container.firstElementChild).toHaveClass('bg-presence-offline');
   });
 
   it('color tem prioridade sobre presence', () => {

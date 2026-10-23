@@ -214,7 +214,7 @@ describe('corpos de requisição e utilitários', () => {
     expect(resolveTagIds(['VIP', 'nova', 'vip'], [{ id: 1, name: 'vip' }])).toEqual({ ids: [1], missing: ['nova'] });
   });
   it('cor em token vira hex; hex passa; slug sem acento', () => {
-    expect(statusColorToHex('hold')).toBe('#8F2A35');
+    expect(statusColorToHex('hold')).toBe('#394B80');
     expect(statusColorToHex('#2E7D32')).toBe('#2E7D32');
     expect(statusColorToHex('???')).toBe('#888888');
     expect(slugify(' Organização São João & Cia! ')).toBe('organizacao-sao-joao-cia');

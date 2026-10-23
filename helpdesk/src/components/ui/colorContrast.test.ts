@@ -17,11 +17,10 @@ describe('colorContrast', () => {
     expect(Number.isNaN(contrastRatio('red', '#fff'))).toBe(true);
   });
 
-  it('texto branco: reprova só status.new entre os status do tema', () => {
+  it('texto branco passa no AA sobre o tom forte de todos os status do tema (cabeçalhos do quadro)', () => {
     const ratios = Object.fromEntries(
       ['new', 'open', 'hold', 'pending', 'solved'].map((k) => [k, contrastWithWhite(tokenHex(`status.${k}`))]),
     );
-    expect(ratios.new).toBeLessThan(AA_NORMAL);
-    for (const k of ['open', 'hold', 'pending', 'solved'] as const) expect(ratios[k]).toBeGreaterThanOrEqual(AA_NORMAL);
+    for (const k of ['new', 'open', 'hold', 'pending', 'solved'] as const) expect(ratios[k]).toBeGreaterThanOrEqual(AA_NORMAL);
   });
 });

@@ -1,8 +1,7 @@
 import type { HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
-import { isStatusColorKey, statusColor } from '@/lib/status';
+import { statusInkColor, statusSoftColor } from '@/lib/status';
 import type { TicketStatus } from '@/types/domain';
-import { AA_NORMAL, contrastWithWhite } from './colorContrast';
 
 export interface StatusBadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'color' | 'children'> {
   /** Status completo; fornece nome (conforme `audience`) e cor. */
@@ -17,20 +16,7 @@ export interface StatusBadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, 
   compact?: boolean;
 }
 
-/**
- * Cor do texto sobre o fundo sólido do status. Regra do brief: texto branco.
- * Exceção por contraste: `status.new` (laranja claro) dá 2,10:1 com branco; usa `note.badgeText` (5,96:1).
- * Cores personalizadas em hex também caem para o texto escuro quando o branco ficaria abaixo de 4,5:1.
- */
-function textClass(color: string | undefined): string {
-  if (color === undefined) return 'text-fg-inverse';
-  if (color === 'new') return 'text-note-badgeText';
-  if (isStatusColorKey(color)) return 'text-fg-inverse';
-  const ratio = contrastWithWhite(color);
-  return Number.isNaN(ratio) || ratio >= AA_NORMAL ? 'text-fg-inverse' : 'text-note-badgeText';
-}
-
-/** Único jeito de pintar um status: fundo sólido via token, 12/600, raio 4. */
+/** Único jeito de pintar um status: pílula suave (fundo claro e texto no tom forte do mesmo status), 12/600. */
 export function StatusBadge({ status, label, color, audience = 'agent', compact = false, className, style, ...rest }: StatusBadgeProps) {
   const resolvedColor = color ?? status?.color;
   const resolvedLabel = label ?? (status ? (audience === 'end_user' ? status.endUserName : status.agentName) : '');
@@ -46,11 +32,10 @@ export function StatusBadge({ status, label, color, audience = 'agent', compact 
       className={cn(
         'inline-flex max-w-full items-center rounded-pill text-xs font-semibold',
         compact ? 'h-5 min-w-5 justify-center px-1' : 'px-2 py-0.5',
-        resolvedColor === undefined && 'bg-ink',
-        textClass(resolvedColor),
+        resolvedColor === undefined && 'bg-ink text-fg-inverse',
         className,
       )}
-      style={resolvedColor === undefined ? style : { ...style, backgroundColor: statusColor(resolvedColor) }}
+      style={resolvedColor === undefined ? style : { ...style, backgroundColor: statusSoftColor(resolvedColor), color: statusInkColor(resolvedColor) }}
     >
       <span className="truncate">{visible}</span>
     </span>

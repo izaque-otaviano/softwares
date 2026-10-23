@@ -174,7 +174,7 @@ export interface ChatConfigDto {
 }
 
 const PRIORITIES: ReadonlySet<string> = new Set(['low', 'normal', 'high', 'urgent']);
-const PRESENCES: ReadonlySet<string> = new Set(['available', 'away', 'offline']);
+const PRESENCES: ReadonlySet<string> = new Set(['available', 'away', 'offline', 'dnd']);
 const SCAN: ReadonlySet<string> = new Set(['pending', 'clean', 'infected', 'error', 'skipped']);
 
 const priorityOf = (p: string): ChatPriority => (PRIORITIES.has(p) ? (p as ChatPriority) : 'normal');
