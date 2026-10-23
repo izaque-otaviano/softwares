@@ -7,6 +7,8 @@ export interface ApiErrorInit {
   fieldErrors?: Record<string, string[]>;
   /** Corpo da resposta já decodificado (JSON ou texto). */
   body?: unknown;
+  /** Espera pedida pelo servidor, em segundos (cabeçalho `Retry-After` ou `retry_after` do corpo; 429/503). */
+  retryAfter?: number;
 }
 
 /** Erro único da camada de API (mock e real). `message` já vem em pt-BR e pode ser mostrado ao usuário. */
@@ -15,6 +17,7 @@ export class ApiError extends Error {
   readonly code?: string;
   readonly fieldErrors?: Record<string, string[]>;
   readonly body?: unknown;
+  readonly retryAfter?: number;
 
   constructor(message = 'Não foi possível concluir a operação. Tente novamente.', init: ApiErrorInit = {}) {
     super(message);
@@ -23,6 +26,7 @@ export class ApiError extends Error {
     this.code = init.code;
     this.fieldErrors = init.fieldErrors;
     this.body = init.body;
+    this.retryAfter = init.retryAfter;
   }
 }
 

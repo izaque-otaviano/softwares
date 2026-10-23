@@ -2,17 +2,16 @@ import { runView as runViewPure } from '@/lib/views';
 import type { Ticket, View } from '@/types/domain';
 import { ApiError, PartialUpdateError } from '../errors';
 import * as mock from '../mock/tickets';
-import type { BulkChange, BulkResult, NewTicketInput, TicketFilter, TicketPatch } from '../mock/tickets';
-import { getRealMeId } from './auth';
+import type { BulkChange, BulkResult, NewTicketInput, ResolutionSuggestion, TicketFilter, TicketPatch } from '../mock/tickets';
+import { getRealMeId, hasRealPermission } from './auth';
 import { http, type Paginated } from './http';
 import { layers, mirror, upsertInDb, withLocalTicketFields } from './local';
-import { HELPDESK_VIEWS, SYSTEM_EXTRA_VIEWS, countsFromSummary, mapPersonalView, mapTicketDetail, mapTicketListItem, matchRequesterId, personalViewId, type PersonalViewDto, type SummaryDto, type TicketDetailDto, type TicketDto, type ViewDef } from './mappers';
-import { getClients, getGroups, getOrgs, getStaff, getStatuses, getTags, memo } from './refs';
+import { HELPDESK_VIEWS, SYSTEM_EXTRA_VIEWS, countsFromSummary, mapPersonalView, mapTicketDetail, mapTicketListItem, personalViewId, type PersonalViewDto, type SummaryDto, type TicketDetailDto, type TicketDto, type ViewDef } from './mappers';
+import { getGroups, getStaff, getStatuses, getTags, memo } from './refs';
 import { ensureTags } from './tags';
-import { LOCAL_ONLY_KEYS, labelOf, createTicketBody, planTicketUpdate, resolutionWindow, toFormData, type PlanStep, type ResolutionWindow, type TicketPlan } from './mappers/outbound';
+import { LOCAL_ONLY_KEYS, labelOf, planNewTicket, planTicketUpdate, resolutionWindow, toFormData, type PlanStep, type ResolutionWindow, type TicketPlan } from './mappers/outbound';
 import { htmlToMarkdown } from './mappers/htmlToMarkdown';
 import { resolveStatusId } from './mappers/status';
-import { statusIdByCategory } from '@/lib/status';
 import { db } from '../mock/db';
 
 /**
@@ -25,9 +24,8 @@ import { db } from '../mock/db';
  * - Visões só locais (`recent`, `solved-recent`): avaliam `conditions` sobre o que já está na store.
  * - Contadores vêm do servidor (`/tickets/resumo/` + counts).
  *
- * A lista do backend não traz `requester_id`/`company_id`: o solicitante é resolvido por casamento único de
- * nome+empresa com o diretório de clientes (0 chamadas extras) e, onde há homônimos, pelo detalhe do ticket
- * (`GET /tickets/{id}/`, cacheado por ticket, 6 em paralelo).
+ * A lista traz `requester_id` e `company_id` (nulos só em ticket restrito) e as mensagens trazem `author_id`:
+ * nada é casado por nome e não há chamadas de detalhe só para descobrir o solicitante.
  */
 
 /** Página da lista global no boot (Home / Clientes / Orgs usam o que couber aqui + o que as visões trouxerem). */
@@ -42,12 +40,8 @@ export interface TicketsLoadInfo {
   total: number;
   loaded: number;
   truncated: boolean;
-  /** Chamadas ao detalhe só para descobrir o solicitante (homônimos / diretório indisponível). */
-  requesterLookups: number;
 }
-export const loadInfo: TicketsLoadInfo = { total: 0, loaded: 0, truncated: false, requesterLookups: 0 };
-
-const requesterByTicket = new Map<number, string>();
+export const loadInfo: TicketsLoadInfo = { total: 0, loaded: 0, truncated: false };
 
 /** Uma página de tickets (não varre o restante). */
 export async function fetchTicketPage(
@@ -90,32 +84,12 @@ async function pool<T>(items: T[], size: number, work: (item: T) => Promise<void
   );
 }
 
-/** DTOs da lista -> Ticket[] (com o solicitante resolvido). */
+/** DTOs da lista -> Ticket[]. `requester_id`/`company_id` já vêm na lista (ticket restrito = `requesterId` vazio). */
 async function toTickets(dtos: TicketDto[]): Promise<Ticket[]> {
-  const [statuses, clients, orgs] = await Promise.all([getStatuses(), getClients().catch(() => []), getOrgs().catch(() => [])]);
-  const orgNames = new Map(orgs.map((o) => [o.id, o.name]));
-  const resolved = new Map<number, string>();
-  const lookups: TicketDto[] = [];
-  for (const dto of dtos) {
-    const id = requesterByTicket.get(dto.id) ?? matchRequesterId(dto, clients, (orgId) => (orgId ? orgNames.get(orgId) : undefined));
-    if (id) resolved.set(dto.id, id);
-    else if (!dto.content_hidden) lookups.push(dto);
-  }
-  await pool(lookups, DETAIL_CONCURRENCY, async (dto) => {
-    try {
-      const detail = await http.get<TicketDetailDto>(`/tickets/${dto.id}/`);
-      loadInfo.requesterLookups += 1;
-      if (detail.requester) {
-        requesterByTicket.set(dto.id, String(detail.requester.id));
-        resolved.set(dto.id, String(detail.requester.id));
-      }
-    } catch {
-      /* fica sem solicitante: a tela mostra o nome vindo da lista */
-    }
-  });
+  const statuses = await getStatuses();
   return dtos.map((dto) => {
-    const requesterId = resolved.get(dto.id);
-    return withLocalTicketFields(mapTicketListItem(dto, { statuses, requesterId: requesterId ? (layers.mergedUsers.get(requesterId) ?? requesterId) : undefined }));
+    const t = mapTicketListItem(dto, { statuses });
+    return withLocalTicketFields({ ...t, requesterId: layers.mergedUsers.get(t.requesterId) ?? t.requesterId });
   });
 }
 
@@ -138,14 +112,39 @@ async function allTickets(): Promise<Ticket[]> {
 
 const fold = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
+/** Teto de tickets trazidos para o histórico de UM cliente ou organização (páginas de 100). */
+export const RELATED_MAX = 500;
+
+/**
+ * Tickets de um cliente (`?requester=`) ou de uma organização (`?company=`) direto no SERVIDOR, página a página até
+ * `RELATED_MAX`: o histórico não depende mais dos 100 primeiros tickets da lista inicial.
+ */
+async function listRelated(filter: TicketFilter): Promise<Ticket[]> {
+  const query: Record<string, number> = {};
+  if (filter.requesterId) query.requester = Number(filter.requesterId);
+  if (filter.orgId) query.company = Number(filter.orgId);
+  if (Object.values(query).some((v) => !Number.isFinite(v))) return []; // id local/sem par no backend
+  const dtos: TicketDto[] = [];
+  for (let offset = 0; ; ) {
+    const page = await fetchTicketPage(query, { limit: VIEW_PAGE, offset });
+    dtos.push(...page.dtos);
+    if (!page.hasMore || page.dtos.length === 0) break;
+    if (dtos.length >= RELATED_MAX) {
+      console.info(`Helpdesk: ${page.total} tickets no servidor para este filtro; mostrando os ${dtos.length} mais recentes.`);
+      break;
+    }
+    offset += page.dtos.length;
+  }
+  return layers.tickets.apply(await toTickets(dtos));
+}
+
 export async function listTickets(filter: TicketFilter = {}): Promise<Ticket[]> {
-  const all = await allTickets();
+  const all = filter.requesterId || filter.orgId ? await listRelated(filter) : await allTickets();
   const q = filter.query ? fold(filter.query) : '';
   return all.filter(
     (t) =>
       (!filter.statusIds || filter.statusIds.includes(t.statusId)) &&
       (!filter.channel || t.channel === filter.channel) &&
-      (!filter.requesterId || t.requesterId === filter.requesterId) &&
       (!filter.assigneeId || t.assigneeId === filter.assigneeId) &&
       (!q || fold(t.subject).includes(q) || fold(t.reference ?? '').includes(q)),
   );
@@ -165,10 +164,8 @@ export function getTicket(id: number): Promise<Ticket> {
 }
 
 async function fetchDetail(id: number, local: Ticket | undefined): Promise<Ticket> {
-  const [dto, statuses, staff, clients] = await Promise.all([http.get<TicketDetailDto>(`/tickets/${id}/`), getStatuses(), getStaff().catch(() => []), getClients().catch(() => [])]);
-  const known = requesterByTicket.get(id);
-  const ticket = withLocalTicketFields(mapTicketDetail(dto, { statuses, staff, clients, requesterId: known }));
-  if (dto.requester) requesterByTicket.set(id, String(dto.requester.id));
+  const [dto, statuses, staff] = await Promise.all([http.get<TicketDetailDto>(`/tickets/${id}/`), getStatuses(), getStaff().catch(() => [])]);
+  const ticket = withLocalTicketFields(mapTicketDetail(dto, { statuses, staff }));
   return local ? { ...ticket, ...local, comments: ticket.comments, events: ticket.events, detailed: true } : ticket;
 }
 
@@ -328,10 +325,8 @@ async function fetchDetailDto(id: number): Promise<TicketDetailDto> {
 }
 
 async function mapDto(dto: TicketDetailDto): Promise<Ticket> {
-  const [statuses, staff, clients] = await Promise.all([getStatuses(), getStaff().catch(() => []), getClients().catch(() => [])]);
-  const known = requesterByTicket.get(dto.id);
-  if (dto.requester) requesterByTicket.set(dto.id, String(dto.requester.id));
-  return withLocalTicketFields(mapTicketDetail(dto, { statuses, staff, clients, requesterId: known }));
+  const [statuses, staff] = await Promise.all([getStatuses(), getStaff().catch(() => [])]);
+  return withLocalTicketFields(mapTicketDetail(dto, { statuses, staff }));
 }
 
 const isUnknownOutcome = (e: unknown): boolean => e instanceof ApiError && (e.status === 0 || (e.status ?? 0) >= 500);
@@ -348,7 +343,8 @@ async function runStep(id: number, step: PlanStep, last: TicketDetailDto, window
       return http.post<TicketDetailDto>(`/tickets/${id}/unfollow/`);
     case 'close': {
       const w = window ?? resolutionWindow(last);
-      return http.post<TicketDetailDto>(`/tickets/${id}/close/`, { resolution_started_at: w.started, resolution_ended_at: w.ended, note: '' });
+      // `stage` = status personalizado da categoria fechada; sem ele o backend usa o "Fechado" de fábrica.
+      return http.post<TicketDetailDto>(`/tickets/${id}/close/`, { resolution_started_at: w.started, resolution_ended_at: w.ended, note: '', ...(step.body?.stage ? { stage: step.body.stage } : {}) });
     }
     case 'reply': {
       const fields: Record<string, unknown> = { ...step.body };
@@ -460,15 +456,15 @@ function localPart(plan: TicketPlan): Partial<Ticket> {
 }
 
 /**
- * Cria o ticket: `POST /tickets/` (equipe, assunto, corpo em markdown, prioridade, solicitante, anexos) e, em seguida,
- * responsável/etiquetas/seguir/status em chamadas separadas (o POST não aceita esses campos). Se uma delas falhar o
- * ticket JÁ existe: o erro é `PartialUpdateError{created:true}` e "Tentar novamente" atualiza esse ticket, sem criar outro.
+ * Cria o ticket em UMA chamada: `POST /tickets/` já leva responsável, status (por `stage`), etiquetas (ids) e
+ * `is_public:false` (descrição como observação interna). O backend confere tudo antes de gravar: uma recusa (400)
+ * não deixa ticket criado pela metade. Só o que o POST não cobre (seguir, macros, fechar já na criação, campos locais)
+ * vira chamadas seguintes; se uma delas falhar o ticket JÁ existe: `PartialUpdateError{created:true}` e "Tentar
+ * novamente" atualiza esse ticket, sem criar outro.
  */
 export async function createTicket(input: NewTicketInput): Promise<Ticket> {
-  if (input.public === false) {
-    throw new ApiError('No backend o ticket novo nasce com a descrição PÚBLICA (o solicitante a recebe). Para registrar só uma observação interna, crie o ticket com a descrição pública e adicione a observação depois. Nada foi criado.');
-  }
-  const [groups, statuses] = await Promise.all([getGroups(), getStatuses()]);
+  const [allGroups, statuses] = await Promise.all([getGroups(), getStatuses()]);
+  const groups = allGroups.filter((g) => !g.inactive); // equipe desativada não recebe tickets (o backend recusa)
   const me = getRealMeId();
   const team =
     input.assigneeGroupId ||
@@ -476,25 +472,22 @@ export async function createTicket(input: NewTicketInput): Promise<Ticket> {
     groups.find((g) => g.agentIds.includes(me))?.id ||
     groups[0]?.id;
   if (!team) throw new ApiError('Escolha o grupo do ticket (o backend exige uma equipe). Nada foi criado.');
+  if (input.public === false && !hasRealPermission('ticket.add_internal_note')) {
+    throw new ApiError('Você não tem permissão para registrar observação interna. Nada foi criado.', { status: 403 });
+  }
   await ensureTags(input.tags);
   const tags = await getTags();
   const markdown = htmlToMarkdown(input.bodyHtml);
   if (!markdown) throw new ApiError('Escreva a descrição do ticket. Nada foi criado.');
-  const body = createTicketBody({ subject: input.subject, requesterId: input.requesterId, markdown, teamId: Number(team), priority: input.priority });
+  const { body, followUp } = planNewTicket(
+    { subject: input.subject, requesterId: input.requesterId, markdown, teamId: Number(team), priority: input.priority, assigneeId: input.assigneeId, statusId: input.statusId, tags: input.tags, public: input.public, followerIds: input.followerIds, type: input.type, ccIds: input.ccIds, customFields: input.customFields },
+    { statuses, tags },
+  );
   const created = await http.post<TicketDetailDto>('/tickets/', input.files?.length ? toFormData(body, input.files) : body);
   invalidateTickets();
 
-  const newStatusId = statusIdByCategory(statuses, 'new');
   const plan = planTicketUpdate({
-    patch: {
-      ...(input.assigneeId ? { assigneeId: input.assigneeId } : {}),
-      ...(input.tags?.length ? { tags: input.tags } : {}),
-      ...(input.statusId && input.statusId !== newStatusId ? { statusId: input.statusId } : {}),
-      ...(input.followerIds?.length ? { followerIds: input.followerIds } : {}),
-      ...(input.type ? { type: input.type } : {}),
-      ...(input.ccIds?.length ? { ccIds: input.ccIds } : {}),
-      ...(input.customFields && Object.keys(input.customFields).length ? { customFields: input.customFields } : {}),
-    },
+    patch: followUp,
     current: { statusId: resolveStatusId(created, statuses), followerIds: created.watchers?.map((w) => String(w.id)) ?? [] },
     currentStageId: created.stage != null ? String(created.stage) : undefined,
     statuses,
@@ -503,7 +496,10 @@ export async function createTicket(input: NewTicketInput): Promise<Ticket> {
     macroIds: input.macroIds,
   });
   recordLocal(created.id, localPart(plan));
-  if (plan.blocked) throw new PartialUpdateError(plan.blocked, { appliedKeys: [], pendingKeys: [], appliedLabels: [`ticket #${created.id} criado`], pendingLabels: [], ticket: await mapDto(created), created: true, commentSent: true });
+  if (plan.steps.length === 0) {
+    const out = await mapDto(created);
+    return plan.localKeys.length ? { ...out, localFields: plan.localKeys } : out;
+  }
   const { dto } = await runPlan(created.id, plan, created, { created: true });
   invalidateTickets();
   const out = await mapDto(dto);
@@ -511,35 +507,79 @@ export async function createTicket(input: NewTicketInput): Promise<Ticket> {
 }
 
 /**
- * Ações em lote NO SERVIDOR: `bulk-assign`, `bulk-priority`, `bulk-status` e, para "resolvido", um `close` por ticket
- * (cada um com a janela de solução do próprio ticket; o `bulk-close` exigiria uma janela única e o backend recusa
- * início anterior à criação de qualquer um dos tickets). Falhas vêm em `failed[]` (parcial por ticket).
+ * Janela sugerida (D4) de vários tickets para o diálogo do fechamento em lote: um detalhe por ticket
+ * (6 em paralelo), porque o início depende dos eventos do ticket. Tickets que não abrem ficam de fora.
+ */
+export async function suggestResolutionWindows(ids: number[]): Promise<ResolutionSuggestion[]> {
+  const out = new Map<number, ResolutionSuggestion>();
+  await pool(ids, DETAIL_CONCURRENCY, async (id) => {
+    try {
+      const dto = await fetchDetailDto(id);
+      const w = resolutionWindow(dto);
+      out.set(id, { id, reference: dto.reference, subject: dto.subject, createdAt: dto.created_at, started: w.started, ended: w.ended });
+    } catch {
+      /* o ticket não abriu: fica fora do lote (o diálogo avisa a diferença) */
+    }
+  });
+  return ids.flatMap((id) => (out.has(id) ? [out.get(id)!] : []));
+}
+
+type BulkFailures = { updated?: number[]; failed?: { id: number | null; detail: string }[] };
+
+/**
+ * Ações em lote NO SERVIDOR: `bulk-assign`, `bulk-priority`, `bulk-status` e, para "resolvido", `bulk-close` com
+ * `items:[{id, resolution_started_at, resolution_ended_at}]` (a janela de CADA ticket, confirmada no diálogo).
+ * Todas pedem `report_missing:true`: id que não existe ou que o usuário não enxerga volta em `failed[]`.
+ * O `bulk-close` não aceita `stage`: para um status personalizado da categoria fechada o fechamento é ticket a ticket
+ * (`close/` com `stage`). Falhas por ticket vêm em `failed[]` (parcial) e o resto é alterado.
  */
 export async function bulkUpdate(ids: number[], change: BulkChange): Promise<BulkResult> {
   const failed = new Map<number, string>();
-  const note = (list: { id: number; detail: string }[] | undefined) => (list ?? []).forEach((f) => failed.set(f.id, f.detail));
+  const note = (res: BulkFailures | undefined) => (res?.failed ?? []).forEach((f) => f.id != null && failed.set(f.id, f.detail));
   const statuses = await getStatuses();
   if (change.assigneeId !== undefined) {
-    note((await http.post<{ failed: { id: number; detail: string }[] }>('/tickets/bulk-assign/', { ticket_ids: ids, assignee_id: Number(change.assigneeId) })).failed);
+    note(await http.post<BulkFailures>('/tickets/bulk-assign/', { ticket_ids: ids, assignee_id: Number(change.assigneeId), report_missing: true }));
   }
   if (change.priority) {
-    note((await http.post<{ failed: { id: number; detail: string }[] }>('/tickets/bulk-priority/', { ticket_ids: ids, priority: change.priority })).failed);
+    note(await http.post<BulkFailures>('/tickets/bulk-priority/', { ticket_ids: ids, priority: change.priority, report_missing: true }));
   }
   if (change.statusId) {
     const target = statuses.find((s) => s.id === change.statusId);
     const todo = ids.filter((id) => !failed.has(id));
     if (target?.category === 'solved') {
+      const given = new Map((change.resolutions ?? []).map((r) => [r.id, r]));
+      const windows = new Map<number, ResolutionWindow>();
       await pool(todo, DETAIL_CONCURRENCY, async (id) => {
+        const r = given.get(id);
+        if (r) return void windows.set(id, { started: r.started, ended: r.ended });
         try {
-          const dto = await fetchDetailDto(id);
-          const w = resolutionWindow(dto);
-          await http.post(`/tickets/${id}/close/`, { resolution_started_at: w.started, resolution_ended_at: w.ended, note: '' });
+          windows.set(id, resolutionWindow(await fetchDetailDto(id))); // sem janela confirmada: sugestão D4 do ticket
         } catch (e) {
-          failed.set(id, e instanceof Error ? e.message : 'Não foi possível fechar.');
+          failed.set(id, e instanceof Error ? e.message : 'Não foi possível calcular a janela da solução.');
         }
       });
+      const ready = todo.filter((id) => windows.has(id));
+      if (target.system) {
+        if (ready.length > 0) {
+          note(
+            await http.post<BulkFailures>('/tickets/bulk-close/', {
+              items: ready.map((id) => ({ id, resolution_started_at: windows.get(id)!.started, resolution_ended_at: windows.get(id)!.ended })),
+              report_missing: true,
+            }),
+          );
+        }
+      } else {
+        await pool(ready, DETAIL_CONCURRENCY, async (id) => {
+          const w = windows.get(id)!;
+          try {
+            await http.post(`/tickets/${id}/close/`, { resolution_started_at: w.started, resolution_ended_at: w.ended, note: '', stage: Number(target.id) });
+          } catch (e) {
+            failed.set(id, e instanceof Error ? e.message : 'Não foi possível fechar.');
+          }
+        });
+      }
     } else if (todo.length > 0) {
-      note((await http.post<{ failed: { id: number; detail: string }[] }>('/tickets/bulk-status/', { ticket_ids: todo, stage_id: Number(change.statusId) })).failed);
+      note(await http.post<BulkFailures>('/tickets/bulk-status/', { ticket_ids: todo, stage_id: Number(change.statusId), report_missing: true }));
     }
   }
   invalidateTickets();
@@ -578,4 +618,4 @@ export async function mergeTickets(targetId: number, sourceIds: number[]): Promi
 
 // Simulação de chegada de tickets: só no mock. No real, `startLiveUpdates` liga o WebSocket `/ws/me/` (`api/real/ws.ts`).
 export { simulateIncomingTicket, simulateCustomerReply } from '../mock/tickets';
-export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult } from '../mock/tickets';
+export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult, BulkResolution, ResolutionSuggestion } from '../mock/tickets';

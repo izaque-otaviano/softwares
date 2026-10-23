@@ -16,7 +16,7 @@
       "phone": "",
       "phone_secondary": "",
       "is_active": true,
-      "last_login": null,
+      "last_login": "2026-10-22T19:42:44.655675-03:00",
       "last_seen_at": null,
       "anonymized_at": null,
       "invite_status": "aceito",
@@ -30,7 +30,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:41.276897-03:00",
+      "updated_at": "2026-10-22T11:09:41.276911-03:00"
     },
     {
       "id": 6,
@@ -59,7 +61,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:41.388329-03:00",
+      "updated_at": "2026-10-22T11:09:41.388344-03:00"
     },
     {
       "id": 7,
@@ -88,7 +92,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:41.504596-03:00",
+      "updated_at": "2026-10-22T11:09:41.504612-03:00"
     },
     {
       "id": 8,
@@ -117,7 +123,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:41.612576-03:00",
+      "updated_at": "2026-10-22T11:09:41.612590-03:00"
     }
   ]
 }

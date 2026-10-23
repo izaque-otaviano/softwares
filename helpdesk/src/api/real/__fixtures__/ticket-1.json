@@ -18,6 +18,8 @@
     "internal_only": false
   },
   "requester_display": "Ana Almeida",
+  "requester_id": 5,
+  "company_id": 1,
   "assignee_name": null,
   "assignee_avatar": null,
   "assignee_id": null,

@@ -57,3 +57,12 @@ export function slaDisplay(
   // Faltando menos de 1 min (ainda dentro do prazo) "0m" pareceria já estourado.
   return { state: minutes <= warnAtMinutes ? 'warning' : 'ok', label: minutes < 1 ? '<1m' : shortDuration(minutes) };
 }
+
+/** Espera em segundos para a tela ("45 s", "58 min 20 s", "1 h 02 min"). */
+export function waitText(totalSeconds: number): string {
+  const t = Math.max(0, Math.ceil(totalSeconds));
+  if (t < 60) return `${t} s`;
+  const m = Math.floor(t / 60);
+  if (m < 60) return `${m} min ${String(t % 60).padStart(2, '0')} s`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
+}

@@ -1,3 +1,4 @@
+import { IS_REAL } from '@/api/mode';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { usersApi } from '@/api';
@@ -60,6 +61,11 @@ export function CustomerPanel({ ticketKey }: { ticketKey: string }) {
       alive = false;
     };
   }, [requesterId, attempt]);
+
+  // Modo real: o histórico do cliente vem do servidor (`?requester=`), não só dos 100 primeiros tickets da lista inicial.
+  useEffect(() => {
+    if (requesterId) void useTickets.getState().loadRelated({ requesterId }).catch(() => {});
+  }, [requesterId]);
 
   // Se falhar, o texto digitado continua no campo; o toast oferece nova tentativa.
   const saveNotes = () => {
@@ -148,7 +154,7 @@ export function CustomerPanel({ ticketKey }: { ticketKey: string }) {
                   icon={<RefreshCw aria-hidden className="h-4 w-4" />}
                   onClick={() => {
                     setNow(new Date());
-                    void useTickets.getState().load();
+                    void (IS_REAL ? useTickets.getState().loadRelated({ requesterId }) : useTickets.getState().load());
                   }}
                 />
               }

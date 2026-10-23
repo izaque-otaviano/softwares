@@ -9,7 +9,8 @@ import { DropdownButton } from '@/components/admin/lists/DropdownButton';
 import { ListToolbar, matchesActive, type ActiveFilter } from '@/components/admin/lists/ListToolbar';
 import { useAsync } from '@/components/admin/lists/useAsync';
 import { AVAILABLE_TO_LABEL } from '@/components/admin/macros/macroText';
-import { Button, ConfirmModal, Pill, Table, type ColumnDef, type MenuItemSpec } from '@/components/ui';
+import { Banner, Button, ConfirmModal, Pill, Table, type ColumnDef, type MenuItemSpec } from '@/components/ui';
+import { MACRO_WRITE, useCan } from '@/lib/permissions';
 import { toast } from '@/store/useUi';
 import type { Macro } from '@/types/domain';
 
@@ -18,6 +19,7 @@ const date = (iso?: string) => (iso ? format(new Date(iso), 'dd/MM/yyyy', { loca
 
 export default function Macros() {
   const navigate = useNavigate();
+  const canWrite = useCan(MACRO_WRITE);
   const { data, loading, error, reload, setData } = useAsync(() => macrosApi.listMacros().then((l) => [...l]));
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ActiveFilter>('active');
@@ -64,11 +66,15 @@ export default function Macros() {
     { id: 'usage7d', header: 'Uso 7 dias', label: 'Uso 7 dias', width: 120, align: 'right', cell: (m) => m.usage7d.toLocaleString('pt-BR') },
   ];
 
-  const rowActions = (m: Macro): MenuItemSpec[] => [
-    { id: 'edit', label: 'Editar', onSelect: () => navigate(`/admin/macros/${m.id}`) },
-    { id: 'toggle', label: m.active ? 'Desativar' : 'Ativar', onSelect: () => void setActive([m], !m.active) },
-    { id: 'delete', label: 'Excluir', tone: 'danger', onSelect: () => setToDelete([m]) },
-  ];
+  // Sem `macro.manage` o agente só consulta: nada de criar, editar, ativar ou excluir.
+  const rowActions = (m: Macro): MenuItemSpec[] =>
+    !canWrite
+      ? [{ id: 'view', label: 'Ver macro', onSelect: () => navigate(`/admin/macros/${m.id}`) }]
+      : [
+          { id: 'edit', label: 'Editar', onSelect: () => navigate(`/admin/macros/${m.id}`) },
+          { id: 'toggle', label: m.active ? 'Desativar' : 'Ativar', onSelect: () => void setActive([m], !m.active) },
+          { id: 'delete', label: 'Excluir', tone: 'danger' as const, onSelect: () => setToDelete([m]) },
+        ];
 
   return (
     <div className="flex min-h-full flex-col bg-surface">
@@ -78,21 +84,30 @@ export default function Macros() {
         description="Macros são conjuntos de ações e respostas que os agentes aplicam a um ticket com um clique."
         learnMoreHref="https://example.com/ajuda/macros"
         actions={
-          <Button variant="ink" onClick={() => navigate('/admin/macros/new')}>
-            Criar macro
-          </Button>
+          canWrite ? (
+            <Button variant="ink" onClick={() => navigate('/admin/macros/new')}>
+              Criar macro
+            </Button>
+          ) : undefined
         }
       />
+      {canWrite ? null : (
+        <div className="px-6 pt-2">
+          <Banner tone="info">Você pode aplicar macros nos tickets, mas só quem tem a permissão de gerenciar macros (administradores) cria, edita ou exclui.</Banner>
+        </div>
+      )}
       <div className="mt-2">
         <ListToolbar searchLabel="Pesquisar macros" query={query} onQuery={setQuery} filterLabel="Filtrar por status" filter={filter} onFilter={setFilter}>
-          <DropdownButton
-            label="Ações"
-            items={[
-              { id: 'activate', label: 'Ativar selecionadas', disabled: none, onSelect: () => void setActive(selectedMacros, true) },
-              { id: 'deactivate', label: 'Desativar selecionadas', disabled: none, onSelect: () => void setActive(selectedMacros, false) },
-              { id: 'delete', label: 'Excluir selecionadas', tone: 'danger', disabled: none, onSelect: () => setToDelete(selectedMacros) },
-            ]}
-          />
+          {canWrite ? (
+            <DropdownButton
+              label="Ações"
+              items={[
+                { id: 'activate', label: 'Ativar selecionadas', disabled: none, onSelect: () => void setActive(selectedMacros, true) },
+                { id: 'deactivate', label: 'Desativar selecionadas', disabled: none, onSelect: () => void setActive(selectedMacros, false) },
+                { id: 'delete', label: 'Excluir selecionadas', tone: 'danger', disabled: none, onSelect: () => setToDelete(selectedMacros) },
+              ]}
+            />
+          ) : null}
         </ListToolbar>
       </div>
       <div className="px-6 pb-6">
@@ -103,7 +118,7 @@ export default function Macros() {
           rows={rows}
           getRowId={(m) => m.id}
           getRowLabel={(m) => m.name}
-          selectable
+          selectable={canWrite}
           selectedIds={selected}
           onSelectionChange={setSelected}
           loading={loading}
@@ -111,12 +126,12 @@ export default function Macros() {
           rowActions={rowActions}
           empty={{
             title: 'Nenhuma macro encontrada',
-            description: 'Ajuste a busca ou o filtro, ou crie uma macro.',
-            action: (
+            description: canWrite ? 'Ajuste a busca ou o filtro, ou crie uma macro.' : 'Ajuste a busca ou o filtro.',
+            action: canWrite ? (
               <Button variant="ink" onClick={() => navigate('/admin/macros/new')}>
                 Criar macro
               </Button>
-            ),
+            ) : undefined,
           }}
         />
       </div>

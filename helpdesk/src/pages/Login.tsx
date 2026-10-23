@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { safeRedirect } from '@/components/auth/RequireSession';
 import { Banner, Button, Field, Input } from '@/components/ui';
+import { useNow } from '@/lib/useNow';
+import { waitText } from '@/lib/time';
 import { useSession } from '@/store/useSession';
 
 const METHOD_TEXT = {
@@ -15,6 +17,10 @@ export default function Login() {
   const twoFactor = useSession((s) => s.twoFactor);
   const error = useSession((s) => s.error);
   const expired = useSession((s) => s.expired);
+  const retryUntil = useSession((s) => s.retryUntil);
+  const now = useNow(retryUntil ? 1000 : 0);
+  const waitSeconds = retryUntil ? Math.max(0, Math.ceil((retryUntil - now.getTime()) / 1000)) : 0;
+  const waiting = waitSeconds > 0;
   const location = useLocation();
   const navigate = useNavigate();
   const from = safeRedirect((location.state as { from?: string } | null)?.from);
@@ -33,6 +39,10 @@ export default function Login() {
     if (status === 'two_factor') codeRef.current?.focus();
   }, [status]);
   useEffect(() => {
+    // Fim da espera do limite de tentativas: libera o botão (o relógio da página é o que manda).
+    if (retryUntil && retryUntil <= now.getTime()) useSession.getState().clearWait();
+  }, [retryUntil, now]);
+  useEffect(() => {
     if (status === 'authenticated') navigate(from, { replace: true });
   }, [status, from, navigate]);
 
@@ -40,7 +50,7 @@ export default function Login() {
 
   const submitCredentials = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || !email.trim() || !password) return;
+    if (busy || waiting || !email.trim() || !password) return;
     setBusy(true);
     await useSession.getState().login(email, password);
     setBusy(false);
@@ -48,7 +58,7 @@ export default function Login() {
 
   const submitCode = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || !code.trim()) return;
+    if (busy || waiting || !code.trim()) return;
     setBusy(true);
     setResent(false);
     const ok = await useSession.getState().verifyTwoFactor(code);
@@ -92,6 +102,11 @@ export default function Login() {
               </Banner>
             ) : null}
             {resent ? <Banner tone="success">Código reenviado.</Banner> : null}
+            {waiting ? (
+              <p className="text-sm text-fg-muted">
+                Você poderá tentar de novo em <span className="font-medium text-fg tabular-nums">{waitText(waitSeconds)}</span>.
+              </p>
+            ) : null}
           </div>
 
           {inTwoFactor ? (
@@ -99,7 +114,7 @@ export default function Login() {
               <Field label="Código de verificação" required>
                 <Input ref={codeRef} value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={8} />
               </Field>
-              <Button type="submit" size="lg" loading={busy} disabled={!code.trim()}>
+              <Button type="submit" size="lg" loading={busy} disabled={!code.trim() || waiting}>
                 Verificar
               </Button>
               <div className="flex items-center justify-between text-sm">
@@ -119,7 +134,7 @@ export default function Login() {
               <Field label="Senha" required>
                 <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
               </Field>
-              <Button type="submit" size="lg" loading={busy} disabled={!email.trim() || !password}>
+              <Button type="submit" size="lg" loading={busy} disabled={!email.trim() || !password || waiting}>
                 Entrar
               </Button>
             </form>

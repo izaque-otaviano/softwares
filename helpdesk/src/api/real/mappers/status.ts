@@ -36,6 +36,7 @@ export function mapStatus(dto: StatusDto): TicketStatus {
     color: dto.color,
     active: dto.is_active,
     system: dto.is_system,
+    ticketCount: dto.ticket_count,
   };
 }
 

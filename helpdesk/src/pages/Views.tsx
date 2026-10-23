@@ -175,7 +175,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const rowActions = (t: Ticket): MenuItemSpec[] => [
     { id: 'open', label: 'Abrir ticket', onSelect: () => openTicket(t.id) },
     { id: 'assign', label: 'Atribuir a mim', onSelect: () => void useTickets.getState().assignToMe([t.id]) },
-    { id: 'solve', label: 'Marcar como resolvido', onSelect: () => void useTickets.getState().setStatus([t.id], statusIdByCategory(statuses, 'solved')) },
+    { id: 'solve', label: 'Marcar como resolvido', onSelect: () => void useTickets.getState().requestSetStatus([t.id], statusIdByCategory(statuses, 'solved')) },
     { id: 'delete', label: 'Apagar', tone: 'danger', onSelect: () => setDeleteId(t.id) },
   ];
 

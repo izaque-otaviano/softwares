@@ -18,6 +18,8 @@
     "internal_only": false
   },
   "requester_display": "Carla Costa",
+  "requester_id": 7,
+  "company_id": 2,
   "assignee_name": "Samuel Suporte",
   "assignee_avatar": null,
   "assignee_id": 3,
@@ -59,6 +61,7 @@
   "messages": [
     {
       "id": 3,
+      "author_id": 7,
       "author_name": "Carla Costa",
       "author_avatar": null,
       "author_is_internal": false,
@@ -76,6 +79,7 @@
     },
     {
       "id": 4,
+      "author_id": 3,
       "author_name": "Samuel Suporte",
       "author_avatar": null,
       "author_is_internal": true,

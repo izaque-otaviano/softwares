@@ -15,31 +15,29 @@ Detalhes técnicos de cada ponto de integração: `src/api/PENDENTE_NO_BACKEND.m
 ## Decisões técnicas tomadas
 
 - **Fachada de API** `mock | real` por `VITE_API_MODE`. Os testes rodam sempre em mock.
-- **Lista inicial = 1ª página global (100 tickets)**; cada visão do servidor pagina por conta própria (100 por vez, "Carregar mais"). A Home busca a visão "mine" além disso e a tela do ticket busca por id quando o ticket não está na lista. Telas que contam tickets a partir da store (Clientes, Organizações, histórico no painel do cliente, tags sugeridas) só enxergam o que já foi carregado: ver "No front", item 3.
-- **Fechar ticket (modo real):** pelo ticket abre o diálogo `CloseResolutionModal` com início/término editáveis (pré-preenchidos com a sugestão D4; valida criação <= início <= término <= agora, no minuto, igual ao backend). **Fechar em lote ("Mudar status" > Fechado) NÃO abre diálogo**: usa a sugestão D4 por ticket, e a janela entra na franquia de horas.
-- **Ordem das chamadas ao salvar:** macro, propriedades, seguir, mensagem ou fechamento, status customizado. A mensagem vai por último porque duplica se repetida.
+- **Lista inicial = 1ª página global (100 tickets)**; cada visão do servidor pagina por conta própria (100 por vez, "Carregar mais"). A Home busca a visão "mine" além disso e a tela do ticket busca por id quando o ticket não está na lista. O histórico do cliente (perfil e painel do ticket) e os tickets da organização **vão ao servidor** (`?requester=`, `?company=`, todas as páginas até 500) e não dependem mais dos 100 primeiros. Só as tags sugeridas ainda leem o que está na store: ver "No front", item 3.
+- **Fechar ticket (modo real):** pelo ticket abre o diálogo `CloseResolutionModal` com início/término editáveis (pré-preenchidos com a sugestão D4; valida criação <= início <= término <= agora, no minuto, igual ao backend). **Fechar em lote ("Mudar status" > status resolvido) abre `BulkCloseModal`**: quantidade, política (cada ticket usa a sua janela sugerida), início e fim de cada ticket, término comum editável; envia `bulk-close` com `items`. Falhas por ticket (`failed[]`) ficam no diálogo, com o motivo, e dá para reenviar só elas. A janela entra na franquia de horas.
+- **Ordem das chamadas ao salvar:** macro, propriedades, seguir, mensagem ou fechamento, status por coluna (`bulk-status`, só quando não há resposta pública nem fechamento). A mensagem vai por último porque duplica se repetida.
+- **Criar ticket = 1 chamada** (`POST /tickets/` com `assignee`, `stage`, `tags`, `is_public`). Só seguir, macros e fechar já na criação continuam em chamadas seguintes. Recusa do backend = 400 sem ticket criado.
 - **Falha parcial** informa o que foi e o que não foi aplicado, mantém o texto e o "Tentar novamente" reenvia só o que falta.
 - **Motor local de gatilhos desligado no modo real**, para não gravar eventos falsos em tickets reais. Os gatilhos continuam editáveis, com aviso.
 - **HTML para markdown** com serializador próprio (sem dependência nova). Sublinhado, imagem e tabela viram texto.
-- **Descrição de ticket novo como observação interna é recusada**, porque o POST do backend publicaria o texto ao cliente.
-- **Autor da mensagem** é casado por nome (o backend não manda o id), só quando único.
-- **Solicitante na lista** é resolvido por nome e empresa, com fallback para o detalhe do ticket.
+- **Descrição de ticket novo como observação interna** vai com `is_public:false` (o cliente nunca a vê); exige a permissão `ticket.add_internal_note`.
+- **Autor da mensagem** vem de `author_id`; sem id (autor oculto) vira `name:<nome>` e a tela mostra o nome. **Solicitante** e **empresa** vêm de `requester_id`/`company_id` da lista; ticket restrito (ids nulos) fica sem solicitante e mostra o nome mascarado. Nada é casado por nome e não há chamadas de detalhe só para descobrir o solicitante.
+- **Permissões** (`me.permissions`) ficam na sessão (`lib/permissions.ts`): o agente sem `macro.manage` nem `settings.manage` não vê criar/editar macro; a criação não auto-atribui ao criador sem `ticket.edit_properties`.
+- **Login 429**: a tela mostra o `detail` do backend e a espera (`Retry-After` ou `retry_after`), com contagem regressiva e botão desabilitado.
 
 ## Problemas a corrigir
 
 ### No backend do Resolv (quando for permitido alterá-lo)
 
-1. `POST /tickets/` aceita poucos campos e o corpo é sempre público; atribuído, status e tags exigem 1 a 3 chamadas extras.
-2. `bulk-close` usa uma única janela de resolução para o lote; `bulk-priority` ignora ids inválidos sem reportar em `failed[]`.
-3. `PATCH` aceita `is_active:false` em status de fábrica (dá para derrubar o "Novo").
-4. `me.permissions` do agente inclui `macro.manage`, mas macros exigem admin (403).
-5. Fechar sempre cai no stage de fábrica "Fechado".
-6. Empresa exige `slug` e `plan`; cliente exige empresa e telefone.
-7. Limite de login de 20 por hora responde 429 em automação.
-8. A lista de tickets não traz `requester_id` nem `company_id`, e as mensagens não trazem `author_id`.
-9. Reabrir ticket mantém o stage "Fechado" (caso do TD-00005).
-10. Usuário do Resolv não tem `created_at` nem `updated_at`.
-11. `/ticket-views/` devolve array puro, sem envelope de paginação.
+Da lista anterior (11 itens) só o antigo item 6 (empresa e cliente exigem campos) continua. Os outros dez (criar ticket triado, lote com janela por ticket e `failed[]`, status de fábrica, `macro.manage`, fechar em status personalizado, limite de login 429, `requester_id`/`company_id`/`author_id`, reabrir, `created_at`/`updated_at` e envelope de `/ticket-views/`) foram corrigidos no backend e verificados no Helpdesk contra o backend novo (detalhes em `src/api/PENDENTE_NO_BACKEND.md`; o 429 foi testado com resposta simulada, sem esgotar o login real). Pontos novos encontrados:
+
+1. (antigo 6) Empresa exige `slug` e `plan`; cliente exige empresa e telefone (o front deriva o slug e pede plano, empresa e telefone no modal).
+2. `bulk-close` não aceita `stage`: para fechar em lote num status personalizado da categoria fechada o front faz um `close/` por ticket.
+3. Os eventos do ticket trazem só `actor_name` (sem `actor_id`): o autor do evento é casado por nome.
+4. `GET /tickets/` não filtra por lista de ids: depois de uma ação em lote o front relê cada ticket alterado (`GET /tickets/{id}/`).
+5. `GET /settings/teams/roster/` devolve equipes desativadas junto com as ativas (o front as ignora ao escolher a equipe do ticket novo).
 
 ### Funcionalidades que existem só no front (a criar no backend)
 
@@ -47,11 +45,11 @@ Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA
 
 ### No front
 
-1. **Diálogo de fechamento: feito, com ressalva.** `CloseResolutionModal` (modo real, só pela tela do ticket). Verificado no navegador com o backend real, inclusive em fuso -03:00: valores gravados em `resolution_started_at`/`resolution_ended_at` conferem. Fechamento em lote segue sem diálogo (sugestão D4).
+1. **Diálogo de fechamento: feito.** `CloseResolutionModal` (tela do ticket) e `BulkCloseModal` (lote, também no mock). Verificado no navegador com o backend novo: janelas gravadas conferem (`resolution_started_at`/`resolution_ended_at`), término comum editável, falha por ticket listada com o motivo e reenvio só dos que falharam. Status personalizado fechado vai por `stage` (`close/` e `reply`); no lote vira um `close/` por ticket (o `bulk-close` não tem `stage`).
 2. **Tempo real por WebSocket (`/ws/me/`): feito.** `api/real/ws.ts` + `startLiveUpdates`. Verificado: um evento de outro usuário atualiza propriedades do ticket aberto (formulário sem edições pendentes), contadores e as listas por visão já abertas, sem recarregar; reconexão com backoff após queda (simulada fechando o socket) e uma só conexão por aba. 4401/4403 não reconectam. Limite do backend: o evento só vai a quem é solicitante/responsável/dono/seguidor e **não há evento de ticket novo** (`kind`: assigned, owner, updated, closed, reply). Eventos perdidos durante uma queda não são reenviados: ao reconectar só os contadores são revalidados.
-3. **Paginação por visão: feito, com ressalva importante.** Visões com `query` (6 do Helpdesk menos `recent`/`solved-recent`, as do sistema e as pessoais) paginam de 100 em 100 com "Carregar mais" (verificado com 156 tickets: 100 de 149, depois 149, sem duplicados). **Ressalva:** a store só carrega a 1ª página global; `recent` e `solved-recent` (locais), Clientes/Organizações, histórico do cliente e tags sugeridas contam apenas tickets já carregados e podem ficar incompletos com mais de 100 tickets. Filtros da gaveta numa visão paginada atuam só nas linhas carregadas. Seleção em lote atinge só linhas carregadas.
+3. **Paginação por visão: feito, com ressalva.** Visões com `query` (6 do Helpdesk menos `recent`/`solved-recent`, as do sistema e as pessoais) paginam de 100 em 100 com "Carregar mais" (verificado com 156 tickets: 100 de 149, depois 149, sem duplicados). **Histórico do cliente, painel do cliente no ticket e tickets da organização: resolvido**, vêm do servidor (`?requester=`/`?company=`; verificado: Ana 54, Beto 49, Acme 103, iguais às contagens do servidor, com mais de 100 na organização). **Ressalva (continua):** `recent` e `solved-recent` (locais) e as tags sugeridas contam apenas tickets já carregados e podem ficar incompletos com mais de 100 tickets. Filtros da gaveta numa visão paginada atuam só nas linhas carregadas. Seleção em lote atinge só linhas carregadas. `/ticket-views/?page=` não é usado: o array puro devolve todas as visões, e o front precisa do `count` de todas para o contador.
 4. **Abas de trabalho: `role=group` + `aria-current`, em vez de `tablist`/`tab`.** Trade-off: o brief 5.1 pedia `tablist` (e a violação `aria-required-children` do botão "Fechar aba" dentro do `tablist` era a única conhecida). Com `group` some a violação, mas as abas deixam de ter semântica de aba (sem "aba 1 de 3" nem `aria-selected`; a ordem de Tab continua a mesma). Não rodei axe (não está instalado); só inspecionei os papéis no navegador.
-5. **Menu ⋮ do ticket: feito, com ressalvas.** Criar macro vai ao backend (recusa nome repetido); fundir e apagar são **só locais** (avisados "somente neste navegador"; apagar e spam pedem confirmação). Suspender usa `PATCH /settings/users/{id}/` e depende do backend (nos dados de DEV os clientes sem telefone são recusados com "Informe ao menos um telefone"; o caminho de sucesso não foi verificado). Spam = suspender (se falhar, avisa que NÃO suspendeu) + remover localmente; não existe spam no backend.
+5. **Menu ⋮ do ticket: feito, com ressalvas.** Criar macro vai ao backend (recusa nome repetido) e só aparece para quem tem `macro.manage` ou `settings.manage`; fundir e apagar são **só locais** (avisados "somente neste navegador"; apagar e spam pedem confirmação). Suspender usa `PATCH /settings/users/{id}/` e depende do backend (nos dados de DEV os clientes sem telefone são recusados com "Informe ao menos um telefone"; o caminho de sucesso não foi verificado). Spam = suspender (se falhar, avisa que NÃO suspendeu) + remover localmente; não existe spam no backend.
 6. **Início do admin: feito.** Execuções/sem uso mostram — quando o backend não envia contadores. Os "tetos" de assentos (5), campos (20) e gatilhos (10) são locais e vêm sinalizados; no modo real a Visão geral da conta mostra só "N agentes ativos".
 7. **Conta, Canais e Espaços: páginas informativas** (sem edição). Conta = sessão + agentes ativos; Canais = texto explicativo; Espaços = layouts (texto) + atalhos reais. Marca/cobrança/SSO seguem fora.
 8. **Visualizações pessoais: feito.** Criar/editar/clonar/apagar via `/ticket-views/` e filtros da gaveta (prioridade, status, assunto, solicitante, período) gravados e reidratados ao reabrir; verificado com curl. Tipo e tags não têm par no backend e não são gravados. Clonar visão do Helpdesk/sistema grava `{view: slug}`.

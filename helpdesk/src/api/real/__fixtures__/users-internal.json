@@ -16,7 +16,7 @@
       "phone": "",
       "phone_secondary": "",
       "is_active": true,
-      "last_login": "2026-10-22T11:25:36.132943-03:00",
+      "last_login": "2026-10-22T20:23:44.772928-03:00",
       "last_seen_at": null,
       "anonymized_at": null,
       "invite_status": "aceito",
@@ -30,7 +30,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:40.754107-03:00",
+      "updated_at": "2026-10-22T11:09:40.754136-03:00"
     },
     {
       "id": 4,
@@ -61,7 +63,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:41.132997-03:00",
+      "updated_at": "2026-10-22T11:09:41.133011-03:00"
     },
     {
       "id": 3,
@@ -76,7 +80,7 @@
       "phone": "",
       "phone_secondary": "",
       "is_active": true,
-      "last_login": null,
+      "last_login": "2026-10-22T19:42:38.044244-03:00",
       "last_seen_at": null,
       "anonymized_at": null,
       "invite_status": "aceito",
@@ -92,7 +96,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:41.020903-03:00",
+      "updated_at": "2026-10-22T11:09:41.020920-03:00"
     },
     {
       "id": 2,
@@ -107,7 +113,7 @@
       "phone": "",
       "phone_secondary": "",
       "is_active": true,
-      "last_login": null,
+      "last_login": "2026-10-22T18:11:12.979433-03:00",
       "last_seen_at": null,
       "anonymized_at": null,
       "invite_status": "aceito",
@@ -124,7 +130,9 @@
       "signature_render": "",
       "custom_role": null,
       "custom_role_name": null,
-      "ticket_scope": ""
+      "ticket_scope": "",
+      "created_at": "2026-10-22T11:09:40.905843-03:00",
+      "updated_at": "2026-10-22T11:09:40.905864-03:00"
     }
   ]
 }

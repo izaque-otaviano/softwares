@@ -14,7 +14,7 @@ export interface BulkBarProps {
 /** Ações em lote sobre a seleção; usa as ações de `useTickets`. */
 export function BulkBar({ ids, onClear }: BulkBarProps) {
   const statuses = useTickets((s) => s.statuses);
-  const { assignToMe, setStatus, setPriority, deleteTickets, mergeTickets } = useTickets.getState();
+  const { assignToMe, requestSetStatus, setPriority, deleteTickets, mergeTickets } = useTickets.getState();
   const [confirm, setConfirm] = useState<'delete' | 'merge' | null>(null);
   const n = ids.length;
   const target = Math.min(...ids);
@@ -34,7 +34,7 @@ export function BulkBar({ ids, onClear }: BulkBarProps) {
         </MenuTrigger>
         <MenuContent>
           {statuses.map((s) => (
-            <MenuItem key={s.id} onSelect={async () => done(await setStatus(ids, s.id))}>
+            <MenuItem key={s.id} onSelect={() => void requestSetStatus(ids, s.id, onClear)}>
               {s.agentName}
             </MenuItem>
           ))}

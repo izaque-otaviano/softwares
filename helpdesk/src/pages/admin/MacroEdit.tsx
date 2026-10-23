@@ -6,6 +6,7 @@ import { EditFooter, PageHeader } from '@/components/admin/PageHeader';
 import { useAsync } from '@/components/admin/lists/useAsync';
 import { AVAILABLE_TO_LABEL, htmlToText, textToHtml } from '@/components/admin/macros/macroText';
 import { Banner, Field, Input, Select, SkeletonText, Switch, TagInput, Textarea } from '@/components/ui';
+import { MACRO_WRITE, useCan } from '@/lib/permissions';
 import { PRIORITY_LABEL } from '@/lib/status';
 import { useTickets } from '@/store/useTickets';
 import { toast } from '@/store/useUi';
@@ -42,6 +43,7 @@ export default function MacroEdit() {
   const { id } = useParams();
   const isNew = !id || id === 'new';
   const navigate = useNavigate();
+  const canWrite = useCan(MACRO_WRITE);
   const statuses = useTickets((s) => s.statuses);
   const state = useAsync(async () => {
     await useTickets.getState().loadStatuses();
@@ -62,6 +64,7 @@ export default function MacroEdit() {
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const save = async () => {
+    if (!canWrite) return;
     if (!draft.name.trim()) {
       setNameError('Informe o nome da macro.');
       return;
@@ -123,7 +126,9 @@ export default function MacroEdit() {
   return (
     <div className="flex min-h-full flex-col bg-surface">
       <PageHeader breadcrumb={breadcrumb} title={isNew ? 'Criar macro' : draft.name || 'Macro'} />
-      <div className="flex max-w-3xl flex-1 flex-col gap-5 px-6 py-6">
+      {/* Sem `macro.manage` a macro é só consulta: o `fieldset` desabilita todos os campos de uma vez. */}
+      <fieldset disabled={!canWrite} className="flex max-w-3xl flex-1 flex-col gap-5 border-0 p-0 px-6 py-6">
+        {canWrite ? null : <Banner tone="info">Somente leitura: criar e editar macros exige a permissão de gerenciar macros (administradores).</Banner>}
         {saveError ? (
           <Banner tone="error" onRetry={() => void save()}>
             {saveError}
@@ -172,8 +177,16 @@ export default function MacroEdit() {
         <Field label="Nota interna" hint={IS_REAL ? 'Somente neste navegador: o backend não tem nota interna na macro.' : undefined}>
           <Textarea minRows={3} value={draft.internalNote} onChange={(e) => set({ internalNote: e.target.value })} />
         </Field>
-      </div>
-      <EditFooter onCancel={() => navigate('/admin/macros')} onSave={() => void save()} saving={saving} />
+      </fieldset>
+      {canWrite ? (
+        <EditFooter onCancel={() => navigate('/admin/macros')} onSave={() => void save()} saving={saving} />
+      ) : (
+        <div className="sticky bottom-0 z-10 flex items-center justify-end border-t border-line bg-surface px-6 py-3">
+          <button type="button" onClick={() => navigate('/admin/macros')} className="rounded-xs text-sm text-action outline-none hover:text-action-hover focus-visible:shadow-focus">
+            Voltar às macros
+          </button>
+        </div>
+      )}
     </div>
   );
 }

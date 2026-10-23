@@ -1,3 +1,4 @@
+import { MACRO_WRITE, useCan } from '@/lib/permissions';
 import { Ban, EllipsisVertical, Filter, History, Mail, Globe, Frown, Meh, Smile, Printer, Rows3, Trash2, UserX, Merge, Zap } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -80,6 +81,7 @@ function closeTicketTab(ticketId: number): void {
 
 export function ConversationHeader({ ticket, filter, onFilterChange, showEvents, onToggleEvents, compact, onToggleCompact }: ConversationHeaderProps) {
   const navigate = useNavigate();
+  const canWriteMacros = useCan(MACRO_WRITE);
   const [danger, setDanger] = useState<Danger | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState('');
@@ -177,12 +179,8 @@ export function ConversationHeader({ ticket, filter, onFilterChange, showEvents,
 
   const items: MenuItemSpec[] = useMemo(
     () => [
-      {
-        id: 'macro',
-        label: 'Criar como macro',
-        icon: <Zap />,
-        onSelect: () => void createMacroFromTicket(),
-      },
+      // Só quem pode gravar macros (`macro.manage` ou administrador) vê esta ação.
+      ...(canWriteMacros ? [{ id: 'macro', label: 'Criar como macro', icon: <Zap />, onSelect: () => void createMacroFromTicket() }] : []),
       {
         id: 'merge',
         label: 'Fundir em outro ticket',
@@ -228,7 +226,7 @@ export function ConversationHeader({ ticket, filter, onFilterChange, showEvents,
     ],
     // ticket identity is enough; handlers close over current ticket
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ticket.id, ticket.requesterId, ticket.subject, ticket.comments, ticket.tags, ticket.priority, ticket.statusId],
+    [ticket.id, ticket.requesterId, ticket.subject, ticket.comments, ticket.tags, ticket.priority, ticket.statusId, canWriteMacros],
   );
 
   const copy = danger ? DANGER_COPY[danger] : null;

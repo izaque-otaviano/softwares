@@ -12,6 +12,8 @@ export interface TicketStatus {
   active?: boolean;
   /** Status de fábrica (um por categoria): não pode ser desativado nem apagado. Ausente = usa `SYSTEM_STATUS_IDS` (mock). */
   system?: boolean;
+  /** Só modo real: quantos tickets usam este status (o backend recusa trocar a categoria de um status em uso). */
+  ticketCount?: number;
 }
 
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'; // Baixa, Normal, Alta, Urgente
@@ -28,7 +30,7 @@ export interface User {
   timezone: string;
   details?: string;
   notes?: string;
-  /** Ausente quando o backend não informa (usuário do Resolv não expõe criação/atualização). */
+  /** Ausente no mock e em backend antigo que não expõe `created_at`/`updated_at` do usuário. */
   createdAt?: string;
   updatedAt?: string;
   lastSeenAt?: string;
@@ -87,8 +89,7 @@ export interface Comment {
   attachments: Attachment[];
   createdAt: string;
   /**
-   * Só modo real: o backend não manda `author_id` nas mensagens, então `authorId` é resolvido pelo nome
-   * (ver api/real/mappers/ticket.ts). Quando não há casamento seguro, `authorId` vira `name:<nome>` e a tela usa estes campos.
+   * Só modo real: `authorId` vem de `author_id` do backend (ver api/real/mappers/ticket.ts). Sem `author_id` (autor oculto), `authorId` vira `name:<nome>` e a tela usa estes campos.
    */
   authorName?: string;
   authorInternal?: boolean;
@@ -141,6 +142,8 @@ export interface Ticket {
   /** Só modo real: a lista do backend traz nomes (e não ids) de solicitante/empresa/responsável. */
   requesterName?: string;
   companyName?: string;
+  /** Só modo real: id da empresa do solicitante (`company_id`); ausente se o ticket é restrito ou sem empresa. */
+  orgId?: string;
   assigneeName?: string;
   /** Só modo real: canal original do backend (`web`, `chat`, `internal`); `channel` é a aproximação do Helpdesk. */
   source?: 'web' | 'chat' | 'internal';

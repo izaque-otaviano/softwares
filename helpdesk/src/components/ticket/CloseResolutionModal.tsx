@@ -3,32 +3,8 @@ import { ticketsApi } from '@/api';
 import { Button, Field, Input, Modal } from '@/components/ui';
 import { validateResolutionWindow, type ResolutionWindow } from '@/api/real/mappers/outbound';
 import { IS_REAL } from '@/api/mode';
+import { formatDuration, fromLocalInput, toLocalInput } from '@/lib/datetimeLocal';
 import { useFormStore } from './formStore';
-
-/** datetime-local value (local) <-> ISO UTC, alinhado ao minuto. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalInput(local: string): string {
-  const d = new Date(local);
-  if (Number.isNaN(d.getTime())) return '';
-  const floor = Math.floor(d.getTime() / 60_000) * 60_000;
-  return new Date(floor).toISOString();
-}
-
-function formatDuration(startedIso: string, endedIso: string): string {
-  const ms = Date.parse(endedIso) - Date.parse(startedIso);
-  if (!Number.isFinite(ms) || ms < 0) return '—';
-  const mins = Math.round(ms / 60_000);
-  if (mins < 60) return `${mins} min`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m ? `${h} h ${m} min` : `${h} h`;
-}
 
 /**
  * Diálogo ao fechar ticket no modo real: o backend exige início/término da solução

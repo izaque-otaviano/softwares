@@ -22,9 +22,10 @@ export const {
   simulateCustomerReply,
   initialViews,
   suggestResolutionWindow,
+  suggestResolutionWindows,
   viewPageMeta,
   createPersonalView,
   updatePersonalView,
   deletePersonalView,
 } = impl;
-export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult } from './mock/tickets';
+export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult, BulkResolution, ResolutionSuggestion } from './mock/tickets';

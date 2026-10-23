@@ -1,6 +1,7 @@
 import { Suspense, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { MAIN_ID, SkipLink } from '@/components/a11y/SkipLink';
+import { BulkCloseModal } from '@/components/lists/BulkCloseModal';
 import { Spinner } from '@/components/ui';
 import { startLiveUpdates, stopLiveUpdates, useTickets } from '@/store/useTickets';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -57,6 +58,7 @@ export function AgentLayout() {
         {showsRightRail(pathname) ? <RightRail /> : null}
       </div>
       <ShortcutsHelpDialog />
+      <BulkCloseModal />
     </div>
   );
 }
