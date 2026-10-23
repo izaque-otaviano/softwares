@@ -180,7 +180,7 @@ def find_free_text_pii(users) -> list[dict]:
         return []
 
     found = []
-    tickets = Ticket.objects.filter(requester__in=users).exclude(
+    tickets = Ticket.all_objects.filter(requester__in=users).exclude(
         retention_purged_at__isnull=False
     )
     for ticket in tickets.only("pk", "reference", "subject"):
@@ -237,7 +237,7 @@ def redact_free_text(*, model: str, pk: int, actor) -> bool:
     from apps.tickets.models import Ticket, TicketMessage
 
     if model == "ticket":
-        obj, field = Ticket.objects.filter(pk=pk).first(), "subject"
+        obj, field = Ticket.all_objects.filter(pk=pk).first(), "subject"
     elif model == "message":
         obj, field = TicketMessage.objects.filter(pk=pk).first(), "body"
     elif model == "chat_message":

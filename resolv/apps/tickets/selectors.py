@@ -23,3 +23,19 @@ def visible_tickets(user):
 def visible_ticket_or_none(user, ticket_id):
     """Busca um ticket dentro do escopo do usuário; fora do escopo = não existe."""
     return visible_tickets(user).filter(pk=ticket_id).first()
+
+
+def deleted_ticket_or_none(user, ticket_id):
+    """Ticket APAGADO (exclusão lógica) dentro do escopo do usuário.
+
+    Só as rotas de administração (consulta e restauração) usam isto; todo o
+    resto do sistema passa por `visible_tickets`, que nunca devolve apagado.
+    """
+    if not str(ticket_id).isdigit():
+        return None
+    return (
+        Ticket.all_objects.visible_to(user, include_deleted=True)
+        .select_related("team", "requester", "assignee", "company", "category__service")
+        .filter(pk=ticket_id, deleted_at__isnull=False)
+        .first()
+    )

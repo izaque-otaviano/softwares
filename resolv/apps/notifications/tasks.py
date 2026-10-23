@@ -39,6 +39,15 @@ EMAIL_TEMPLATES = {
         "Este e-mail não recebe respostas.\n"
         "{assinatura}"
     ),
+    # CC de terceiro (e-mail em cópia no ticket): não tem acesso ao portal, então
+    # o texto da resposta PÚBLICA vem no próprio e-mail (`corpo_md` → `{corpo}`)
+    "ticket_replied_cc": (
+        "Olá, {nome}.\n\n"
+        "{agent_name} respondeu o ticket {reference} ({subject}), no qual você "
+        "está em cópia:\n\n"
+        "{corpo}\n\n"
+        "Este e-mail não recebe respostas."
+    ),
     "chat_converted": (
         "Olá, {requester_name}.\n\n"
         "Sua conversa virou o ticket {reference} ({subject}).\n\n"
@@ -288,6 +297,17 @@ def send_outbound_email(self, email_id: int):
     email = OutboundEmail.objects.get(pk=email_id)
     if email.status == OutboundEmail.Status.SENT:
         return  # idempotência no retry
+
+    if email.ticket_id:
+        from apps.tickets.models import Ticket
+
+        # e-mail que já estava na fila quando o ticket foi apagado (exclusão
+        # lógica) não sai: o assunto e o corpo são do ticket
+        if Ticket.all_objects.filter(pk=email.ticket_id, deleted_at__isnull=False).exists():
+            email.status = OutboundEmail.Status.SKIPPED
+            email.error = "Ticket apagado."
+            email.save(update_fields=["status", "error"])
+            return
 
     config = SystemConfig.load()
     if not config.email_enabled:

@@ -49,7 +49,15 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
                 )
             sociallogin.connect(request, user)
         except User.DoesNotExist:
-            pass  # segue para signup (populate_user abaixo)
+            # Primeiro login = conta nova de agente = assento novo. Sem vaga,
+            # a pessoa volta ao login com um código que a tela sabe explicar,
+            # em vez de entrar e estourar o limite de licenças.
+            from apps.accounts import licenses
+
+            if not licenses.pode_entrar_agente_novo():
+                raise ImmediateHttpResponse(
+                    redirect(f"{settings.LOGIN_URL}?erro=licencas")
+                ) from None
 
     def is_open_for_signup(self, request, sociallogin):
         # Signup social permitido apenas para a allowlist (já validada acima).

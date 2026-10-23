@@ -58,7 +58,7 @@ def purge_ticket_content(*, dry_run: bool) -> dict:
     from apps.tickets.models import Ticket, TicketMessage, TicketStatus
     from apps.tickets.services.attachments import purge_blob
 
-    queryset = Ticket.objects.filter(
+    queryset = Ticket.all_objects.filter(
         status=TicketStatus.CLOSED,
         closed_at__lt=_cutoff("ticket_after_close"),
         retention_purged_at__isnull=True,

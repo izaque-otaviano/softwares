@@ -28,10 +28,12 @@ from apps.accounts.models import Team
 from apps.accounts.rbac import Perm
 from apps.customers.services import quota as quota_service
 from apps.tickets.models import (
+    MAX_CC_POR_TICKET,
     MessageSource,
     ScheduledReply,
     ScheduledReplyStatus,
     Ticket,
+    TicketCC,
     TicketMessage,
     TicketSource,
     TicketStage,
@@ -46,6 +48,10 @@ logger = logging.getLogger(__name__)
 
 class TicketRuleViolation(Exception):
     """Regra de negócio violada — a view converte em resposta 4xx."""
+
+
+class TicketConflict(TicketRuleViolation):
+    """Estado do ticket impede a operação — a view converte em 409."""
 
 
 def create_ticket(
@@ -64,6 +70,7 @@ def create_ticket(
     initial_stage: TicketStage | None = None,
     tags=None,
     first_message_public: bool = True,
+    ticket_type: str | None = None,
 ) -> Ticket:
     """Cria o ticket com a primeira mensagem, consumindo cota quando devido.
 
@@ -88,7 +95,7 @@ def create_ticket(
     actor = actor or requester
     triagem = (
         assignee is not None or initial_status is not None
-        or initial_stage is not None or bool(tags)
+        or initial_stage is not None or bool(tags) or bool(ticket_type)
     )
     if (triagem or not first_message_public) and not actor.is_internal:
         raise TicketRuleViolation(
@@ -159,6 +166,7 @@ def create_ticket(
             order_number=order_number.strip(),
             priority=priority,
             category=category,
+            type=ticket_type or None,
             source=source,
             status=TicketStatus.NEW,
             stage=stage_padrao(TicketStatus.NEW),
@@ -709,6 +717,7 @@ def add_reply(
             # o CLIENTE fica sabendo que respondemos — in-app e e-mail. Antes
             # ele só descobria entrando no portal por conta própria.
             _notify_requester_replied(ticket, author, com_assinatura=message.with_signature)
+            _notify_cc_and_followers_replied(ticket, author, message)
             return message
 
         # ---- resposta de cliente: transições automáticas ----
@@ -945,7 +954,7 @@ _NAO_INFORMADO = object()  # sentinela: distingue "não mexer" de "limpar"
 
 
 def reclassify(*, ticket: Ticket, actor, priority=None, category=_NAO_INFORMADO,
-               team=None, tags=None) -> Ticket:
+               team=None, tags=None, ticket_type=_NAO_INFORMADO) -> Ticket:
     """Triagem de um chamado já aberto: urgência, categoria, equipe e etiquetas.
 
     Era o buraco da operação — a fila ordena por urgência e categoria, o
@@ -971,6 +980,12 @@ def reclassify(*, ticket: Ticket, actor, priority=None, category=_NAO_INFORMADO,
             ticket.category = category
             mudancas.append(f"categoria → {category.name if category else '—'}")
             campos.append("category")
+
+        # tipo: `null` limpa, ausente (sentinela) não mexe — como `category`
+        if ticket_type is not _NAO_INFORMADO and (ticket_type or None) != ticket.type:
+            ticket.type = ticket_type or None
+            mudancas.append(f"tipo → {ticket.get_type_display() if ticket.type else '—'}")
+            campos.append("type")
 
         if team is not None and team.pk != ticket.team_id:
             # mesma regra da criação: equipe interna não recebe chamado de
@@ -1362,6 +1377,7 @@ def dispatch_scheduled_replies() -> int:
     alvos = list(
         ScheduledReply.objects.filter(
             status=ScheduledReplyStatus.PENDING, scheduled_at__lte=agora,
+            ticket__deleted_at__isnull=True,  # ticket apagado não recebe resposta
         ).values_list("pk", flat=True)
     )
 
@@ -1892,3 +1908,302 @@ def delete_message(*, message: TicketMessage, actor) -> TicketMessage:
             summary=f"Mensagem apagada no ticket {message.ticket.reference}",
         )
     return message
+
+
+# --------------------------------------------------------------------------- #
+# Exclusão lógica (apagar / restaurar ticket)
+# --------------------------------------------------------------------------- #
+
+#: Quanto tempo o admin pode restaurar um ticket apagado.
+PRAZO_RESTAURAR = dt.timedelta(days=30)
+
+
+def _auditar_ticket(*, ticket, actor, action, changes, summary) -> None:
+    from django.contrib.contenttypes.models import ContentType
+
+    from apps.audit.models import AuditLog
+
+    AuditLog.objects.create(
+        actor=actor,
+        action=action,
+        content_type=ContentType.objects.get_for_model(Ticket),
+        object_id=str(ticket.pk),
+        changes=changes,
+        summary=summary[:250],
+    )
+
+
+def _exige_admin(actor) -> None:
+    if not actor.is_internal or not actor.can(Perm.SETTINGS_MANAGE):
+        raise TicketRuleViolation("Apenas administradores apagam ou restauram tickets.")
+
+
+def delete_ticket(*, ticket: Ticket, actor) -> Ticket:
+    """Apaga o ticket de forma LÓGICA: marca `deleted_at`/`deleted_by`.
+
+    Nada é removido do banco (mensagens, histórico, anexos e cota ficam); o
+    ticket só deixa de existir para listas, buscas, contadores, quadros,
+    relatórios, tarefas de fundo e WebSocket (`Ticket.objects` e `visible_to`
+    não o devolvem). Recusa (409) se já há horas de manutenção lançadas — o
+    tempo da solução alimenta a franquia do cliente e sumir com ele mudaria
+    um número já apurado. (Não existe fusão de tickets neste backend; quando
+    existir, "fusão pendente" entra aqui como outro motivo de recusa.)
+
+    O vínculo com o chat de origem é desfeito: o chat continua existindo e
+    volta a ficar sem ticket gerado. O id fica em `deleted_origin_chat_id`.
+    Respostas agendadas pendentes são canceladas — não podem sair por e-mail
+    de um ticket que não existe mais.
+    """
+    _exige_admin(actor)
+    agora = timezone.now()
+    with transaction.atomic():
+        ticket = Ticket.all_objects.select_for_update().get(pk=ticket.pk)
+        if ticket.deleted_at is not None:
+            raise TicketConflict("Este ticket já foi apagado.")
+        if ticket.resolution_started_at and ticket.resolution_ended_at:
+            raise TicketConflict(
+                "Este ticket tem horas de manutenção lançadas e não pode ser "
+                "apagado."
+            )
+        assunto = ticket.subject
+        ticket.deleted_at = agora
+        ticket.deleted_by = actor
+        ticket.deleted_origin_chat_id = ticket.origin_chat_id
+        ticket.origin_chat = None
+        ticket.save(update_fields=[
+            "deleted_at", "deleted_by", "deleted_origin_chat_id", "origin_chat",
+        ])
+        ScheduledReply.objects.filter(
+            ticket=ticket, status=ScheduledReplyStatus.PENDING
+        ).update(status=ScheduledReplyStatus.CANCELLED)
+        TicketStatusEvent.objects.create(
+            ticket=ticket, from_status=ticket.status, to_status=ticket.status,
+            changed_by=actor, note="ticket apagado",
+        )
+        from apps.audit.models import AuditAction
+
+        _auditar_ticket(
+            ticket=ticket, actor=actor, action=AuditAction.DELETE,
+            changes={"deleted_at": [None, agora.isoformat()], "subject": assunto,
+                     "reference": ticket.reference},
+            summary=f"Ticket {ticket.reference} apagado por {actor.full_name}: {assunto}",
+        )
+    # só uma dica de revalidação (id + kind, sem conteúdo) para quem acompanhava
+    from apps.notifications.services import broadcast_ticket_event
+
+    broadcast_ticket_event(ticket=ticket, kind="updated", actor=actor, allow_deleted=True)
+    return ticket
+
+
+def restore_ticket(*, ticket: Ticket, actor) -> Ticket:
+    """Desfaz `delete_ticket` (admin, até `PRAZO_RESTAURAR` depois)."""
+    _exige_admin(actor)
+    agora = timezone.now()
+    with transaction.atomic():
+        ticket = Ticket.all_objects.select_for_update().get(pk=ticket.pk)
+        if ticket.deleted_at is None:
+            raise TicketConflict("Este ticket não está apagado.")
+        if agora - ticket.deleted_at > PRAZO_RESTAURAR:
+            raise TicketConflict(
+                "O prazo de 30 dias para restaurar este ticket já passou."
+            )
+        apagado_em = ticket.deleted_at
+        ticket.deleted_at = None
+        ticket.deleted_by = None
+        campos = ["deleted_at", "deleted_by"]
+        chat_id = ticket.deleted_origin_chat_id
+        if chat_id:
+            from apps.chat.models import Chat
+
+            # religa só se o chat ainda existe e ninguém o converteu de novo
+            if (
+                Chat.objects.filter(pk=chat_id).exists()
+                and not Ticket.all_objects.filter(origin_chat_id=chat_id).exists()
+            ):
+                ticket.origin_chat_id = chat_id
+                campos.append("origin_chat")
+            ticket.deleted_origin_chat_id = None
+            campos.append("deleted_origin_chat_id")
+        ticket.save(update_fields=campos)
+        TicketStatusEvent.objects.create(
+            ticket=ticket, from_status=ticket.status, to_status=ticket.status,
+            changed_by=actor, note="ticket restaurado",
+        )
+        from apps.audit.models import AuditAction
+
+        _auditar_ticket(
+            ticket=ticket, actor=actor, action=AuditAction.UPDATE,
+            changes={"deleted_at": [apagado_em.isoformat(), None]},
+            summary=f"Ticket {ticket.reference} restaurado por {actor.full_name}",
+        )
+    from apps.notifications.services import broadcast_ticket_event
+
+    broadcast_ticket_event(ticket=ticket, kind="updated", actor=actor)
+    return ticket
+
+
+# --------------------------------------------------------------------------- #
+# CC de terceiros e seguidores
+# --------------------------------------------------------------------------- #
+
+def _pode_editar_propriedades(actor) -> None:
+    if not actor.is_internal:
+        raise TicketRuleViolation("Seguidores e CC são ação interna.")
+    if not actor.can(Perm.TICKET_EDIT_PROPERTIES):
+        raise TicketRuleViolation("Seu papel não permite editar as propriedades do ticket.")
+
+
+def _evento_de_propriedade(ticket: Ticket, actor, nota: str) -> None:
+    TicketStatusEvent.objects.create(
+        ticket=ticket, from_status=ticket.status, to_status=ticket.status,
+        changed_by=actor, note=nota[:200],
+    )
+
+
+def add_cc(*, ticket: Ticket, actor, email: str, name: str = "") -> tuple[TicketCC, bool]:
+    """Põe um e-mail de terceiro em cópia. Devolve (entrada, criada?).
+
+    E-mail em minúsculas, sem duplicado (repetir é no-op), no máximo
+    `MAX_CC_POR_TICKET` por ticket, e nunca o do próprio solicitante (que já
+    recebe). Não cria usuário nem dá acesso a nada.
+    """
+    _pode_editar_propriedades(actor)
+    email = (email or "").strip().lower()
+    if not email:
+        raise TicketRuleViolation("Informe o e-mail.")
+    with transaction.atomic():
+        ticket = Ticket.objects.select_for_update().get(pk=ticket.pk)
+        if ticket.requester.email and ticket.requester.email.lower() == email:
+            raise TicketRuleViolation("Este e-mail é o do solicitante, que já recebe as respostas.")
+        existente = ticket.cc_entries.filter(email=email).first()
+        if existente is not None:
+            return existente, False
+        if ticket.cc_entries.count() >= MAX_CC_POR_TICKET:
+            raise TicketRuleViolation(
+                f"Limite de {MAX_CC_POR_TICKET} e-mails em cópia por ticket."
+            )
+        entrada = TicketCC.objects.create(
+            ticket=ticket, email=email, name=(name or "").strip(), added_by=actor,
+        )
+        _evento_de_propriedade(ticket, actor, f"cc + {email}")
+    return entrada, True
+
+
+def remove_cc(*, ticket: Ticket, actor, cc_id: int) -> bool:
+    _pode_editar_propriedades(actor)
+    with transaction.atomic():
+        entrada = ticket.cc_entries.filter(pk=cc_id).first()
+        if entrada is None:
+            return False
+        email = entrada.email
+        entrada.delete()
+        _evento_de_propriedade(ticket, actor, f"cc − {email}")
+    return True
+
+
+def add_follower(*, ticket: Ticket, actor, user) -> tuple[object, bool]:
+    """Faz `user` seguir o ticket (a pedido de um agente). Devolve (seguidor, criado?).
+
+    Serve a usuário interno ativo e a CLIENTE ativo da MESMA empresa do ticket
+    (contato que acompanha sem ser o solicitante). Seguir não concede acesso: o
+    cliente só lê o que a visibilidade da empresa já lhe daria. O solicitante
+    não é seguidor (já recebe tudo).
+    """
+    from apps.tickets.models import TicketWatcher
+
+    _pode_editar_propriedades(actor)
+    if not user.is_active:
+        raise TicketRuleViolation("Usuário inativo.")
+    if user.pk == ticket.requester_id:
+        raise TicketRuleViolation("O solicitante já acompanha o ticket.")
+    if not user.is_internal and user.company_id != ticket.company_id:
+        raise TicketRuleViolation(
+            "Só contatos da empresa do ticket podem seguir como cliente."
+        )
+    with transaction.atomic():
+        watcher, criado = TicketWatcher.objects.get_or_create(ticket=ticket, user=user)
+        if criado:
+            _evento_de_propriedade(ticket, actor, f"seguidor + {user.full_name}")
+    return watcher, criado
+
+
+def remove_follower(*, ticket: Ticket, actor, user_id: int) -> bool:
+    from apps.tickets.models import TicketWatcher
+
+    _pode_editar_propriedades(actor)
+    with transaction.atomic():
+        watcher = TicketWatcher.objects.filter(ticket=ticket, user_id=user_id).select_related(
+            "user"
+        ).first()
+        if watcher is None:
+            return False
+        nome = watcher.user.full_name
+        watcher.delete()
+        _evento_de_propriedade(ticket, actor, f"seguidor − {nome}")
+    return True
+
+
+def _notify_cc_and_followers_replied(ticket: Ticket, author, message: TicketMessage) -> None:
+    """Resposta PÚBLICA de agente: avisa quem acompanha sem ser o solicitante.
+
+    - CC (e-mail de terceiro): um e-mail por endereço, com o texto da resposta
+      (quem está em cópia não entra no portal). Em ticket de equipe RESTRITA o
+      texto não vai — só o aviso, como no e-mail do solicitante.
+    - Seguidor CLIENTE (contato da empresa): aviso no sino e e-mail, como o
+      solicitante, e só se ele pode ler o conteúdo do ticket.
+    Nota interna nunca chega aqui (o chamador só passa mensagem pública).
+    """
+    if not message.is_public:
+        return
+    from apps.notifications.models import NotificationKind
+    from apps.notifications.services import notify, quer_email, queue_email, ticket_url
+
+    chave = f"{ticket.pk}:{message.pk}"
+    texto = message.body if not ticket.is_restricted() else (
+        "O conteúdo desta resposta não é enviado por e-mail neste ticket."
+    )
+    for cc in ticket.cc_entries.all():
+        queue_email(
+            to=cc.email,
+            subject=f"Resposta no ticket {ticket.reference}",
+            template="ticket_replied_cc",
+            context={
+                "nome": cc.name or cc.email,
+                "reference": ticket.reference,
+                "subject": ticket.subject,
+                "agent_name": author.full_name,
+                "corpo_md": texto,
+            },
+            ticket=ticket,
+            dedupe_key=f"replied-cc:{chave}:{cc.email}"[:120],
+        )
+    for watcher in ticket.watchers.select_related("user"):
+        pessoa = watcher.user
+        if pessoa.is_internal or not pessoa.is_active or pessoa.pk == author.pk:
+            continue
+        if not ticket.is_content_visible_to(pessoa):
+            continue
+        notify(
+            recipient=pessoa,
+            kind=NotificationKind.TICKET_REPLIED,
+            title=f"O ticket {ticket.reference} que você acompanha foi respondido",
+            body=ticket.subject,
+            url=ticket_url(ticket, pessoa),
+            ticket=ticket,
+            actor=author,
+        )
+        if pessoa.email and quer_email(pessoa, NotificationKind.TICKET_REPLIED):
+            queue_email(
+                to=pessoa.email,
+                subject=f"Resposta no ticket {ticket.reference}",
+                template="ticket_replied",
+                context={
+                    "requester_name": pessoa.full_name,
+                    "reference": ticket.reference,
+                    "subject": ticket.subject,
+                    "agent_name": author.full_name,
+                    "assinatura": "",
+                },
+                ticket=ticket,
+                dedupe_key=f"replied-follower:{chave}:{pessoa.pk}"[:120],
+            )

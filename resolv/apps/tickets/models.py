@@ -146,6 +146,16 @@ class TicketPriority(models.TextChoices):
     URGENT = "urgent", "Urgente"
 
 
+class TicketType(models.TextChoices):
+    """Natureza do chamado (vocabulário ITIL enxuto). Opcional: ticket antigo e
+    ticket aberto sem escolha ficam sem tipo (`null`)."""
+
+    QUESTION = "question", "Pergunta"
+    INCIDENT = "incident", "Incidente"
+    PROBLEM = "problem", "Problema"
+    TASK = "task", "Tarefa"
+
+
 class Service(TimeStampedModel):
     """Serviço — o nível acima de Categoria (Integrações, Loja, Pedidos, Fiscal…).
 
@@ -208,7 +218,7 @@ class TicketCategory(TimeStampedModel):
 
 
 class TicketQuerySet(models.QuerySet):
-    def visible_to(self, user):
+    def visible_to(self, user, *, include_deleted: bool = False):
         """Único ponto de leitura de ticket em toda a aplicação.
 
         D1: o recorte do usuário interno é o ESCOPO do papel dele
@@ -231,20 +241,37 @@ class TicketQuerySet(models.QuerySet):
         """
         from apps.accounts import rbac
 
+        # Exclusão lógica: ticket apagado não existe para ninguém aqui. Só a
+        # rota de restauração/consulta do admin pede `include_deleted=True`
+        # (e parte de `Ticket.all_objects`, que já não filtra).
+        base = self if include_deleted else self.filter(deleted_at__isnull=True)
         if user.is_internal:
             escopo = rbac.ticket_scope_for(user)
             if escopo == rbac.TicketScope.ALL:
-                return self
-            qs = self.filter(team__agent_links__user=user).distinct()
+                return base
+            qs = base.filter(team__agent_links__user=user).distinct()
             if escopo == rbac.TicketScope.ASSIGNED:
                 # `owner` entra junto: dono técnico é responsabilidade sobre o
                 # caso tanto quanto `assignee`, e um escopo que escondesse o
                 # que a pessoa precisa entregar não teria utilidade nenhuma.
                 qs = qs.filter(models.Q(assignee=user) | models.Q(owner=user))
             return qs
-        return self.filter(
+        return base.filter(
             company_id=user.company_id, team__internal_only=False
         )
+
+
+class TicketManager(models.Manager.from_queryset(TicketQuerySet)):
+    """Manager padrão: NÃO devolve ticket apagado (exclusão lógica).
+
+    É a segunda trava, além de `visible_to`: tarefas de fundo (SLA, fechamento
+    automático, lembretes, notificações) e relações reversas (`company.tickets`)
+    também deixam de enxergar o ticket apagado, sem cada uma lembrar de filtrar.
+    Quem precisa do apagado (restaurar, LGPD, retenção) usa `Ticket.all_objects`.
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
 
 
 class Ticket(TimeStampedModel):
@@ -298,6 +325,12 @@ class Ticket(TimeStampedModel):
         null=True,
         blank=True,
         related_name="tickets",
+    )
+    # Tipo do chamado (pergunta, incidente, problema, tarefa). Nulo por padrão:
+    # é triagem opcional e não muda SLA nem fila.
+    type = models.CharField(
+        max_length=10, choices=TicketType.choices, null=True, blank=True,
+        db_index=True, verbose_name="tipo",
     )
     source = models.CharField(
         max_length=10, choices=TicketSource.choices, default=TicketSource.WEB
@@ -382,7 +415,21 @@ class Ticket(TimeStampedModel):
     )
     tags = models.ManyToManyField("TicketTag", blank=True, related_name="tickets")
 
-    objects = TicketQuerySet.as_manager()
+    # Exclusão LÓGICA (apagar ticket): o registro, as mensagens e o histórico
+    # ficam; o ticket some de listas, buscas, contadores, quadros e relatórios.
+    # Restaurável pelo admin por 30 dias (ver `ticket_service.restore_ticket`).
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="deleted_tickets",
+    )
+    # Ao apagar, o vínculo com o chat de origem é desfeito (o chat continua
+    # existindo e volta a poder ser convertido); o id fica aqui para a
+    # restauração religar, se o chat ainda estiver livre.
+    deleted_origin_chat_id = models.PositiveIntegerField(null=True, blank=True)
+
+    objects = TicketManager()
+    all_objects = TicketQuerySet.as_manager()
 
     class Meta:
         verbose_name = "ticket"
@@ -392,6 +439,11 @@ class Ticket(TimeStampedModel):
             models.Index(fields=["team", "status"]),
             models.Index(fields=["company", "requester", "-created_at"]),
             models.Index(fields=["-created_at"]),
+            models.Index(
+                fields=["deleted_at"],
+                condition=models.Q(deleted_at__isnull=False),
+                name="idx_ticket_apagado",
+            ),
             # Filtro "SLA em risco/estourado" (fila) e a varredura sla_scan (5min)
             # consultam estes vencimentos. Índices PARCIAIS: um relógio só importa
             # enquanto há ação pendente — 1ª resposta que ainda não veio, resolução
@@ -842,6 +894,41 @@ class TicketWatcher(models.Model):
 
     def __str__(self):
         return f"{self.user_id} segue {self.ticket_id}"
+
+
+#: Limite de e-mails em cópia por ticket (anti-abuso: cada resposta pública vira
+#: um e-mail por endereço).
+MAX_CC_POR_TICKET = 20
+
+
+class TicketCC(models.Model):
+    """E-mail de TERCEIRO em cópia no ticket (não é usuário do sistema).
+
+    Recebe por e-mail as respostas PÚBLICAS do ticket — nunca nota interna — e
+    não ganha acesso nenhum: não é `User`, não loga, não vê o portal. Seguidor
+    que é usuário do sistema continua sendo `TicketWatcher`. O e-mail é guardado
+    em minúsculas e é único por ticket.
+    """
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="cc_entries")
+    email = models.EmailField()
+    name = models.CharField(max_length=120, blank=True)
+    added_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "e-mail em cópia"
+        verbose_name_plural = "e-mails em cópia"
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["ticket", "email"], name="uniq_ticket_cc")
+        ]
+
+    def __str__(self):
+        return f"{self.email} em cópia em {self.ticket_id}"
 
 
 class TicketMention(models.Model):

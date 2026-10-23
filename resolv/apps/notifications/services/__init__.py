@@ -44,6 +44,10 @@ def quer_email(user, kind) -> bool:
 
 
 def notify(*, recipient, kind, title, body="", url="", ticket=None, actor=None):
+    # ticket apagado (exclusão lógica) não gera aviso: título e corpo levam o
+    # assunto, que não pode vazar depois do apagar
+    if ticket is not None and getattr(ticket, "deleted_at", None) is not None:
+        return None
     if not quer_in_app(recipient, kind):
         return None
     notification = Notification.objects.create(
@@ -91,6 +95,8 @@ def queue_email(*, to, subject, template, context, ticket=None, dedupe_key=None)
     """Grava no outbox e agenda envio no commit. Retorna None se deduplicado."""
     if not to:
         return None
+    if ticket is not None and getattr(ticket, "deleted_at", None) is not None:
+        return None  # ticket apagado (exclusão lógica) não manda e-mail
     try:
         # atomic PRÓPRIO (savepoint): capturar IntegrityError dentro da
         # transação de quem chamou, sem isto, envenena a transação inteira —
@@ -119,7 +125,9 @@ def _push(user_id: int, payload: dict) -> None:
     )
 
 
-def broadcast_ticket_event(*, ticket, kind: str, actor=None) -> None:
+def broadcast_ticket_event(
+    *, ticket, kind: str, actor=None, allow_deleted: bool = False
+) -> None:
     """DICA de que o ticket mudou, empurrada pelo ws/me/ de quem o acompanha.
 
     Ao contrário de `notify()`, NÃO persiste, NÃO respeita preferência e NÃO
@@ -132,6 +140,11 @@ def broadcast_ticket_event(*, ticket, kind: str, actor=None) -> None:
     estar visível traria o estado velho. `actor` é excluído — quem agiu já tem
     a resposta REST da própria ação.
     """
+    # Ticket apagado (exclusão lógica) não empurra nada — nem a dica de id. A
+    # única exceção é o próprio ato de apagar (`allow_deleted`), para a tela de
+    # quem acompanhava revalidar a lista; o payload continua só id + kind.
+    if getattr(ticket, "deleted_at", None) is not None and not allow_deleted:
+        return
     layer = get_channel_layer()
     if layer is None:
         return

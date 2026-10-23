@@ -580,3 +580,39 @@ class AccessEvent(models.Model):
 
     def __str__(self):
         return f"{self.kind} · {self.user_id}"
+
+
+class SeatLicense(TimeStampedModel):
+    """Licenças de agente da conta (singleton, pk=1).
+
+    `agent_seat_limit` vazio = SEM limite no banco; aí vale o padrão do
+    ambiente (`settings.AGENT_SEAT_LIMIT`, também vazio = ilimitado). Quem
+    consome é `apps/accounts/licenses.py`, que também usa esta linha como
+    trava (SELECT ... FOR UPDATE) para duas criações simultâneas não furarem
+    o limite. O que conta como assento mora lá, não aqui.
+    """
+
+    agent_seat_limit = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name="Total de licenças de agente",
+        help_text="Vazio = sem limite (ou o padrão AGENT_SEAT_LIMIT do ambiente).",
+    )
+
+    class Meta:
+        verbose_name = "licenças de agente"
+        verbose_name_plural = "licenças de agente"
+
+    def __str__(self):
+        return "Licenças de agente"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # singleton
+        if self._state.adding:
+            existente = type(self).objects.filter(pk=1).values("created_at").first()
+            if existente is not None:
+                self._state.adding = False
+                self.created_at = existente["created_at"]
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):  # noqa: ARG002
+        raise ValueError("A configuração de licenças não pode ser removida.")

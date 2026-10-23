@@ -19,9 +19,13 @@ class NotificationViewSet(viewsets.GenericViewSet):
     queryset = Notification.objects.none()
 
     def get_queryset(self):
+        # aviso de ticket apagado (exclusão lógica) some do sino: título e corpo
+        # levam o assunto do ticket
         return Notification.objects.filter(
             recipient=self.request.user
-        ).select_related("actor").order_by("-created_at")
+        ).exclude(ticket__deleted_at__isnull=False).select_related("actor").order_by(
+            "-created_at"
+        )
 
     def list(self, request):
         qs = self.get_queryset()
