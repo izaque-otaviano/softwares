@@ -11,13 +11,14 @@
   --line: #d8dcde;
   --line-strong: #b0b8be;
   --surface: #ffffff;
-  --surface-1: #f8f9f9;
+  --surface-1: #f6f8fa;
   --surface-2: #e8eaec;
   --hover: rgba(92, 105, 112, 0.08);
   --action: #1f73b7;
   --action-hover: #17598d;
   --action-soft: #e8f1f8;
-  --ink: #39434b;
+  --ink: #1e8844;
+  --ink-hover: #176b36;
   --ink-active: #293239;
   --note-bg: #fff3e4;
   --note-badge: #fca347;
@@ -43,7 +44,7 @@
 
   --rail: 56px;
   --rail2: 48px;
-  --props: 309px;
+  --props: 240px;
   --right: 380px;
   --topbar: 48px;
   --bottombar: 50px;

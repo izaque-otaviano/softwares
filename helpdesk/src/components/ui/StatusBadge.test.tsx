@@ -46,10 +46,10 @@ describe('StatusBadge: cor por token', () => {
     expect(badge('Em andamento').style.backgroundColor).toBe('var(--status-solved)');
   });
 
-  it('é 12/600 com raio 4, sem sombra nem gradiente', () => {
+  it('é 12/600 com formato de pílula, sem sombra nem gradiente', () => {
     render(<StatusBadge status={byId('open')} />);
     const el = badge('Aberto');
-    expect(el).toHaveClass('text-xs', 'font-semibold', 'rounded');
+    expect(el).toHaveClass('text-xs', 'font-semibold', 'rounded-pill');
     expect(el.className).not.toMatch(/gradient|shadow/);
   });
 

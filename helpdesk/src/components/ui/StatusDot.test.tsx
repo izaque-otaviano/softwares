@@ -20,9 +20,9 @@ describe('StatusDot', () => {
     expect((container.firstElementChild as HTMLElement).style.backgroundColor).toBe('var(--status-pending)');
   });
 
-  it('é um quadrado de 10 x 10 com raio 2', () => {
+  it('é uma bolinha de 10 x 10', () => {
     const { container } = render(<StatusDot color="solved" />);
-    expect(container.firstElementChild).toHaveClass('h-2.5', 'w-2.5', 'rounded-xs');
+    expect(container.firstElementChild).toHaveClass('h-2.5', 'w-2.5', 'rounded-full');
   });
 
   it.each([

@@ -30,7 +30,7 @@ const SURFACE: Record<ButtonVariant, string> = {
 
 const HOVER: Record<ButtonVariant, string> = {
   primary: 'hover:bg-action-hover',
-  ink: 'hover:bg-ink-active',
+  ink: 'hover:bg-ink-hover',
   outline: 'hover:bg-hover',
   ghost: 'hover:bg-hover',
   danger: 'hover:brightness-90',

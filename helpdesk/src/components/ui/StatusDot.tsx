@@ -33,7 +33,7 @@ export function StatusDot({ color, presence, label, className }: StatusDotProps)
     <span
       aria-hidden={label ? undefined : true}
       data-presence={presence}
-      className={cn('relative inline-block h-2.5 w-2.5 shrink-0 rounded-xs', fallback, className)}
+      className={cn('relative inline-block h-2.5 w-2.5 shrink-0 rounded-full', fallback, className)}
       style={color === undefined ? undefined : { backgroundColor: statusColor(color) }}
     >
       {label ? <span className="sr-only">{label}</span> : null}

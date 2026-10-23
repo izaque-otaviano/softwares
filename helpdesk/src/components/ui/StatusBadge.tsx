@@ -44,7 +44,7 @@ export function StatusBadge({ status, label, color, audience = 'agent', compact 
       title={compact ? resolvedLabel : rest.title}
       data-status-color={resolvedColor}
       className={cn(
-        'inline-flex max-w-full items-center rounded text-xs font-semibold',
+        'inline-flex max-w-full items-center rounded-pill text-xs font-semibold',
         compact ? 'h-5 min-w-5 justify-center px-1' : 'px-2 py-0.5',
         resolvedColor === undefined && 'bg-ink',
         textClass(resolvedColor),

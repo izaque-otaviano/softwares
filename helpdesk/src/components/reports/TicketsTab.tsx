@@ -80,7 +80,7 @@ const PAGE = 50;
 function StatusCell({ row }: { row: TicketRow }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span aria-hidden className={`inline-block h-2.5 w-2.5 shrink-0 rounded-xs ${STATUS_BG[row.status] ?? 'bg-ink'}`} />
+      <span aria-hidden className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_BG[row.status] ?? 'bg-ink'}`} />
       {row.statusLabel}
     </span>
   );
