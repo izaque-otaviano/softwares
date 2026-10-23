@@ -118,7 +118,7 @@ describe('Conversa e Composer', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Mais ações do ticket' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Apagar' }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/não pode ser desfeita/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/só um administrador pode restaurá-lo/)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
   });
 });

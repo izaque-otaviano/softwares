@@ -121,6 +121,8 @@ export interface TicketDto {
   stage_name?: string | null;
   stage_color?: string | null;
   priority: string;
+  /** `question|incident|problem|task`; nulo = sem tipo. */
+  type?: string | null;
   source: string;
   team: TicketTeamDto;
   requester_display: string;
@@ -191,6 +193,12 @@ export interface TicketDetailDto extends TicketDto {
   messages: MessageDto[];
   events: TicketEventDto[];
   watchers: { id: number; name: string }[];
+  /** Só equipe (cliente recebe `[]`). */
+  followers?: { id: number; name: string; email: string; is_internal?: boolean }[];
+  cc?: { id: number; name: string; email: string }[];
+  /** Só o administrador abre ticket apagado; em ticket vivo vêm nulos. */
+  deleted_at?: string | null;
+  deleted_by_name?: string | null;
   requester: { id: number; name: string; email: string; ui_language?: string; timezone?: string | null } | null;
 }
 
@@ -218,4 +226,20 @@ export interface PlanDto {
   name: string;
   is_active: boolean;
   rank?: number;
+}
+
+/** `GET|PATCH /settings/licenses/`. `total`/`available` nulos = sem limite. */
+export interface LicensesDto {
+  total: number | null;
+  used: number;
+  available: number | null;
+  unlimited: boolean;
+}
+
+/** `POST /tickets/{id}/ai-summary/`. */
+export interface AiSummaryDto {
+  summary: string;
+  generated_at: string;
+  provider: string;
+  truncated: boolean;
 }

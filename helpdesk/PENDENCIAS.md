@@ -41,7 +41,7 @@ Da lista anterior (11 itens) só o antigo item 6 (empresa e cliente exigem campo
 
 ### Funcionalidades que existem só no front (a criar no backend)
 
-Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA, fusão (ticket, usuário, organização), apagar ticket, tipo de ticket, CC e seguidores de terceiros, licenças. Também: assunto e solicitante editados num ticket existente, e campos de status, macro, cliente e organização sem equivalente no backend.
+Gatilhos editáveis, campos personalizados (inclui tópico, sentimento e idioma de IA), formulários de ticket e fusão (ticket, usuário, organização). Também: assunto e solicitante editados num ticket existente, e campos de status, macro, cliente e organização sem equivalente no backend.
 
 ### No front
 
@@ -49,10 +49,10 @@ Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA
 2. **Tempo real por WebSocket (`/ws/me/`): feito.** `api/real/ws.ts` + `startLiveUpdates`. Verificado: um evento de outro usuário atualiza propriedades do ticket aberto (formulário sem edições pendentes), contadores e as listas por visão já abertas, sem recarregar; reconexão com backoff após queda (simulada fechando o socket) e uma só conexão por aba. 4401/4403 não reconectam. Limite do backend: o evento só vai a quem é solicitante/responsável/dono/seguidor e **não há evento de ticket novo** (`kind`: assigned, owner, updated, closed, reply). Eventos perdidos durante uma queda não são reenviados: ao reconectar só os contadores são revalidados.
 3. **Paginação por visão: feito, com ressalva.** Visões com `query` (6 do Helpdesk menos `recent`/`solved-recent`, as do sistema e as pessoais) paginam de 100 em 100 com "Carregar mais" (verificado com 156 tickets: 100 de 149, depois 149, sem duplicados). **Histórico do cliente, painel do cliente no ticket e tickets da organização: resolvido**, vêm do servidor (`?requester=`/`?company=`; verificado: Ana 54, Beto 49, Acme 103, iguais às contagens do servidor, com mais de 100 na organização). **Ressalva (continua):** `recent` e `solved-recent` (locais) e as tags sugeridas contam apenas tickets já carregados e podem ficar incompletos com mais de 100 tickets. Filtros da gaveta numa visão paginada atuam só nas linhas carregadas. Seleção em lote atinge só linhas carregadas. `/ticket-views/?page=` não é usado: o array puro devolve todas as visões, e o front precisa do `count` de todas para o contador.
 4. **Abas de trabalho: `role=group` + `aria-current`, em vez de `tablist`/`tab`.** Trade-off: o brief 5.1 pedia `tablist` (e a violação `aria-required-children` do botão "Fechar aba" dentro do `tablist` era a única conhecida). Com `group` some a violação, mas as abas deixam de ter semântica de aba (sem "aba 1 de 3" nem `aria-selected`; a ordem de Tab continua a mesma). Não rodei axe (não está instalado); só inspecionei os papéis no navegador.
-5. **Menu ⋮ do ticket: feito, com ressalvas.** Criar macro vai ao backend (recusa nome repetido) e só aparece para quem tem `macro.manage` ou `settings.manage`; fundir e apagar são **só locais** (avisados "somente neste navegador"; apagar e spam pedem confirmação). Suspender usa `PATCH /settings/users/{id}/` e depende do backend (nos dados de DEV os clientes sem telefone são recusados com "Informe ao menos um telefone"; o caminho de sucesso não foi verificado). Spam = suspender (se falhar, avisa que NÃO suspendeu) + remover localmente; não existe spam no backend.
-6. **Início do admin: feito.** Execuções/sem uso mostram — quando o backend não envia contadores. Os "tetos" de assentos (5), campos (20) e gatilhos (10) são locais e vêm sinalizados; no modo real a Visão geral da conta mostra só "N agentes ativos".
+5. **Menu ⋮ do ticket: feito, com ressalvas.** Criar macro vai ao backend (recusa nome repetido) e só aparece para quem tem `macro.manage` ou `settings.manage`; **apagar vai ao servidor** (só `settings.manage`; ver "Tipo, apagar, CC e seguidores, licenças e resumo de IA") e fundir segue **só local** ("somente neste navegador"); apagar, spam e fundir pedem confirmação. Suspender usa `PATCH /settings/users/{id}/` e depende do backend (nos dados de DEV os clientes sem telefone são recusados com "Informe ao menos um telefone"; o caminho de sucesso não foi verificado). Spam = suspender (se falhar, avisa que NÃO suspendeu) + apagar no servidor (só admin); não existe spam no backend.
+6. **Início do admin: feito.** Execuções/sem uso mostram — quando o backend não envia contadores. Licenças vêm do servidor (`/settings/licenses/`, barra "N de total" ou "N (sem limite)"); os "tetos" de campos (20) e gatilhos (10) continuam locais e sinalizados. A Visão geral da conta mostra as licenças do servidor.
 7. **Conta, Canais e Espaços: páginas informativas** (sem edição). Conta = sessão + agentes ativos; Canais = texto explicativo; Espaços = layouts (texto) + atalhos reais. Marca/cobrança/SSO seguem fora.
-8. **Visualizações pessoais: feito.** Criar/editar/clonar/apagar via `/ticket-views/` e filtros da gaveta (prioridade, status, assunto, solicitante, período) gravados e reidratados ao reabrir; verificado com curl. Tipo e tags não têm par no backend e não são gravados. Clonar visão do Helpdesk/sistema grava `{view: slug}`.
+8. **Visualizações pessoais: feito.** Criar/editar/clonar/apagar via `/ticket-views/` e filtros da gaveta (prioridade, status, assunto, solicitante, período) gravados e reidratados ao reabrir; verificado com curl. Tags não têm par no backend e não são gravadas; o tipo também não é gravado na visão pessoal (o backend recusa `type` em `filters`), mas o filtro de tipo da gaveta vai ao servidor ao listar. Clonar visão do Helpdesk/sistema grava `{view: slug}`.
 
 ## Áreas novas (Quadro, Chat, Relatórios, Sistema)
 
@@ -80,6 +80,18 @@ Tickets TD-00176 a 178, chats 3 a 7 e usuários ag-chat-1..5, plano e avisos AG-
 
 ### Ligações feitas no shell
 Sino de notificações no `TopBar`, banner de avisos no `AgentLayout` e "Sessões e acessos" no menu de membros. "Ver todas" do sino leva a `/admin/notificacoes/central` (área de admin): para agente comum falta uma rota fora de `/admin`.
+
+## Tipo, apagar, CC e seguidores, licenças e resumo de IA: feito
+
+Cinco itens que eram só do front passaram a usar o backend novo (`capabilities` `'real'`; detalhes e ressalvas em `src/api/PENDENTE_NO_BACKEND.md`). Verificado no navegador contra o backend (porta 8021) com tickets `AG-front`:
+tipo (criar, trocar, limpar, eventos "tipo → X" no histórico e filtro `?type=` na gaveta), apagar (menu ⋮ e lote, 404 ao apagar de novo, ticket continua se falha), banner "Apagado em… Restaurar", CC (e-mail inválido, do solicitante, repetido, remover) e seguidores, criação com tipo+CC+seguidor, licenças (ler, 400 abaixo do uso, editar total, 409 ao criar, voltar a "sem limite") e resumo de IA (503 sem chave).
+
+Ressalvas: o 409 de horas lançadas, o 403 (agente não admin), o 429/502 do resumo e a restauração depois de 30 dias foram verificados só em teste com resposta simulada; o resumo com chave configurada não foi chamado (nenhum provedor externo); os campos de IA do painel (tópico, sentimento, idioma) seguem locais.
+
+### Defeitos do backend encontrados
+- `type` não está na lista `VALIDADORES` de `SavedTicketView.filters`: visão pessoal não consegue gravar filtro de tipo (400 "Filtro desconhecido").
+- A mensagem de 409 `seat_limit_reached` cita "Configurações > Licenças", que não existe no Helpdesk.
+- Eventos de auditoria de propriedade (tipo, CC, seguidor, apagar) usam o mesmo formato de evento de status (`from_status` = `to_status` com `note`); o front precisa deduzir pelo `note` que não é troca de status.
 
 ## Decisão em aberto
 

@@ -66,8 +66,32 @@ function route(method: string, path: string, body: Json | FormData | undefined):
       if ('team' in b) t.team = { ...t.team, id: b.team };
       if ('assignee' in b) t.assignee_id = b.assignee;
       if ('tags' in b) t.tags = (b.tags as number[]).map((id) => tags.find((x) => x.id === id)!);
+      if ('type' in b) {
+        t.type = b.type;
+        event(t, t.status, t.status, `tipo → ${b.type ?? '—'}`);
+      }
       return { status: 200, body: clone(t) };
     }
+  }
+  if ((m = /^\/tickets\/(\d+)\/cc\/(?:(\d+)\/)?$/.exec(p))) {
+    const t = tickets.get(Number(m[1]))!;
+    t.cc ??= [];
+    if (method === 'POST') {
+      if (!/^\S+@\S+\.\S+$/.test(String(b.email))) return { status: 400, body: { email: ['Insira um endereço de email válido.'] } };
+      if (!t.cc.some((c: Json) => c.email === String(b.email).toLowerCase())) t.cc.push({ id: 40 + t.cc.length, name: b.name ?? '', email: String(b.email).toLowerCase() });
+      return { status: 201, body: clone(t) };
+    }
+    t.cc = t.cc.filter((c: Json) => c.id !== Number(m![2]));
+    return { status: 200, body: clone(t) };
+  }
+  if ((m = /^\/tickets\/(\d+)\/followers\/(?:(\d+)\/)?$/.exec(p))) {
+    const t = tickets.get(Number(m[1]))!;
+    if (method === 'POST') {
+      if (!t.watchers.some((w: Json) => w.id === Number(b.user_id))) t.watchers.push({ id: Number(b.user_id), name: `Usuário ${b.user_id}` });
+      return { status: 201, body: clone(t) };
+    }
+    t.watchers = t.watchers.filter((w: Json) => w.id !== Number(m![2]));
+    return { status: 200, body: clone(t) };
   }
   if ((m = /^\/tickets\/(\d+)\/(reply|close|follow|unfollow|apply-macro)\/$/.exec(p))) {
     const t = tickets.get(Number(m[1]))!;
@@ -296,23 +320,45 @@ describe('updateTicket (real): ordem segura e markdown', () => {
     expect((fd.getAll('files')[0] as File).name).toBe('nota.txt');
   });
 
-  it('seguir e deixar de seguir só o próprio usuário; outros seguidores ficam locais', async () => {
+  it('seguir e deixar de seguir o próprio usuário por follow/unfollow; outros seguidores por followers/', async () => {
     vi.spyOn(auth, 'getRealMeId').mockReturnValue('1');
     const a = await realTickets.updateTicket(2, { followerIds: ['1', '4'] });
-    expect(writes()).toEqual(['POST /tickets/2/follow/']);
-    expect(a.localFields).toEqual(['followerIds']);
+    expect(writes()).toEqual(['POST /tickets/2/follow/', 'POST /tickets/2/followers/']);
+    expect(calls[1]!.body).toEqual({ user_id: 4 });
+    expect(a.localFields).toBeUndefined();
     expect(a.followerIds).toEqual(['1', '4']);
     calls = [];
     await realTickets.updateTicket(2, { followerIds: [] });
-    expect(writes()).toEqual(['POST /tickets/2/unfollow/']);
+    expect(writes()).toEqual(['POST /tickets/2/unfollow/', 'DELETE /tickets/2/followers/4/']);
   });
 
-  it('campos que o backend não tem (assunto, tipo, CC) ficam só no navegador e avisam em localFields', async () => {
-    const out = await realTickets.updateTicket(2, { subject: 'Outro assunto', type: 'incident', ccIds: ['x@y.z'] });
+  it('tipo vai ao servidor no PATCH (trocar e limpar); só assunto, solicitante e campos personalizados ficam no navegador', async () => {
+    const typed = await realTickets.updateTicket(2, { type: 'incident' });
+    expect(writes()).toEqual(['PATCH /tickets/2/']);
+    expect(calls[0]!.body).toEqual({ type: 'incident' });
+    expect(typed).toMatchObject({ type: 'incident' });
+    expect(typed.events.at(-1)).toMatchObject({ text: 'tipo → incident', kind: 'field_change' });
+    expect(typed.events.at(-1)!.meta).toBeUndefined(); // evento de propriedade: sem "De/Para" de status
+    calls = [];
+    const cleared = await realTickets.updateTicket(2, { type: undefined });
+    expect(calls[0]!.body).toEqual({ type: null });
+    expect(cleared.type).toBeUndefined();
+    calls = [];
+    const out = await realTickets.updateTicket(2, { subject: 'Outro assunto' });
     expect(writes()).toEqual([]);
-    expect(out).toMatchObject({ subject: 'Outro assunto', type: 'incident', localFields: ['subject', 'type', 'ccIds'] });
+    expect(out).toMatchObject({ subject: 'Outro assunto', localFields: ['subject'] });
     resetRealCache();
     expect((await realTickets.getTicket(2)).subject).toBe('Outro assunto');
+  });
+
+  it('CC de terceiros por cc/: entra o novo e-mail (minúsculo) e sai o removido pelo id do registro', async () => {
+    await realTickets.updateTicket(2, { ccIds: ['Novo@X.com'] });
+    expect(writes()).toEqual(['POST /tickets/2/cc/']);
+    expect(calls[0]!.body).toEqual({ email: 'novo@x.com' });
+    calls = [];
+    const out = await realTickets.updateTicket(2, { ccIds: [] });
+    expect(writes()).toEqual(['DELETE /tickets/2/cc/40/']);
+    expect(out.ccIds).toEqual([]);
   });
 
   it('macros usadas no formulário chamam apply-macro antes das propriedades', async () => {

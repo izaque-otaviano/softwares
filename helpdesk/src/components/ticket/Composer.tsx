@@ -1,4 +1,3 @@
-import { localHint } from '@/api/capabilities';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
@@ -7,10 +6,11 @@ import StarterKit from '@tiptap/starter-kit';
 import { Pencil } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useDirectory } from '@/components/lists/useDirectory';
-import { Input, TagInput } from '@/components/ui';
+import { Input } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { toast } from '@/store/useUi';
 import { mockAiTransform } from './AiMenu';
+import { CcField } from './CcFollowers';
 import { ComposerToolbar } from './ComposerToolbar';
 import { useFormEntry, useFormStore } from './formStore';
 import { AttachmentChip } from './MessageBubble';
@@ -95,12 +95,8 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
   const call = mode === 'call';
   const requester = entry.values.requesterId ? users.get(entry.values.requesterId) : undefined;
   const store = useFormStore.getState();
-  const ccValues = entry.values.ccIds.map((id) => users.get(id)?.email ?? id);
-
-  const onCcChange = (emails: string[]) => {
-    const byEmail = new Map([...users.values()].map((u) => [u.email.toLowerCase(), u.id]));
-    store.patch(ticketKey, { ccIds: emails.map((e) => byEmail.get(e.toLowerCase()) ?? e) });
-  };
+  // Quem já tem e-mails em cópia vê a linha aberta; senão ela abre pelo botão "CC".
+  const ccVisible = entry.ccOpen || entry.values.ccIds.length > 0;
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -141,7 +137,7 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
                 <Pencil aria-hidden className="h-3.5 w-3.5" />
               </button>
             </span>
-            {!entry.ccOpen ? (
+            {!ccVisible ? (
               <button type="button" onClick={() => store.setCcOpen(ticketKey, true)} className="rounded-xs text-sm text-action outline-none hover:text-action-hover focus-visible:shadow-focus">
                 CC
               </button>
@@ -160,19 +156,10 @@ export function Composer({ ticketKey }: { ticketKey: string }) {
           />
         ) : null}
       </div>
-      {mode === 'public' && entry.ccOpen ? (
+      {mode === 'public' && ccVisible ? (
         <div className="mb-2 flex items-start gap-2">
-          <span className="pt-1.5 text-sm text-fg-muted">CC{localHint('ccFollowers') ? ' (somente neste navegador)' : ''}</span>
-          <div className="min-w-0 flex-1">
-            <TagInput
-              aria-label="CC (e-mails)"
-              placeholder="Adicionar e-mails"
-              value={ccValues}
-              onChange={onCcChange}
-              validate={(t) => (/^\S+@\S+\.\S+$/.test(t) ? null : 'Informe um e-mail válido')}
-              suggestions={[...users.values()].filter((u) => u.role !== 'agent').slice(0, 20).map((u) => u.email)}
-            />
-          </div>
+          <span className="pt-1.5 text-sm text-fg-muted">CC</span>
+          <CcField ticketKey={ticketKey} />
         </div>
       ) : null}
       <div

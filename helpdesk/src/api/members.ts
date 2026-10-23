@@ -7,9 +7,9 @@ const impl: typeof mock = IS_REAL ? real : mock;
 
 export const {
   ROLE_LABEL,
-  AGENT_SEATS,
   listMembers,
   getLicenses,
+  setLicenseTotal,
   createMember,
   setMemberSuspended,
   listRoles,

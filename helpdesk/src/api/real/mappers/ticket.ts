@@ -1,12 +1,17 @@
 import { sanitizeHtml } from '@/lib/sanitizeHtml';
-import type { AuditEvent, Comment, Priority, SlaState, Ticket, TicketSla, TicketStatus, User } from '@/types/domain';
-import type { MessageDto, SlaClockDto, TicketDetailDto, TicketDto, TicketEventDto } from './dto';
+import type { AiSummary, AuditEvent, Comment, Priority, SlaState, Ticket, TicketContact, TicketSla, TicketStatus, TicketType, User } from '@/types/domain';
+import type { AiSummaryDto, MessageDto, SlaClockDto, TicketDetailDto, TicketDto, TicketEventDto } from './dto';
 import { markdownToHtml } from './markdown';
 import { mapCategory, resolveStatusId } from './status';
 
 const PRIORITIES: ReadonlySet<string> = new Set(['low', 'normal', 'high', 'urgent']);
 
 export const mapPriority = (p: string | null | undefined): Priority => (p && PRIORITIES.has(p) ? (p as Priority) : 'normal');
+
+const TICKET_TYPES: ReadonlySet<string> = new Set(['question', 'incident', 'problem', 'task']);
+
+/** `type` do backend (nulo = sem tipo; valor desconhecido também vira sem tipo). */
+export const mapTicketType = (t: string | null | undefined): TicketType | undefined => (t && TICKET_TYPES.has(t) ? (t as TicketType) : undefined);
 
 /** `source` do backend (`web|chat|internal`) -> canal do Helpdesk. Não há e-mail no backend; tudo cai em `web_form`. */
 export const mapChannel = (_source: string): Ticket['channel'] => 'web_form';
@@ -52,6 +57,7 @@ export function mapTicketListItem(dto: TicketDto, ctx: TicketMapContext): Ticket
     followerIds: [],
     ccIds: [],
     tags: dto.tags.map((t) => t.name),
+    type: mapTicketType(dto.type),
     priority: mapPriority(dto.priority),
     statusId: resolveStatusId({ status: dto.status, stage: dto.stage }, ctx.statuses),
     channel: mapChannel(dto.source),
@@ -117,12 +123,15 @@ const categoryName = (c: string | null): string => (c === null ? '-' : (CATEGORY
 /** Evento de status (`TicketStatusEvent`) -> AuditEvent `field_change`; automático sem autor = `system`. `meta` é sintetizado. */
 export function mapEvent(e: TicketEventDto, users: { staff: User[] }): AuditEvent {
   const actor = e.actor_name ? users.staff.filter((u) => u.name === e.actor_name) : [];
+  // Auditoria de propriedade (tipo, CC, seguidor, apagar...): o backend manda `note` com o status inalterado
+  // (de = para). Não é mudança de status: mostra só o texto, sem "De/Para".
+  const propertyNote = Boolean(e.note) && e.from_status !== null && e.from_status === e.to_status && !e.is_reopen;
   return {
     id: String(e.id),
     authorId: e.is_automatic || !e.actor_name ? 'system' : actor.length === 1 ? actor[0]!.id : `name:${e.actor_name}`,
     kind: 'field_change',
     text: eventLabel(e, categoryName),
-    meta: e.from_status === null ? undefined : { De: categoryName(e.from_status), Para: categoryName(e.to_status) },
+    meta: e.from_status === null || propertyNote ? undefined : { De: categoryName(e.from_status), Para: categoryName(e.to_status) },
     createdAt: e.created_at,
   };
 }
@@ -141,8 +150,24 @@ export function mapTicketDetail(dto: TicketDetailDto, ctx: DetailMapContext): Ti
     requesterId,
     requesterName,
     followerIds: dto.watchers.map((w) => String(w.id)),
+    // O servidor já devolve os e-mails dos CC de terceiros (que viram `ccIds`, e-mails) e dos seguidores.
+    ccIds: (dto.cc ?? []).map((c) => c.email),
+    ccList: (dto.cc ?? []).map(mapCc),
+    followerList: (dto.followers ?? []).map(mapFollower),
+    ...(dto.deleted_at ? { deletedAt: dto.deleted_at, deletedByName: dto.deleted_by_name ?? undefined } : {}),
     comments: dto.messages.map(mapMessage),
     events: dto.events.map((e) => mapEvent(e, { staff: ctx.staff })),
     detailed: true,
   };
 }
+
+export const mapCc = (c: { id: number; name: string; email: string }): TicketContact => ({ id: String(c.id), name: c.name, email: c.email });
+
+export const mapFollower = (f: { id: number; name: string; email: string; is_internal?: boolean }): TicketContact => ({
+  id: String(f.id),
+  name: f.name,
+  email: f.email,
+  internal: f.is_internal,
+});
+
+export const mapAiSummary = (d: AiSummaryDto): AiSummary => ({ summary: d.summary, generatedAt: d.generated_at, provider: d.provider, truncated: Boolean(d.truncated) });

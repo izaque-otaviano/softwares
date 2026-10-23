@@ -13,6 +13,8 @@ export function userCan(user: { permissions: string[] } | null | undefined, anyO
 
 /** Criar, editar, ativar e excluir macros: o backend aceita `macro.manage` OU `settings.manage` (administrador). */
 export const MACRO_WRITE: readonly string[] = ['macro.manage', 'settings.manage'];
+/** Administração da conta; também é a permissão que apaga e restaura tickets (não existe `ticket.delete`). */
+export const SETTINGS_MANAGE = 'settings.manage';
 /** Editar propriedades do ticket (responsável, status por coluna, etiquetas) já na criação. */
 export const TICKET_EDIT_PROPERTIES = 'ticket.edit_properties';
 

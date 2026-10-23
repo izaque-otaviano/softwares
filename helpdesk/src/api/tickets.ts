@@ -17,6 +17,12 @@ export const {
   createTicket,
   applyAutomation,
   deleteTickets,
+  restoreTicket,
+  addTicketCc,
+  removeTicketCc,
+  addTicketFollower,
+  removeTicketFollower,
+  generateAiSummary,
   mergeTickets,
   simulateIncomingTicket,
   simulateCustomerReply,
@@ -28,4 +34,4 @@ export const {
   updatePersonalView,
   deletePersonalView,
 } = impl;
-export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult, BulkResolution, ResolutionSuggestion } from './mock/tickets';
+export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult, BulkResolution, ResolutionSuggestion, DeleteResult } from './mock/tickets';

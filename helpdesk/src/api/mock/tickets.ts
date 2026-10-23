@@ -1,6 +1,8 @@
 import { ME_ID } from './data';
 import { countViews, runView as runViewPure, type ViewContext } from '@/lib/views';
-import type { AuditEvent, Comment, Priority, Ticket, View } from '@/types/domain';
+import { TYPE_LABEL } from '@/lib/status';
+import { EMAIL_RE, MAX_CC, ticketCcList } from '@/lib/ticketContacts';
+import type { AiSummary, AuditEvent, Comment, Priority, Ticket, TicketContact, View } from '@/types/domain';
 import { ApiError } from '../errors';
 import { simulate } from './delay';
 import { db } from './db';
@@ -35,8 +37,8 @@ export function listTickets(filter: TicketFilter = {}): Promise<Ticket[]> {
 
 export function getTicket(id: number): Promise<Ticket> {
   return simulate(() => {
-    const t = db.tickets.find((x) => x.id === id);
-    if (!t) throw new ApiError('Ticket não encontrado.');
+    const t = db.tickets.find((x) => x.id === id) ?? db.trash.find((x) => x.id === id);
+    if (!t) throw new ApiError('Ticket não encontrado.', { status: 404 });
     return t;
   });
 }
@@ -50,11 +52,14 @@ export function getViewCounts(): Promise<Record<string, number>> {
   return simulate(() => countViews(db.views, db.tickets, viewContext()), { critical: true });
 }
 
-export function runView(viewId: string, _opts: { offset?: number; limit?: number } = {}): Promise<Ticket[]> {
+export function runView(viewId: string, _opts: { offset?: number; limit?: number; type?: string } = {}): Promise<Ticket[]> {
   return simulate(() => {
     const v = db.views.find((x) => x.id === viewId);
     if (!v) throw new ApiError('Visualização não encontrada.');
-    return runViewPure(v, db.tickets, viewContext());
+    const list = runViewPure(v, db.tickets, viewContext());
+    // Mesmo contrato do servidor: `type` é lista separada por vírgula e `none` = sem tipo.
+    const types = _opts.type?.split(',').filter(Boolean);
+    return types?.length ? list.filter((t) => types.includes(t.type ?? 'none')) : list;
   });
 }
 
@@ -96,6 +101,11 @@ export function updateTicket(id: number, patch: TicketPatch = {}, comment?: NewC
     const events: AuditEvent[] = [];
     (Object.keys(patch) as (keyof TicketPatch)[]).forEach((key) => {
       if (key === 'customFields' || JSON.stringify(prev[key]) === JSON.stringify(patch[key])) return;
+      if (key === 'type') {
+        // Igual ao servidor: evento de auditoria "tipo → Incidente" (— ao limpar), sem De/Para.
+        events.push({ id: uid('e'), authorId: ME_ID, kind: 'field_change', text: `tipo → ${patch.type ? TYPE_LABEL[patch.type] : '—'}`, createdAt: now });
+        return;
+      }
       events.push({
         id: uid('e'),
         authorId: ME_ID,
@@ -258,10 +268,109 @@ export function applyAutomation(id: number, patch: TicketPatch, events: AuditEve
   );
 }
 
-export function deleteTickets(ids: number[]): Promise<number[]> {
+/** Resultado de apagar: o que o servidor confirmou e o que falhou (com a frase pronta para mostrar). */
+export interface DeleteResult {
+  deleted: number[];
+  failed: { id: number; message: string; status?: number; code?: string }[];
+}
+
+export function deleteTickets(ids: number[]): Promise<DeleteResult> {
   return simulate(() => {
+    const now = new Date().toISOString();
+    for (const t of db.tickets.filter((x) => ids.includes(x.id))) db.trash.push({ ...t, deletedAt: now, deletedByName: 'Você' });
     db.tickets = db.tickets.filter((t) => !ids.includes(t.id));
-    return ids;
+    return { deleted: ids, failed: [] };
+  });
+}
+
+export function restoreTicket(id: number): Promise<Ticket> {
+  return simulate(() => {
+    const t = db.trash.find((x) => x.id === id);
+    if (!t) throw new ApiError(`O ticket #${id} não está apagado ou não foi encontrado.`, { status: 404 });
+    db.trash = db.trash.filter((x) => x.id !== id);
+    const { deletedAt: _a, deletedByName: _b, ...restored } = t;
+    const back: Ticket = { ...restored, events: [...t.events, { id: uid('e'), authorId: ME_ID, kind: 'field_change', text: 'ticket restaurado', createdAt: new Date().toISOString() }] };
+    db.tickets = [...db.tickets, back].sort((a, b) => a.id - b.id);
+    return back;
+  });
+}
+
+/** Contatos de CC do ticket (mesma derivação da tela). */
+const ccOf = (t: Ticket): TicketContact[] => ticketCcList(t, (v) => db.users.find((x) => x.id === v));
+
+function saveRelations(id: number, fn: (t: Ticket) => Partial<Ticket>, note: string): Ticket {
+  const i = db.tickets.findIndex((t) => t.id === id);
+  if (i < 0) throw new ApiError('Ticket não encontrado.', { status: 404 });
+  const now = new Date().toISOString();
+  const next: Ticket = { ...db.tickets[i]!, ...fn(db.tickets[i]!), updatedAt: now };
+  next.events = [...next.events, { id: uid('e'), authorId: ME_ID, kind: 'field_change', text: note, createdAt: now }];
+  db.tickets[i] = next;
+  return next;
+}
+
+
+export function addTicketCc(id: number, input: { email: string; name?: string }): Promise<Ticket> {
+  return simulate(() => {
+    const t = db.tickets.find((x) => x.id === id);
+    if (!t) throw new ApiError('Ticket não encontrado.', { status: 404 });
+    const email = input.email.trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) throw new ApiError('Insira um endereço de email válido.', { status: 400, fieldErrors: { email: ['Insira um endereço de email válido.'] } });
+    const requester = db.users.find((u) => u.id === t.requesterId);
+    if (requester && requester.email.toLowerCase() === email) throw new ApiError('Este e-mail é o do solicitante, que já recebe as respostas.', { status: 400 });
+    const current = ccOf(t);
+    if (current.some((c) => c.email.toLowerCase() === email)) return t;
+    if (current.length >= MAX_CC) throw new ApiError(`Um ticket aceita no máximo ${MAX_CC} e-mails em cópia.`, { status: 400 });
+    const list = [...current, { id: `cc-${uid('x')}`, name: input.name?.trim() ?? '', email }];
+    return saveRelations(id, () => ({ ccList: list, ccIds: list.map((c) => c.email) }), `cc + ${email}`);
+  });
+}
+
+export function removeTicketCc(id: number, ccId: string): Promise<Ticket> {
+  return simulate(() => {
+    const t = db.tickets.find((x) => x.id === id);
+    if (!t) throw new ApiError('Ticket não encontrado.', { status: 404 });
+    const gone = ccOf(t).find((c) => c.id === ccId);
+    if (!gone) throw new ApiError('Não encontrado.', { status: 404 });
+    const list = ccOf(t).filter((c) => c.id !== ccId);
+    return saveRelations(id, () => ({ ccList: list, ccIds: list.map((c) => c.email) }), `cc − ${gone.email}`);
+  });
+}
+
+export function addTicketFollower(id: number, userId: string): Promise<Ticket> {
+  return simulate(() => {
+    const t = db.tickets.find((x) => x.id === id);
+    if (!t) throw new ApiError('Ticket não encontrado.', { status: 404 });
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) throw new ApiError('Usuário não encontrado.', { status: 400 });
+    if (user.id === t.requesterId) throw new ApiError('O solicitante já acompanha o ticket.', { status: 400 });
+    if (t.followerIds.includes(userId)) return t;
+    return saveRelations(id, (x) => ({ followerIds: [...x.followerIds, userId], followerList: undefined }), `seguidor + ${user.name}`);
+  });
+}
+
+export function removeTicketFollower(id: number, userId: string): Promise<Ticket> {
+  return simulate(() => {
+    const t = db.tickets.find((x) => x.id === id);
+    if (!t) throw new ApiError('Ticket não encontrado.', { status: 404 });
+    if (!t.followerIds.includes(userId)) throw new ApiError('Não encontrado.', { status: 404 });
+    const name = db.users.find((u) => u.id === userId)?.name ?? userId;
+    return saveRelations(id, (x) => ({ followerIds: x.followerIds.filter((f) => f !== userId), followerList: undefined }), `seguidor − ${name}`);
+  });
+}
+
+/** Resumo SIMULADO (modo mock): monta um texto plausível a partir do ticket. No modo real o servidor chama o provedor de IA. */
+export function generateAiSummary(id: number): Promise<AiSummary> {
+  return simulate(() => {
+    const ticket = db.tickets.find((x) => x.id === id);
+    if (!ticket) throw new ApiError('Ticket não encontrado.', { status: 404 });
+    const requester = db.users.find((u) => u.id === ticket.requesterId)?.name;
+    const f = ticket.customFields;
+    const parts = [`${requester ?? 'O cliente'} entrou em contato${ticket.channel === 'email' ? ' por e-mail' : ' pelo formulário web'}`];
+    parts[0] += f.resumo ? `: ${f.resumo.replace(/[.…]+$/, '')}.` : '.';
+    if (f.topico) parts.push(`Tópico identificado: ${f.topico}.`);
+    if (f.sentimento) parts.push(`Sentimento ${f.sentimento.toLowerCase()}.`);
+    parts.push(`${ticket.comments.length} ${ticket.comments.length === 1 ? 'mensagem' : 'mensagens'} na conversa.`);
+    return { summary: parts.join(' '), generatedAt: new Date().toISOString(), provider: 'simulado', truncated: false };
   });
 }
 

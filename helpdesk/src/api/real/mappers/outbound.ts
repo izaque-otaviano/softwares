@@ -32,7 +32,7 @@ export interface OutboundComment {
 }
 
 /** Campos que o backend NÃO tem: valem só no navegador (camada local), nunca viajam. */
-export const LOCAL_ONLY_KEYS: readonly PatchKey[] = ['subject', 'requesterId', 'type', 'ccIds', 'customFields'];
+export const LOCAL_ONLY_KEYS: readonly PatchKey[] = ['subject', 'requesterId', 'customFields'];
 
 export const KEY_LABEL: Record<PatchKey | 'comment' | 'macro', string> = {
   subject: 'assunto',
@@ -52,7 +52,7 @@ export const KEY_LABEL: Record<PatchKey | 'comment' | 'macro', string> = {
 
 export const labelOf = (k: Covers): string => (k.startsWith('macro:') ? KEY_LABEL.macro : KEY_LABEL[k as PatchKey | 'comment']);
 
-export type StepKind = 'macro' | 'props' | 'follow' | 'unfollow' | 'reply' | 'close' | 'stage';
+export type StepKind = 'macro' | 'props' | 'follow' | 'unfollow' | 'cc_add' | 'cc_remove' | 'follower_add' | 'follower_remove' | 'reply' | 'close' | 'stage';
 
 export interface PlanStep {
   kind: StepKind;
@@ -78,9 +78,9 @@ export interface TicketPlan {
 export interface CurrentTicket {
   statusId: string;
   followerIds: string[];
+  /** CC de terceiros do servidor (id do registro + e-mail), para calcular o que entra e o que sai. */
+  ccs?: { id: string; email: string }[];
 }
-
-const sameSet = (a: string[], b: string[]): boolean => a.length === b.length && a.every((x) => b.includes(x));
 
 /** Categoria (Helpdesk) -> `new_status` aceito pelo `reply` (o backend não aceita `new`: responder já abre). */
 export function replyStatusFor(category: StatusCategory): Exclude<StageCategoryDto, 'new'> {
@@ -159,19 +159,30 @@ export function planTicketUpdate(input: PlanInput): TicketPlan {
     props.tags = resolveTagIds(patch.tags, input.tags).ids;
     covers.push('tags');
   }
+  if ('type' in patch) {
+    props.type = patch.type || null; // limpar o tipo = null (ausente não mexe)
+    covers.push('type');
+  }
   if (covers.length > 0) steps.push({ kind: 'props', covers, body: props });
 
-  // 2. seguir / deixar de seguir (só o próprio usuário; os demais seguidores só existem no navegador)
+  // 2. seguir / deixar de seguir: o próprio usuário por follow/unfollow; os demais seguidores por `followers/`
   if (patch.followerIds) {
     const wantsMe = patch.followerIds.includes(meId);
     const hasMe = current.followerIds.includes(meId);
     if (wantsMe && !hasMe) steps.push({ kind: 'follow', covers: ['followerIds'] });
     else if (!wantsMe && hasMe) steps.push({ kind: 'unfollow', covers: ['followerIds'] });
     const others = patch.followerIds.filter((id) => id !== meId);
-    if (!sameSet(others, current.followerIds.filter((id) => id !== meId))) {
-      local.followerIds = others;
-      localKeys.push('followerIds');
-    }
+    const currentOthers = current.followerIds.filter((id) => id !== meId);
+    for (const id of others.filter((x) => !currentOthers.includes(x))) steps.push({ kind: 'follower_add', covers: ['followerIds'], body: { user_id: Number(id) } });
+    for (const id of currentOthers.filter((x) => !others.includes(x))) steps.push({ kind: 'follower_remove', covers: ['followerIds'], body: { user_id: Number(id) } });
+  }
+
+  // 2b. CC de terceiros (e-mails): entra o que é novo, sai o que foi tirado (por id do registro de CC)
+  if (patch.ccIds) {
+    const wanted = [...new Set(patch.ccIds.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+    const have = current.ccs ?? [];
+    for (const email of wanted.filter((e) => !have.some((c) => c.email.toLowerCase() === e))) steps.push({ kind: 'cc_add', covers: ['ccIds'], body: { email } });
+    for (const c of have.filter((c) => !wanted.includes(c.email.toLowerCase()))) steps.push({ kind: 'cc_remove', covers: ['ccIds'], body: { cc_id: Number(c.id) } });
   }
 
   // 3 e 4. mensagem + status
@@ -292,6 +303,8 @@ export interface CreateTicketInput {
   stageId?: string;
   /** Etiquetas por id. */
   tagIds?: number[];
+  /** Tipo (`question|incident|problem|task`); só triagem interna. */
+  type?: string;
   /** `false` = a descrição nasce como observação interna (o solicitante nunca a vê). Padrão: pública. */
   isPublic?: boolean;
   files?: File[];
@@ -312,6 +325,7 @@ export function createTicketBody(i: CreateTicketInput): Record<string, unknown> 
     ...(i.assigneeId ? { assignee: Number(i.assigneeId) } : {}),
     ...(i.stageId ? { stage: Number(i.stageId) } : {}),
     ...(i.tagIds?.length ? { tags: i.tagIds } : {}),
+    ...(i.type ? { type: i.type } : {}),
     ...(i.isPublic === false ? { is_public: false } : {}),
     with_signature: false,
   };
@@ -357,11 +371,11 @@ export function planNewTicket(input: NewTicketFormInput, ctx: { statuses: Ticket
     stageId,
     tagIds: input.tags?.length ? resolveTagIds(input.tags, ctx.tags).ids : undefined,
     isPublic: input.public,
+    type: input.type,
   });
   const followUp: PatchInput = {
     ...(closing ? { statusId: target!.id } : {}),
     ...(input.followerIds?.length ? { followerIds: input.followerIds } : {}),
-    ...(input.type ? { type: input.type } : {}),
     ...(input.ccIds?.length ? { ccIds: input.ccIds } : {}),
     ...(input.customFields && Object.keys(input.customFields).length ? { customFields: input.customFields } : {}),
   };

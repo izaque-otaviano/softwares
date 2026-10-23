@@ -20,6 +20,11 @@ interface Db {
   triggers: Trigger[];
   fields: TicketField[];
   recent: RecentItem[];
+  /** Total de licenças de agente (`null` = sem limite) e membros criados na sessão (convite pendente ocupa vaga). */
+  seatTotal: number | null;
+  createdSeats: string[];
+  /** Tickets apagados (exclusão lógica): só o administrador os abre e restaura. */
+  trash: Ticket[];
 }
 
 function seed(): Db {
@@ -34,6 +39,9 @@ function seed(): Db {
     triggers: structuredClone(triggers),
     fields: structuredClone(fields),
     recent: [],
+    seatTotal: 5,
+    createdSeats: [],
+    trash: [],
   };
 }
 

@@ -83,8 +83,7 @@ export const layers = {
   /** Membros (equipe) alterados localmente: criados e suspensos. */
   members: new Layer<Member>(),
   /**
-   * Parte da edição de um ticket REAL que o backend não tem (assunto, solicitante, tipo, CC, campos, seguidores
-   * arbitrários): vale só neste navegador e é reaplicada por cima de cada leitura do ticket.
+   * Parte da edição de um ticket REAL que o backend não tem (assunto, solicitante e campos personalizados): vale só neste navegador e é reaplicada por cima de cada leitura do ticket.
    */
   ticketPatches: new Map<number, Partial<Ticket>>(),
   /** Campos de status sem equivalente no backend (nome para o usuário final, descrição), por id. */

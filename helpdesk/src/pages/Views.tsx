@@ -22,6 +22,8 @@ import {
   type Lookups,
 } from '@/components/lists/viewQuery';
 import { Button, ConfirmModal, Input, Modal, type MenuItemSpec, type SortState } from '@/components/ui';
+import { capabilities } from '@/api/capabilities';
+import { SETTINGS_MANAGE, useCan } from '@/lib/permissions';
 import { statusIdByCategory } from '@/lib/status';
 import { useNow } from '@/lib/useNow';
 import { useTickets } from '@/store/useTickets';
@@ -125,6 +127,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
   const [name, setName] = useState(view.name);
   const isPersonal = view.origin === 'personal' || viewId.startsWith('pv:');
   const navigate = useNavigate();
+  const canDelete = useCan(SETTINGS_MANAGE);
 
   const lookups = useMemo<Lookups>(() => ({ statuses, users }), [statuses, users]);
 
@@ -137,9 +140,13 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
 
   // Visões avaliadas no servidor (modo real): busca a lista ao abrir.
   const serverView = Boolean(view.query);
+  // O filtro de tipo da gaveta também vai ao servidor (`?type=`): trocar o tipo recarrega a lista da visão.
+  const serverType = serverView && capabilities.ticketType === 'real' && filters.type !== 'any' ? filters.type : undefined;
+  const appliedType = useTickets((s) => s.viewType[viewId]);
   useEffect(() => {
-    if (serverView && loaded && viewIds === undefined) void useTickets.getState().loadView(viewId);
-  }, [serverView, loaded, viewId, viewIds]);
+    if (!serverView || !loaded) return;
+    if (viewIds === undefined || appliedType !== serverType) void useTickets.getState().loadView(viewId, { type: serverType });
+  }, [serverView, loaded, viewId, viewIds, serverType, appliedType]);
 
   // Visão pessoal: hidrata a gaveta a partir dos filtros salvos no servidor (só se ainda não houver prefs).
   useEffect(() => {
@@ -176,7 +183,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
     { id: 'open', label: 'Abrir ticket', onSelect: () => openTicket(t.id) },
     { id: 'assign', label: 'Atribuir a mim', onSelect: () => void useTickets.getState().assignToMe([t.id]) },
     { id: 'solve', label: 'Marcar como resolvido', onSelect: () => void useTickets.getState().requestSetStatus([t.id], statusIdByCategory(statuses, 'solved')) },
-    { id: 'delete', label: 'Apagar', tone: 'danger', onSelect: () => setDeleteId(t.id) },
+    ...(canDelete ? [{ id: 'delete', label: 'Apagar', tone: 'danger' as const, onSelect: () => setDeleteId(t.id) }] : []),
   ];
 
   const startPlay = () => {
@@ -283,7 +290,7 @@ function ViewContent({ view, dialog, setDialog }: { view: View; dialog: Dialog; 
         open={deleteId !== null}
         onOpenChange={(o) => !o && setDeleteId(null)}
         title={`Apagar ticket #${deleteId}?`}
-        description="Esta ação não pode ser desfeita."
+        description="O ticket sai de todas as listas, da busca e dos relatórios para todos. As mensagens e o histórico são guardados e só um administrador pode restaurar em até 30 dias. Ticket com horas de manutenção lançadas não pode ser apagado."
         confirmLabel="Apagar"
         onConfirm={async () => {
           if (deleteId !== null) await useTickets.getState().deleteTickets([deleteId]);

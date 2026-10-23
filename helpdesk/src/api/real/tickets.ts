@@ -1,12 +1,12 @@
 import { runView as runViewPure } from '@/lib/views';
-import type { Ticket, View } from '@/types/domain';
+import type { AiSummary, Ticket, View } from '@/types/domain';
 import { ApiError, PartialUpdateError } from '../errors';
 import * as mock from '../mock/tickets';
-import type { BulkChange, BulkResult, NewTicketInput, ResolutionSuggestion, TicketFilter, TicketPatch } from '../mock/tickets';
+import type { BulkChange, BulkResult, DeleteResult, NewTicketInput, ResolutionSuggestion, TicketFilter, TicketPatch } from '../mock/tickets';
 import { getRealMeId, hasRealPermission } from './auth';
 import { http, type Paginated } from './http';
 import { layers, mirror, upsertInDb, withLocalTicketFields } from './local';
-import { HELPDESK_VIEWS, SYSTEM_EXTRA_VIEWS, countsFromSummary, mapPersonalView, mapTicketDetail, mapTicketListItem, personalViewId, type PersonalViewDto, type SummaryDto, type TicketDetailDto, type TicketDto, type ViewDef } from './mappers';
+import { HELPDESK_VIEWS, SYSTEM_EXTRA_VIEWS, aiSummaryError, ccError, countsFromSummary, deleteTicketError, mapAiSummary, mapPersonalView, mapTicketDetail, mapTicketListItem, personalViewId, restoreTicketError, type AiSummaryDto, type PersonalViewDto, type SummaryDto, type TicketDetailDto, type TicketDto, type ViewDef } from './mappers';
 import { getGroups, getStaff, getStatuses, getTags, memo } from './refs';
 import { ensureTags } from './tags';
 import { LOCAL_ONLY_KEYS, labelOf, planNewTicket, planTicketUpdate, resolutionWindow, toFormData, type PlanStep, type ResolutionWindow, type TicketPlan } from './mappers/outbound';
@@ -233,13 +233,14 @@ export const viewPageMeta: Record<string, ViewPageMeta> = {};
  * Lista de uma visão. Com `query`, busca no servidor uma página (`offset`/`limit`).
  * Sem `query`, avalia localmente sobre os tickets já carregados.
  */
-export async function runView(viewId: string, opts: { offset?: number; limit?: number } = {}): Promise<Ticket[]> {
+export async function runView(viewId: string, opts: { offset?: number; limit?: number; type?: string } = {}): Promise<Ticket[]> {
   const view = (await listViews()).find((v) => v.id === viewId);
   if (!view) throw new ApiError('Visualização não encontrada.');
   if (view.query) {
     const limit = opts.limit ?? VIEW_PAGE;
     const offset = opts.offset ?? 0;
-    const page = await fetchTicketPage(view.query, { limit, offset });
+    // `type` (filtro da gaveta) vai ao servidor junto da consulta da visão: `?type=incident` (lista separada por vírgula; `none` = sem tipo).
+    const page = await fetchTicketPage(opts.type ? { ...view.query, type: opts.type } : view.query, { limit, offset });
     viewPageMeta[viewId] = {
       total: page.total,
       loaded: offset + page.dtos.length,
@@ -341,6 +342,14 @@ async function runStep(id: number, step: PlanStep, last: TicketDetailDto, window
       return http.post<TicketDetailDto>(`/tickets/${id}/follow/`);
     case 'unfollow':
       return http.post<TicketDetailDto>(`/tickets/${id}/unfollow/`);
+    case 'cc_add':
+      return http.post<TicketDetailDto>(`/tickets/${id}/cc/`, step.body);
+    case 'cc_remove':
+      return http.delete<TicketDetailDto>(`/tickets/${id}/cc/${step.body!.cc_id}/`);
+    case 'follower_add':
+      return http.post<TicketDetailDto>(`/tickets/${id}/followers/`, step.body);
+    case 'follower_remove':
+      return http.delete<TicketDetailDto>(`/tickets/${id}/followers/${step.body!.user_id}/`);
     case 'close': {
       const w = window ?? resolutionWindow(last);
       // `stage` = status personalizado da categoria fechada; sem ele o backend usa o "Fechado" de fábrica.
@@ -428,7 +437,7 @@ export async function updateTicket(id: number, patch: TicketPatch = {}, comment?
   const [statuses, dto0] = await Promise.all([getStatuses(), fetchDetailDto(id)]);
   await ensureTags(patch.tags);
   const tags = await getTags();
-  const current = { statusId: resolveStatusId(dto0, statuses), followerIds: dto0.watchers.map((w) => String(w.id)) };
+  const current = { statusId: resolveStatusId(dto0, statuses), followerIds: dto0.watchers.map((w) => String(w.id)), ccs: (dto0.cc ?? []).map((c) => ({ id: String(c.id), email: c.email })) };
   const plan = planTicketUpdate({
     patch,
     comment: comment ? { markdown: htmlToMarkdown(comment.bodyHtml), public: comment.public, files: comment.files } : undefined,
@@ -451,7 +460,6 @@ export async function updateTicket(id: number, patch: TicketPatch = {}, comment?
 function localPart(plan: TicketPlan): Partial<Ticket> {
   const out: Partial<Ticket> = {};
   for (const k of LOCAL_ONLY_KEYS) if (k in plan.local) (out as Record<string, unknown>)[k] = (plan.local as Record<string, unknown>)[k];
-  if (plan.local.followerIds) out.followerIds = plan.local.followerIds;
   return out;
 }
 
@@ -488,7 +496,7 @@ export async function createTicket(input: NewTicketInput): Promise<Ticket> {
 
   const plan = planTicketUpdate({
     patch: followUp,
-    current: { statusId: resolveStatusId(created, statuses), followerIds: created.watchers?.map((w) => String(w.id)) ?? [] },
+    current: { statusId: resolveStatusId(created, statuses), followerIds: created.watchers?.map((w) => String(w.id)) ?? [], ccs: (created.cc ?? []).map((c) => ({ id: String(c.id), email: c.email })) },
     currentStageId: created.stage != null ? String(created.stage) : undefined,
     statuses,
     meId: me,
@@ -592,7 +600,8 @@ export async function bulkUpdate(ids: number[], change: BulkChange): Promise<Bul
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Sem equivalente no backend (continuam LOCAIS, em memória): apagar, fundir e o motor de gatilhos.
+// CC de terceiros e seguidores (POST/DELETE em `cc/` e `followers/`), apagar/restaurar e resumo de IA: servidor.
+// Fusão e o motor de gatilhos continuam LOCAIS (em memória).
 // ---------------------------------------------------------------------------------------------------------------
 
 export async function applyAutomation(id: number, patch: TicketPatch, events: Parameters<typeof mock.applyAutomation>[2]): Promise<Ticket> {
@@ -602,11 +611,87 @@ export async function applyAutomation(id: number, patch: TicketPatch, events: Pa
   return saved;
 }
 
-export async function deleteTickets(ids: number[]): Promise<number[]> {
-  await allTickets();
-  const out = await mock.deleteTickets(ids);
-  ids.forEach((id) => layers.tickets.remove(id));
-  return out;
+/** Adiciona um e-mail ao CC (`POST cc/`; 200 se já estava). 400 (e-mail inválido, é o do solicitante, mais de 20) sobe com o motivo. */
+export async function addTicketCc(id: number, input: { email: string; name?: string }): Promise<Ticket> {
+  try {
+    const dto = await http.post<TicketDetailDto>(`/tickets/${id}/cc/`, { email: input.email.trim(), ...(input.name?.trim() ? { name: input.name.trim() } : {}) });
+    invalidateTickets();
+    return await mapDto(dto);
+  } catch (e) {
+    throw ccError(e);
+  }
+}
+
+export async function removeTicketCc(id: number, ccId: string): Promise<Ticket> {
+  try {
+    const dto = await http.delete<TicketDetailDto>(`/tickets/${id}/cc/${ccId}/`);
+    invalidateTickets();
+    return await mapDto(dto);
+  } catch (e) {
+    throw ccError(e);
+  }
+}
+
+/** Segue o ticket em nome de outra pessoa (`POST followers/ {user_id}`): interno ativo ou cliente ativo da mesma empresa. */
+export async function addTicketFollower(id: number, userId: string): Promise<Ticket> {
+  try {
+    const dto = await http.post<TicketDetailDto>(`/tickets/${id}/followers/`, { user_id: Number(userId) });
+    invalidateTickets();
+    return await mapDto(dto);
+  } catch (e) {
+    throw ccError(e);
+  }
+}
+
+export async function removeTicketFollower(id: number, userId: string): Promise<Ticket> {
+  try {
+    const dto = await http.delete<TicketDetailDto>(`/tickets/${id}/followers/${userId}/`);
+    invalidateTickets();
+    return await mapDto(dto);
+  } catch (e) {
+    throw ccError(e);
+  }
+}
+
+/**
+ * Apaga tickets NO SERVIDOR (exclusão lógica, só `settings.manage`): `DELETE /tickets/{id}/` (204), um por ticket.
+ * Quem falha (403, 404, 409 `ticket_conflict`) fica em `failed` com a frase pronta e NÃO entra em `deleted`: a store
+ * só tira da tela o que o servidor confirmou.
+ */
+export async function deleteTickets(ids: number[]): Promise<DeleteResult> {
+  const deleted: number[] = [];
+  const failed: DeleteResult['failed'] = [];
+  await pool(ids, DETAIL_CONCURRENCY, async (id) => {
+    try {
+      await http.delete(`/tickets/${id}/`);
+      deleted.push(id);
+    } catch (e) {
+      const err = deleteTicketError(e, id);
+      failed.push({ id, message: err.message, status: err.status, code: err.code });
+    }
+  });
+  if (deleted.length > 0) invalidateTickets();
+  return { deleted: ids.filter((id) => deleted.includes(id)), failed: ids.flatMap((id) => failed.filter((f) => f.id === id)) };
+}
+
+/** `POST /tickets/{id}/restore/` (só `settings.manage`, até 30 dias depois). Devolve o ticket já restaurado. */
+export async function restoreTicket(id: number): Promise<Ticket> {
+  try {
+    const dto = await http.post<TicketDetailDto>(`/tickets/${id}/restore/`);
+    invalidateTickets();
+    return await mapDto(dto);
+  } catch (e) {
+    throw restoreTicketError(e, id);
+  }
+}
+
+/** Resumo por IA (`POST ai-summary/`). Nada é gravado: quem chama guarda o texto só na sessão da aba. */
+export async function generateAiSummary(id: number): Promise<AiSummary> {
+  try {
+    return mapAiSummary(await http.post<AiSummaryDto>(`/tickets/${id}/ai-summary/`, undefined, { timeoutMs: 60_000 }));
+  } catch (e) {
+    throw aiSummaryError(e);
+  }
 }
 
 export async function mergeTickets(targetId: number, sourceIds: number[]): Promise<{ target: Ticket; sources: Ticket[] }> {
@@ -618,4 +703,4 @@ export async function mergeTickets(targetId: number, sourceIds: number[]): Promi
 
 // Simulação de chegada de tickets: só no mock. No real, `startLiveUpdates` liga o WebSocket `/ws/me/` (`api/real/ws.ts`).
 export { simulateIncomingTicket, simulateCustomerReply } from '../mock/tickets';
-export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult, BulkResolution, ResolutionSuggestion } from '../mock/tickets';
+export type { TicketFilter, TicketPatch, NewComment, NewTicketInput, BulkChange, BulkResult, BulkResolution, ResolutionSuggestion, DeleteResult } from '../mock/tickets';

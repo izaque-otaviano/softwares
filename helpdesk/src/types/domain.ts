@@ -149,8 +149,33 @@ export interface Ticket {
   source?: 'web' | 'chat' | 'internal';
   /** Só modo real: `false` na lista (sem mensagens/eventos); `true` depois de `getTicket`. Ausente = mock (completo). */
   detailed?: boolean;
-  /** Só modo real: campos da última edição que o backend não tem e valem só neste navegador (assunto, tipo, CC...). */
+  /** Só modo real: campos da última edição que o backend não tem e valem só neste navegador (assunto, solicitante, campos personalizados). */
   localFields?: string[];
+  /** CC de terceiros do ticket (`GET /tickets/{id}/` -> `cc`); só equipe. `id` é o do registro de CC, não de usuário. */
+  ccList?: TicketContact[];
+  /** Seguidores com e-mail (`followers`); só equipe. `followerIds` continua sendo a lista de ids. */
+  followerList?: TicketContact[];
+  /** Ticket apagado (exclusão lógica): o detalhe só chega ao administrador, com quando e quem apagou. */
+  deletedAt?: string;
+  deletedByName?: string;
+}
+
+/** Pessoa/e-mail ligada ao ticket (CC de terceiro ou seguidor). */
+export interface TicketContact {
+  id: string;
+  name: string;
+  email: string;
+  /** Só seguidor: usuário interno. */
+  internal?: boolean;
+}
+
+/** Resumo de IA de um ticket (`POST /tickets/{id}/ai-summary/`). Não é gravado no servidor nem no front. */
+export interface AiSummary {
+  summary: string;
+  generatedAt: string;
+  provider: string;
+  /** O servidor cortou a conversa (só as mensagens mais recentes foram enviadas ao provedor). */
+  truncated: boolean;
 }
 
 export type ViewConditionField = 'assignee' | 'group' | 'status_category' | 'updated_within_hours';

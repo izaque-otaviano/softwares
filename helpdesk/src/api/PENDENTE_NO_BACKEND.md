@@ -56,12 +56,13 @@ edição (`Ticket.localFields`).
 | Clientes | `POST/PATCH/DELETE /settings/users/` (exige organização e telefone, pedidos no modal; apagar = desativar) |
 | Etiquetas | criadas por `POST /settings/tags/` quando o ticket/macro usa um nome novo (só administrador; agente é avisado antes de qualquer escrita) |
 
-Ainda LOCAIS no modo real (em memória, somem ao recarregar; marcados "somente neste navegador"): assunto, solicitante,
-tipo, CC, campos personalizados e seguidores de outras pessoas num ticket (camada `layers.ticketPatches`); nome do status
-para o usuário final e descrição; descrição, "disponível para", ação de status e nota interna da macro; tags, grupo
-padrão e "acesso dos usuários" da organização; tags, notas, contatos extras, idioma e fuso do cliente; apagar e fundir
-ticket, usuário e organização; gatilhos, campos, formulários, resumo de IA, licenças. Visões pessoais (criar/editar/
-apagar) vão ao backend (`/ticket-views/`); abas abertas e itens recentes seguem locais.
+Ainda LOCAIS no modo real (em memória, somem ao recarregar; marcados "somente neste navegador"): assunto, solicitante e
+campos personalizados num ticket (camada `layers.ticketPatches`); nome do status para o usuário final e descrição;
+descrição, "disponível para", ação de status e nota interna da macro; tags, grupo padrão e "acesso dos usuários" da
+organização; tags, notas, contatos extras, idioma e fuso do cliente; fundir ticket, usuário e organização; gatilhos,
+campos, formulários. Visões pessoais (criar/editar/apagar) vão ao backend (`/ticket-views/`); abas abertas e itens
+recentes seguem locais. **Tipo, apagar/restaurar, CC e seguidores de terceiros, licenças e resumo de IA agora vão ao
+backend** (seção "Tipo, apagar, CC e seguidores, licenças e resumo de IA", abaixo).
 
 ### Decisões das escritas (etapas 3 e 4)
 
@@ -183,11 +184,10 @@ Continuam (sem mudar o backend):
 
 ### Ainda local por natureza (mesmo na leitura)
 
-Campos que o backend não tem aparecem vazios/padrão e ficam marcados em `capabilities`: tipo do ticket (`Tipo: -`),
-CC e seguidores arbitrários, resumo/tópico/sentimento de IA, tags de usuário e de organização (sempre vazias),
-grupo padrão e "acesso dos usuários" da organização (padrão `own_tickets`), `endUserName`/descrição de status
-(= nome/vazio), macro: `availableTo` (todos), `usage7d` (0), ações de status e nota interna, e licenças (`total` fixo
-em 5, `used` = agentes ativos reais). Criação/atualização do usuário vêm de `created_at`/`updated_at` (backend antigo sem eles: a tela mostra "-");
+Campos que o backend não tem aparecem vazios/padrão e ficam marcados em `capabilities`: tópico/sentimento/idioma de IA
+(campos personalizados), tags de usuário e de organização (sempre vazias), grupo padrão e "acesso dos usuários" da
+organização (padrão `own_tickets`), `endUserName`/descrição de status (= nome/vazio), macro: `availableTo` (todos),
+`usage7d` (0), ações de status e nota interna. Criação/atualização do usuário vêm de `created_at`/`updated_at` (backend antigo sem eles: a tela mostra "-");
 canal "e-mail" não existe (tudo vira "Formulário web"; `chat` e `system` têm ícone próprio nas mensagens).
 
 ### Problemas do backend encontrados na leitura
@@ -202,18 +202,36 @@ array puro, que traz todas as visões); ids e carimbos nas respostas. Ver as "Es
 | Chave | O que é | Comportamento local | Observação para o backend |
 | --- | --- | --- | --- |
 | `triggers` | Gatilhos editáveis e motor de regras | Motor `lib/triggers.ts` roda no navegador; `fired7d` conta em memória | Backend só tem automações fixas (Celery). Não há e-mail/ação real. |
-| `customFields` | Campos personalizados de ticket | CRUD em memória | Só existe `order_number` livre. |
+| `customFields` | Campos personalizados de ticket (inclui tópico, sentimento e idioma de IA) | CRUD em memória | Só existe `order_number` livre. |
 | `forms` | Formulários de ticket (`formId`) | Fixo `'default'` | Não existe. |
-| `aiSummary` | Resumo, tópico e sentimento de IA | Campos locais | Não existe. |
 | `merge` | Fusão de tickets, usuários e organizações | Executa no estado local | Não existe fusão. |
-| `deleteTicket` | Apagar ticket | Remove do estado local | Política "nada é hard-deleted"; usuário e empresa só desativam. |
-| `ticketType` | Tipo (pergunta, incidente, problema, tarefa) | Campo local | Mais próximo: `category`/serviço. |
-| `ccFollowers` | CC e seguidores arbitrários | Listas locais | Só o próprio usuário segue/deixa de seguir. |
-| `licenses` | Licenças de agente (`AGENT_SEATS`) | Valor fixo | Cotas são por empresa cliente. |
 
 Também locais por natureza: abas abertas (`tickets/tabs` existe, etapa 5), itens recentes e a simulação de
 chegada de tickets no mock; no real, WebSocket `/ws/me/` (`api/real/ws.ts`). O motor de gatilhos está
 DESLIGADO no modo real (ver "Decisões das escritas").
+
+## Tipo, apagar, CC e seguidores, licenças e resumo de IA (RESOLVIDOS no backend, ligados no front)
+
+`capabilities`: `ticketType`, `deleteTicket`, `ccFollowers`, `licenses` e `aiSummary` agora são `'real'` (no mock seguem
+`'local'` e o mock imita o contrato). Verificados no navegador contra o backend novo (porta 8021, banco de dev, só dados
+`AG-front`). Contrato: `resolv/docs/ALTERACOES-HELPDESK.md` e `resolv-openapi.yaml`.
+
+| Recurso | Chamadas | O que o front faz |
+| --- | --- | --- |
+| Tipo | `type` (`question`/`incident`/`problem`/`task`, nulo) na lista, no detalhe, em `POST /tickets/` e `PATCH` (`null` limpa); filtro `?type=` | Campo "Tipo" do painel vai no `PATCH` (junto das outras propriedades) e na criação. Eventos de auditoria `tipo → X` (o backend manda `note` com status de = para) viram texto sem "De/Para". O filtro de tipo da gaveta vai ao servidor nas visões avaliadas lá (`?view=...&type=...`, recarrega a lista; `viewType` na store). |
+| Apagar / restaurar | `DELETE /tickets/{id}/` (204), `POST /tickets/{id}/restore/` | Menu ⋮, ação da linha e lote só para quem tem `settings.manage`. Confirmação forte mantida (texto explica o efeito, 30 dias, horas lançadas; foco em Cancelar). Só sai da tela o que o servidor confirmou: 403/404/409 `ticket_conflict` viram frases claras em toast e o ticket continua. Ao apagar: fecha a aba, tira da store e navega. O admin que abre o ticket apagado vê o banner "Apagado em… por…" com Restaurar (somente leitura enquanto apagado); deletado nunca entra em lista nem contador. |
+| CC e seguidores | `GET/POST/DELETE /tickets/{id}/cc/` e `/followers/`; `cc` e `followers` no detalhe | Ticket existente: grava na hora (campo CC do compositor com chips e contador "n de 20"; "Seguidores" do painel), erro 400 no próprio campo (e-mail inválido, é o do solicitante, mais de 20, cliente de outra empresa). Ticket novo: fica no formulário e vai em chamadas logo depois da criação (`planNewTicket`/`planTicketUpdate`: `cc_add`, `follower_add`...). Seguidor pode ser equipe ou cliente da mesma empresa. |
+| Licenças | `GET/PATCH /settings/licenses/` (`{total,used,available,unlimited}`) | Membros (cartão com "N de total", vagas livres, "Editar total" só para admin: número ou "Sem limite"; 400 `seat_total_below_used` no campo) e Início do admin (barra, ou "N (sem limite)" sem barra). 409 `seat_limit_reached` ao criar/reativar membro aparece no modal (criar, sem perder o digitado) ou em toast (reativar). O teto local de 5 assentos foi removido do real (no mock o total inicial é 5 e editável). |
+| Resumo de IA | `POST /tickets/{id}/ai-summary/` | Botão "Gerar resumo" na conversa (só gera ao clicar). Aviso fixo "Dados pessoais são mascarados antes do envio", "Resumo truncado" quando `truncated`. 503 `ai_not_configured` = aviso informativo "O resumo por IA não está configurado nesta conta."; 502, 429 (com a espera) e 403 com frases próprias. Resultado só em memória (`useAiSummary`), nada em storage. No mock o resumo é simulado e rotulado. |
+
+Ressalvas e decisões:
+
+- Resumo, tópico, sentimento e idioma do painel "Campos de IA" continuam sendo **campos personalizados locais** (aviso mantido): o resumo do servidor não é gravado e não preenche esses campos.
+- Apagar usa `settings.manage` (não há `ticket.delete`); quem não a tem não vê "Apagar" nem "Marcar como spam" (spam também apaga). Ticket com horas lançadas: 409, mantido.
+- A mensagem 409 de licenças do backend cita "Configurações > Licenças", que no Helpdesk é "Membros da equipe" (texto do servidor, mostrado como veio).
+- `type` não é aceito como filtro de visão pessoal (`VALIDADORES` do backend não o lista): a gaveta aplica o tipo no servidor só ao listar, e não o grava na visão.
+- `GET /tickets/{id}/` de ticket apagado devolve 200 ao admin: os eventos `ticket_event` do WebSocket que chegam depois de apagar o fazem ser ignorado na lista (`applyServerTicket`).
+- Mock: `deleteTickets` move para uma lixeira (restaurável), `cc`/seguidores gravam como o servidor (limite de 20, e-mail do solicitante recusado), licenças limitam criação e reativação com 409, o resumo é simulado.
 
 ## Pedidos opcionais ao backend (etapa 8, não bloqueiam)
 
