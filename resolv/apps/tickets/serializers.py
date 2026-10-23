@@ -19,6 +19,7 @@ from apps.tickets.models import (
     TicketAttachment,
     TicketCategory,
     TicketCC,
+    TicketForm,
     TicketMessage,
     TicketPriority,
     TicketStage,
@@ -27,6 +28,7 @@ from apps.tickets.models import (
     TicketTag,
     TicketType,
 )
+from apps.tickets.services import custom_fields as custom_fields_service
 from apps.tickets.services import mentions as mentions_service
 
 MASKED_REQUESTER = "Usuário protegido"
@@ -311,12 +313,13 @@ class TicketListSerializer(_MaskingMixin, serializers.ModelSerializer):
     )
     current_status_note = serializers.SerializerMethodField()
     satisfaction = serializers.SerializerMethodField()
+    form_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
         fields = [
             "id", "reference", "subject", "order_number", "status", "stage",
-            "stage_name", "stage_color", "priority", "type", "source",
+            "stage_name", "stage_color", "priority", "type", "source", "form_id",
             "team", "requester_display", "requester_id", "company_id",
             "assignee_name", "assignee_avatar",
             "assignee_id", "owner_name", "owner_id",
@@ -357,6 +360,17 @@ class TicketListSerializer(_MaskingMixin, serializers.ModelSerializer):
             "comment": survey.comment,
             "responded_at": survey.responded_at,
         }
+
+    def get_form_id(self, obj) -> int | None:
+        """Formulário do ticket (o padrão vigente quando o ticket não tem um
+        próprio). INTERNO: o cliente não conhece formulários (nulo)."""
+        if not self.context["request"].user.is_internal:
+            return None
+        if obj.form_id:
+            return obj.form_id
+        if not hasattr(self, "_form_padrao_id"):
+            self._form_padrao_id = TicketForm.default().pk
+        return self._form_padrao_id
 
     def get_current_status_note(self, obj) -> str | None:
         """"Justificativa": o texto anotado na última mudança de status —
@@ -552,6 +566,7 @@ class TicketDetailSerializer(TicketListSerializer):
     # ticket apagado (a consulta por id), então é ele quem vê estes valores.
     deleted_at = serializers.DateTimeField(read_only=True, allow_null=True)
     deleted_by_name = serializers.SerializerMethodField()
+    custom_fields = serializers.SerializerMethodField()
 
     # `satisfaction` e `closed_at` SUBIRAM para a lista (a tela de Avaliações
     # do portal precisa da nota sem abrir cada chamado) — herdados daqui.
@@ -559,8 +574,28 @@ class TicketDetailSerializer(TicketListSerializer):
         fields = TicketListSerializer.Meta.fields + [
             "messages", "events", "resolution_started_at", "resolution_ended_at",
             "sla_cycle", "watchers", "followers", "cc", "requester",
-            "scheduled_replies", "deleted_at", "deleted_by_name",
+            "scheduled_replies", "deleted_at", "deleted_by_name", "custom_fields",
         ]
+
+    @extend_schema_field({
+        "type": "object",
+        "additionalProperties": {
+            "oneOf": [
+                {"type": "string"}, {"type": "number"}, {"type": "boolean"},
+            ],
+        },
+        "description": (
+            "Campos personalizados com valor: `{slug: valor}`. text/textarea/"
+            "dropdown = string (dropdown: o `value` da opção), number = número, "
+            "date = 'AAAA-MM-DD', checkbox = boolean. Campo sem valor não "
+            "aparece. SÓ equipe; cliente recebe `{}`."
+        ),
+    })
+    def get_custom_fields(self, obj):
+        user = self.context["request"].user
+        if not user.is_internal or not self._visible(obj):
+            return {}
+        return custom_fields_service.valores_do_ticket(obj)
 
     def get_deleted_by_name(self, obj) -> str | None:
         return obj.deleted_by.full_name if obj.deleted_at and obj.deleted_by else None
@@ -655,8 +690,11 @@ def _agentes_ativos():
 
 
 class TicketCreateSerializer(serializers.Serializer):
+    # Obrigatório, EXCETO quando `form_id` traz uma equipe padrão (a view
+    # confere e devolve 400 `team_id` se nenhuma das duas existir).
     team_id = serializers.PrimaryKeyRelatedField(
-        queryset=Team.objects.filter(is_active=True), source="team"
+        queryset=Team.objects.filter(is_active=True), source="team",
+        required=False,
     )
     subject = serializers.CharField(max_length=200)
     # Opcional e sem formato: cada loja numera do seu jeito. Vem do portal
@@ -711,6 +749,18 @@ class TicketCreateSerializer(serializers.Serializer):
         default=True,
         help_text="false = a primeira mensagem nasce como nota INTERNA.",
     )
+    form_id = serializers.PrimaryKeyRelatedField(
+        queryset=TicketForm.objects.filter(is_active=True), source="form",
+        required=False, allow_null=True,
+        help_text="Formulário do ticket (só equipe). Aplica a equipe e o tipo "
+                  "padrão dele quando `team_id`/`type` não vêm. Ausente = o "
+                  "formulário padrão vigente.",
+    )
+    custom_fields = serializers.JSONField(
+        required=False, allow_null=True,
+        help_text="Só equipe: `{\"<slug-ou-id>\": valor|null}` (em multipart, "
+                  "um JSON em texto). Obrigatórios do formulário valem aqui.",
+    )
 
 
 class TicketReclassifySerializer(serializers.Serializer):
@@ -736,6 +786,13 @@ class TicketReclassifySerializer(serializers.Serializer):
     type = serializers.ChoiceField(
         choices=TicketType.choices, required=False, allow_null=True,
     )
+    # `null` volta ao formulário padrão; ausente não mexe
+    form_id = serializers.PrimaryKeyRelatedField(
+        queryset=TicketForm.objects.filter(is_active=True), source="form",
+        required=False, allow_null=True,
+    )
+    # `{"<slug-ou-id>": valor|null}`; `null` apaga o valor; chave ausente não mexe
+    custom_fields = serializers.JSONField(required=False, allow_null=True)
 
 
 class TicketReplySerializer(serializers.Serializer):

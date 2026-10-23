@@ -55,7 +55,12 @@ def purge_ticket_content(*, dry_run: bool) -> dict:
     O gatilho é `closed_at`, que é reescrito a cada fechamento — um ticket
     reaberto em 2030 não pode expirar pelo fechamento de 2026.
     """
-    from apps.tickets.models import Ticket, TicketMessage, TicketStatus
+    from apps.tickets.models import (
+        Ticket,
+        TicketCustomFieldValue,
+        TicketMessage,
+        TicketStatus,
+    )
     from apps.tickets.services.attachments import purge_blob
 
     queryset = Ticket.all_objects.filter(
@@ -81,6 +86,11 @@ def purge_ticket_content(*, dry_run: bool) -> dict:
                 ).update(body=PURGED_MARKER)
                 _purge_ticket_attachments(ticket, purge_blob)
                 _purge_origin_chat(ticket)
+                # campos personalizados de texto livre saem como o assunto;
+                # número/data/sim-não/lista são estatística e ficam
+                TicketCustomFieldValue.objects.filter(
+                    ticket=ticket, field__type__in=["text", "textarea"],
+                ).exclude(text_value=PURGED_MARKER).update(text_value=PURGED_MARKER)
                 ticket.subject = PURGED_MARKER
                 ticket.retention_purged_at = timezone.now()
                 ticket.save(update_fields=["subject", "retention_purged_at"])

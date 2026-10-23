@@ -37,6 +37,8 @@ from apps.tickets.models import (
     Ticket,
     TicketAttachment,
     TicketCategory,
+    TicketCustomFieldValue,
+    TicketField,
     TicketMacro,
     TicketMessage,
     TicketPriority,
@@ -89,6 +91,7 @@ from apps.tickets.services import (
     ticket_service,
     transcript,
 )
+from apps.tickets.services import custom_fields as custom_fields_service
 
 # alias: a ação da view também se chama `presenca` (é o nome da rota)
 from apps.tickets.services import presenca as presenca_service
@@ -99,6 +102,14 @@ from apps.tickets.services.attachments import (
 )
 from apps.tickets.services.satisfaction import SurveyClosed
 from apps.tickets.services.ticket_service import TicketRuleViolation
+
+
+def _resposta_obrigatorios(exc) -> Response:
+    """400 `required_custom_fields`: lista os campos pendentes e não grava nada."""
+    return Response(
+        custom_fields_service.payload_de_obrigatorios(exc),
+        status=http.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _exige(user, perm: str) -> None:
@@ -334,6 +345,15 @@ class TicketViewSet(viewsets.GenericViewSet):
         ),
         OpenApiParameter("category", int, description="id da categoria."),
         OpenApiParameter(
+            "cf_{slug}", str,
+            description=(
+                "Filtro por campo personalizado (SÓ equipe; ignorado para cliente): "
+                "`?cf_<slug>=valor`, igualdade. dropdown = `value` da opção; "
+                "checkbox = true|false; number = número; date = AAAA-MM-DD; "
+                "text = igual sem diferenciar maiúsculas. Vários `cf_*` se somam (E)."
+            ),
+        ),
+        OpenApiParameter(
             "desde", str,
             description="data de ABERTURA mínima (YYYY-MM-DD), inclusive.",
         ),
@@ -423,6 +443,18 @@ class TicketViewSet(viewsets.GenericViewSet):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
+        # campos personalizados e formulário são da EQUIPE: o cliente nunca os
+        # define (nem na abertura)
+        form = data.get("form")
+        if not request.user.is_internal and (form is not None or data.get("custom_fields")):
+            raise PermissionDenied("Campos personalizados e formulário são só da equipe.")
+        valores_cf = custom_fields_service.interpretar(data.get("custom_fields"))
+        team = data.get("team") or (form.default_team if form else None)
+        if team is None:
+            raise ValidationError({"team_id": "Obrigatório."})
+        # tipo padrão do formulário só quando o POST não informou `type`
+        tipo = data.get("type") if "type" in data else (form.type if form else None)
+
         if request.user.kind == UserKind.CLIENT:
             requester = request.user
         else:
@@ -451,7 +483,7 @@ class TicketViewSet(viewsets.GenericViewSet):
         try:
             ticket = ticket_service.create_ticket(
                 requester=requester,
-                team=data["team"],
+                team=team,
                 subject=data["subject"],
                 body=data["body"],
                 priority=data["priority"],
@@ -465,8 +497,13 @@ class TicketViewSet(viewsets.GenericViewSet):
                 initial_stage=data.get("stage"),
                 tags=data.get("tags"),
                 first_message_public=data.get("is_public", True),
-                ticket_type=data.get("type"),
+                ticket_type=tipo,
+                form=form,
+                custom_values=valores_cf,
+                enforce_required_custom_fields=request.user.is_internal,
             )
+        except custom_fields_service.RequiredCustomFields as exc:
+            return _resposta_obrigatorios(exc)
         except QuotaExceeded as exc:
             # 422 com dados para a mensagem clara exigida pelo requisito
             return Response(
@@ -515,7 +552,10 @@ class TicketViewSet(viewsets.GenericViewSet):
         dados = ser.validated_data
 
         try:
-            if any(k in dados for k in ("priority", "category", "team", "tags", "type")):
+            if any(k in dados for k in (
+                "priority", "category", "team", "tags", "type", "form", "custom_fields",
+            )):
+                valores_cf = custom_fields_service.interpretar(dados.get("custom_fields"))
                 ticket = ticket_service.reclassify(
                     ticket=ticket, actor=request.user,
                     priority=dados.get("priority"),
@@ -525,6 +565,9 @@ class TicketViewSet(viewsets.GenericViewSet):
                     tags=dados.get("tags"),
                     ticket_type=dados["type"] if "type" in dados
                     else ticket_service._NAO_INFORMADO,
+                    form=dados["form"] if "form" in dados
+                    else ticket_service._NAO_INFORMADO,
+                    custom_values=valores_cf,
                 )
             if "assignee" in dados:
                 ticket = ticket_service.assign(
@@ -709,6 +752,8 @@ class TicketViewSet(viewsets.GenericViewSet):
                 with_signature=data.get("with_signature", False),
                 stage=data.get("stage"),
             )
+        except custom_fields_service.RequiredCustomFields as exc:
+            return _resposta_obrigatorios(exc)
         except TicketRuleViolation as exc:
             raise ValidationError({"detail": str(exc)}) from exc
 
@@ -1054,6 +1099,8 @@ class TicketViewSet(viewsets.GenericViewSet):
                     actor=request.user,
                     note=ser.validated_data.get("note", ""),
                 )
+        except custom_fields_service.RequiredCustomFields as exc:
+            return _resposta_obrigatorios(exc)
         except TicketRuleViolation as exc:
             raise ValidationError({"detail": str(exc)}) from exc
         out = TicketDetailSerializer(ticket, context={"request": request})
@@ -1870,6 +1917,35 @@ def _aplicar_filtros(qs, params, user, *, exceto=frozenset()):
                 | (unresolved & Q(sla_resolution_due_at__range=(now, soon))),
             )
 
+    # campos personalizados: `?cf_<slug>=valor` (igualdade). SÓ equipe — para o
+    # cliente o parâmetro é ignorado (filtrar seria um oráculo do valor).
+    if user is not None and user.is_internal:
+        qs = _filtro_campos_personalizados(qs, params)
+
+    return qs
+
+
+def _filtro_campos_personalizados(qs, params):
+    pedidos = {
+        k[3:]: v for k, v in params.items() if k.startswith("cf_") and v not in (None, "")
+    }
+    if not pedidos:
+        return qs
+    for campo in TicketField.objects.filter(slug__in=list(pedidos)):
+        if campo.type == "dropdown":
+            valor = pedidos[campo.slug]  # opção removida do campo ainda filtra o dado antigo
+        else:
+            try:
+                valor = custom_fields_service.coagir(campo, pedidos[campo.slug])
+            except ValueError:
+                continue  # inválido para o tipo: ignorado, como `type` desconhecido
+        if valor is None:
+            continue
+        coluna = custom_fields_service.coluna_do_tipo(campo.type)
+        lookup = f"{coluna}__iexact" if coluna == "text_value" else coluna
+        qs = qs.filter(pk__in=TicketCustomFieldValue.objects.filter(
+            field=campo, **{lookup: valor}
+        ).values("ticket_id"))
     return qs
 
 

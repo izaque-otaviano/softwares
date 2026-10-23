@@ -7163,6 +7163,446 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/v1/settings/ticket-fields/:
+    get:
+      operationId: v1_settings_ticket_fields_list
+      description: |-
+        Campos personalizados — definição (`/settings/ticket-fields/`).
+
+        Interno lê; admin escreve. `DELETE` só apaga campo que nunca teve valor
+        (senão 409: desative). O `type` não muda depois de existirem valores.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTicketFieldList'
+          description: ''
+    post:
+      operationId: v1_settings_ticket_fields_create
+      description: |-
+        Campos personalizados — definição (`/settings/ticket-fields/`).
+
+        Interno lê; admin escreve. `DELETE` só apaga campo que nunca teve valor
+        (senão 409: desative). O `type` não muda depois de existirem valores.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketField'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TicketField'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TicketField'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketField'
+          description: ''
+  /api/v1/settings/ticket-fields/{id}/:
+    get:
+      operationId: v1_settings_ticket_fields_retrieve
+      description: |-
+        Campos personalizados — definição (`/settings/ticket-fields/`).
+
+        Interno lê; admin escreve. `DELETE` só apaga campo que nunca teve valor
+        (senão 409: desative). O `type` não muda depois de existirem valores.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este campo personalizado.
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketField'
+          description: ''
+    put:
+      operationId: v1_settings_ticket_fields_update
+      description: |-
+        Campos personalizados — definição (`/settings/ticket-fields/`).
+
+        Interno lê; admin escreve. `DELETE` só apaga campo que nunca teve valor
+        (senão 409: desative). O `type` não muda depois de existirem valores.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este campo personalizado.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketField'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TicketField'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TicketField'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketField'
+          description: ''
+    patch:
+      operationId: v1_settings_ticket_fields_partial_update
+      description: |-
+        Campos personalizados — definição (`/settings/ticket-fields/`).
+
+        Interno lê; admin escreve. `DELETE` só apaga campo que nunca teve valor
+        (senão 409: desative). O `type` não muda depois de existirem valores.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este campo personalizado.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTicketField'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTicketField'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTicketField'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketField'
+          description: ''
+    delete:
+      operationId: v1_settings_ticket_fields_destroy
+      description: |-
+        Campos personalizados — definição (`/settings/ticket-fields/`).
+
+        Interno lê; admin escreve. `DELETE` só apaga campo que nunca teve valor
+        (senão 409: desative). O `type` não muda depois de existirem valores.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este campo personalizado.
+        required: true
+      tags:
+      - v1
+      responses:
+        '204':
+          description: No response body
+  /api/v1/settings/ticket-fields/reorder/:
+    post:
+      operationId: v1_settings_ticket_fields_reorder_create
+      description: |-
+        `{"ids": [3, 1, 2]}` — define a ordem; ids omitidos vão para o fim.
+        Devolve a lista inteira já ordenada.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/_Reordenar'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/_Reordenar'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/_Reordenar'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTicketFieldList'
+          description: ''
+  /api/v1/settings/ticket-forms/:
+    get:
+      operationId: v1_settings_ticket_forms_list
+      description: |-
+        Formulários de ticket (`/settings/ticket-forms/`). Interno lê; admin
+        escreve. Sempre há exatamente UM formulário padrão ativo.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTicketFormList'
+          description: ''
+    post:
+      operationId: v1_settings_ticket_forms_create
+      description: |-
+        Formulários de ticket (`/settings/ticket-forms/`). Interno lê; admin
+        escreve. Sempre há exatamente UM formulário padrão ativo.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketForm'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TicketForm'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TicketForm'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+          description: ''
+  /api/v1/settings/ticket-forms/{id}/:
+    get:
+      operationId: v1_settings_ticket_forms_retrieve
+      description: |-
+        Formulários de ticket (`/settings/ticket-forms/`). Interno lê; admin
+        escreve. Sempre há exatamente UM formulário padrão ativo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este formulário de ticket.
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+          description: ''
+    put:
+      operationId: v1_settings_ticket_forms_update
+      description: |-
+        Formulários de ticket (`/settings/ticket-forms/`). Interno lê; admin
+        escreve. Sempre há exatamente UM formulário padrão ativo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este formulário de ticket.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketForm'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TicketForm'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TicketForm'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+          description: ''
+    patch:
+      operationId: v1_settings_ticket_forms_partial_update
+      description: |-
+        Formulários de ticket (`/settings/ticket-forms/`). Interno lê; admin
+        escreve. Sempre há exatamente UM formulário padrão ativo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este formulário de ticket.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTicketForm'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTicketForm'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTicketForm'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+          description: ''
+    delete:
+      operationId: v1_settings_ticket_forms_destroy
+      description: |-
+        Formulários de ticket (`/settings/ticket-forms/`). Interno lê; admin
+        escreve. Sempre há exatamente UM formulário padrão ativo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este formulário de ticket.
+        required: true
+      tags:
+      - v1
+      responses:
+        '204':
+          description: No response body
+  /api/v1/settings/ticket-forms/{id}/clone/:
+    post:
+      operationId: v1_settings_ticket_forms_clone_create
+      description: |-
+        Copia o formulário (campos, obrigatoriedade, equipe e tipo padrão).
+        Corpo opcional: `{"name": "..."}`; sem nome vira "Cópia de X". A cópia
+        nunca é o padrão.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este formulário de ticket.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/_Clonar'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/_Clonar'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/_Clonar'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+          description: ''
+  /api/v1/settings/ticket-forms/reorder/:
+    post:
+      operationId: v1_settings_ticket_forms_reorder_create
+      description: '`{"ids": [2, 1]}` — define a ordem; omitidos vão para o fim.'
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/_Reordenar'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/_Reordenar'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/_Reordenar'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTicketFormList'
+          description: ''
   /api/v1/settings/ticket-macros/:
     get:
       operationId: v1_settings_ticket_macros_list
@@ -8071,6 +8511,14 @@ paths:
         schema:
           type: integer
         description: id da categoria.
+      - in: query
+        name: cf_{slug}
+        schema:
+          type: string
+        description: 'Filtro por campo personalizado (SÓ equipe; ignorado para cliente):
+          `?cf_<slug>=valor`, igualdade. dropdown = `value` da opção; checkbox = true|false;
+          number = número; date = AAAA-MM-DD; text = igual sem diferenciar maiúsculas.
+          Vários `cf_*` se somam (E).'
       - in: query
         name: company
         schema:
@@ -12954,6 +13402,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TicketCategory'
+    PaginatedTicketFieldList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketField'
+    PaginatedTicketFormList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketForm'
     PaginatedTicketListList:
       type: object
       required:
@@ -14100,6 +14594,13 @@ components:
           - $ref: '#/components/schemas/NullEnum'
         source:
           $ref: '#/components/schemas/TicketSourceEnum'
+        form_id:
+          type: integer
+          nullable: true
+          description: |-
+            Formulário do ticket (o padrão vigente quando o ticket não tem um
+            próprio). INTERNO: o cliente não conhece formulários (nulo).
+          readOnly: true
         team:
           allOf:
           - $ref: '#/components/schemas/Team'
@@ -14282,6 +14783,109 @@ components:
           type: string
           nullable: true
           readOnly: true
+        custom_fields:
+          type: object
+          additionalProperties:
+            oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+          description: 'Campos personalizados com valor: `{slug: valor}`. text/textarea/dropdown
+            = string (dropdown: o `value` da opção), number = número, date = ''AAAA-MM-DD'',
+            checkbox = boolean. Campo sem valor não aparece. SÓ equipe; cliente recebe
+            `{}`.'
+          readOnly: true
+    PatchedTicketField:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        slug:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          title: Descrição
+          maxLength: 500
+        type:
+          $ref: '#/components/schemas/TicketFieldTypeEnum'
+        options: {}
+        is_required:
+          type: boolean
+        is_active:
+          type: boolean
+        order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_system:
+          type: boolean
+          readOnly: true
+        values_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedTicketForm:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          title: Descrição
+          maxLength: 500
+        is_active:
+          type: boolean
+        is_default:
+          type: boolean
+        order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        default_team:
+          type: integer
+          nullable: true
+        default_team_name:
+          type: string
+          readOnly: true
+        type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        form_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/_ItemDoFormularioOutput'
+          readOnly: true
+        ticket_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
     PatchedTicketMacro:
       type: object
       description: A macro, cadastro único de chamado e chat (ver `TicketMacro`).
@@ -14354,6 +14958,11 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TicketTypeEnum'
           - $ref: '#/components/schemas/NullEnum'
+        form_id:
+          type: integer
+          nullable: true
+        custom_fields:
+          nullable: true
     PatchedTicketStage:
       type: object
       properties:
@@ -15637,10 +16246,19 @@ components:
           type: boolean
           default: true
           description: false = a primeira mensagem nasce como nota INTERNA.
+        form_id:
+          type: integer
+          nullable: true
+          description: Formulário do ticket (só equipe). Aplica a equipe e o tipo
+            padrão dele quando `team_id`/`type` não vêm. Ausente = o formulário padrão
+            vigente.
+        custom_fields:
+          nullable: true
+          description: 'Só equipe: `{"<slug-ou-id>": valor|null}` (em multipart, um
+            JSON em texto). Obrigatórios do formulário valem aqui.'
       required:
       - body
       - subject
-      - team_id
     TicketCreateStatusEnum:
       enum:
       - new
@@ -15691,6 +16309,13 @@ components:
           - $ref: '#/components/schemas/NullEnum'
         source:
           $ref: '#/components/schemas/TicketSourceEnum'
+        form_id:
+          type: integer
+          nullable: true
+          description: |-
+            Formulário do ticket (o padrão vigente quando o ticket não tem um
+            próprio). INTERNO: o cliente não conhece formulários (nulo).
+          readOnly: true
         team:
           allOf:
           - $ref: '#/components/schemas/Team'
@@ -15873,6 +16498,18 @@ components:
           type: string
           nullable: true
           readOnly: true
+        custom_fields:
+          type: object
+          additionalProperties:
+            oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+          description: 'Campos personalizados com valor: `{slug: valor}`. text/textarea/dropdown
+            = string (dropdown: o `value` da opção), number = número, date = ''AAAA-MM-DD'',
+            checkbox = boolean. Campo sem valor não aparece. SÓ equipe; cliente recebe
+            `{}`.'
+          readOnly: true
       required:
       - assignee_avatar
       - assignee_id
@@ -15884,10 +16521,12 @@ components:
       - content_hidden
       - created_at
       - current_status_note
+      - custom_fields
       - deleted_at
       - deleted_by_name
       - events
       - followers
+      - form_id
       - id
       - is_restricted
       - messages
@@ -15945,6 +16584,130 @@ components:
       - created_at
       - id
       - to_status
+    TicketField:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        slug:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          title: Descrição
+          maxLength: 500
+        type:
+          $ref: '#/components/schemas/TicketFieldTypeEnum'
+        options: {}
+        is_required:
+          type: boolean
+        is_active:
+          type: boolean
+        order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_system:
+          type: boolean
+          readOnly: true
+        values_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - is_system
+      - slug
+      - title
+      - type
+      - updated_at
+      - values_count
+    TicketFieldTypeEnum:
+      enum:
+      - text
+      - textarea
+      - number
+      - date
+      - checkbox
+      - dropdown
+      type: string
+      description: |-
+        * `text` - Texto curto
+        * `textarea` - Parágrafo
+        * `number` - Número
+        * `date` - Data
+        * `checkbox` - Sim/não
+        * `dropdown` - Lista de uma opção
+    TicketForm:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          title: Descrição
+          maxLength: 500
+        is_active:
+          type: boolean
+        is_default:
+          type: boolean
+        order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        default_team:
+          type: integer
+          nullable: true
+        default_team_name:
+          type: string
+          readOnly: true
+        type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        form_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/_ItemDoFormularioOutput'
+          readOnly: true
+        ticket_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - default_team_name
+      - form_fields
+      - id
+      - name
+      - ticket_count
+      - updated_at
     TicketList:
       type: object
       description: Campos sensíveis condicionados a is_content_visible_to(user).
@@ -15985,6 +16748,13 @@ components:
           - $ref: '#/components/schemas/NullEnum'
         source:
           $ref: '#/components/schemas/TicketSourceEnum'
+        form_id:
+          type: integer
+          nullable: true
+          description: |-
+            Formulário do ticket (o padrão vigente quando o ticket não tem um
+            próprio). INTERNO: o cliente não conhece formulários (nulo).
+          readOnly: true
         team:
           allOf:
           - $ref: '#/components/schemas/Team'
@@ -16121,6 +16891,7 @@ components:
       - content_hidden
       - created_at
       - current_status_note
+      - form_id
       - id
       - is_restricted
       - owner_id
@@ -16704,3 +17475,44 @@ components:
       required:
       - id
       - name
+    _Clonar:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 80
+    _ItemDoFormularioOutput:
+      type: object
+      properties:
+        field:
+          type: integer
+        slug:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        field_is_active:
+          type: boolean
+        is_required:
+          type: boolean
+        order:
+          type: integer
+      required:
+      - field
+      - field_is_active
+      - is_required
+      - order
+      - slug
+      - title
+      - type
+    _Reordenar:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+      required:
+      - ids

@@ -190,6 +190,24 @@ def find_free_text_pii(users) -> list[dict]:
                 "reference": ticket.reference, "pattern": label,
             })
 
+    # campos personalizados de TEXTO (text/textarea) dos tickets do titular:
+    # também é texto livre digitado por gente (nome, CPF, número de contrato...).
+    # Número, data, sim/não e lista não são texto livre e ficam de fora.
+    from apps.tickets.models import TicketCustomFieldValue
+
+    valores = TicketCustomFieldValue.objects.filter(
+        ticket__requester__in=users, field__type__in=["text", "textarea"],
+    ).exclude(text_value__isnull=True).exclude(text_value=REDACTED).select_related(
+        "ticket", "field"
+    )
+    for valor in valores:
+        for label in _match_labels(valor.text_value):
+            found.append({
+                "model": "custom_field_value", "pk": valor.pk, "field": "text_value",
+                "reference": valor.ticket.reference, "pattern": label,
+                "custom_field": valor.field.title,
+            })
+
     messages = TicketMessage.objects.filter(author__in=users).select_related("ticket")
     for message in messages.only("pk", "body", "ticket__reference"):
         for label in _match_labels(message.body):
@@ -234,7 +252,7 @@ def redact_free_text(*, model: str, pk: int, actor) -> bool:
 
     from apps.audit.models import AuditAction, AuditLog
     from apps.chat.models import ChatMessage
-    from apps.tickets.models import Ticket, TicketMessage
+    from apps.tickets.models import Ticket, TicketCustomFieldValue, TicketMessage
 
     if model == "ticket":
         obj, field = Ticket.all_objects.filter(pk=pk).first(), "subject"
@@ -242,6 +260,11 @@ def redact_free_text(*, model: str, pk: int, actor) -> bool:
         obj, field = TicketMessage.objects.filter(pk=pk).first(), "body"
     elif model == "chat_message":
         obj, field = ChatMessage.objects.filter(pk=pk).first(), "body"
+    elif model == "custom_field_value":
+        obj = TicketCustomFieldValue.objects.filter(
+            pk=pk, field__type__in=["text", "textarea"]
+        ).first()
+        field = "text_value"
     else:
         raise ValueError(f"Alvo de redação desconhecido: {model!r}")
 

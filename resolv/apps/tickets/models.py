@@ -335,6 +335,12 @@ class Ticket(TimeStampedModel):
     source = models.CharField(
         max_length=10, choices=TicketSource.choices, default=TicketSource.WEB
     )
+    # Formulário do ticket (campos personalizados exigidos). Nulo = usa o
+    # formulário padrão vigente (ver `TicketForm.default()`).
+    form = models.ForeignKey(
+        "tickets.TicketForm", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="tickets", verbose_name="formulário",
+    )
 
     # atribuição: assignee conversa com o cliente; owner responde pela solução (docs/05 §3.2)
     assignee = models.ForeignKey(
@@ -1117,6 +1123,173 @@ class SavedTicketView(TimeStampedModel):
 
     def __str__(self):
         return f"{self.name} ({self.owner_id})"
+
+
+# --------------------------------------------------------------------------- #
+# Campos personalizados e formulários de ticket (só da EQUIPE)
+# --------------------------------------------------------------------------- #
+
+#: Máximo de campos personalizados ATIVOS ao mesmo tempo.
+MAX_CAMPOS_ATIVOS = 60
+#: Máximo de opções de um dropdown.
+MAX_OPCOES_DROPDOWN = 200
+
+
+class TicketFieldType(models.TextChoices):
+    TEXT = "text", "Texto curto"
+    TEXTAREA = "textarea", "Parágrafo"
+    NUMBER = "number", "Número"
+    DATE = "date", "Data"
+    CHECKBOX = "checkbox", "Sim/não"
+    DROPDOWN = "dropdown", "Lista de uma opção"
+
+
+class TicketField(TimeStampedModel):
+    """Definição de um campo personalizado. Os VALORES moram em
+    `TicketCustomFieldValue`. Campo personalizado é informação interna: o
+    cliente nunca o vê nem o edita (API do cliente, e-mails, export dele).
+
+    O `slug` nasce do título, é estável (renomear não o muda) e nunca é
+    reaproveitado. Um campo com valores gravados não é apagado (desative) e
+    não troca de `type`.
+    """
+
+    slug = models.CharField(max_length=60, unique=True)
+    title = models.CharField(max_length=80, verbose_name="título")
+    description = models.CharField(max_length=500, blank=True, verbose_name="descrição")
+    type = models.CharField(max_length=10, choices=TicketFieldType.choices)
+    #: Só dropdown: lista ORDENADA de {"value": str, "label": str}.
+    options = models.JSONField(default=list, blank=True)
+    is_required = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    #: Reservado a campos de fábrica (nenhum na v1): sempre falso.
+    is_system = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "campo personalizado"
+        verbose_name_plural = "campos personalizados"
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.title
+
+
+class TicketForm(TimeStampedModel):
+    """Formulário de ticket: quais campos (e em que ordem), quais são
+    obrigatórios nele, equipe e tipo padrão. Sem lógica condicional.
+
+    Sempre existe EXATAMENTE um formulário padrão ativo (`is_default`):
+    garantido pela restrição única parcial, pela API e por `default()`.
+    """
+
+    name = models.CharField(max_length=80, unique=True, verbose_name="nome")
+    description = models.CharField(max_length=500, blank=True, verbose_name="descrição")
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+    default_team = models.ForeignKey(
+        "accounts.Team", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", verbose_name="equipe padrão",
+    )
+    type = models.CharField(
+        max_length=10, choices=TicketType.choices, null=True, blank=True,
+        verbose_name="tipo de ticket padrão",
+    )
+    fields = models.ManyToManyField(
+        TicketField, through="TicketFormField", related_name="forms",
+    )
+
+    class Meta:
+        verbose_name = "formulário de ticket"
+        verbose_name_plural = "formulários de ticket"
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default"], condition=models.Q(is_default=True),
+                name="uniq_ticket_form_default",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def default(cls) -> "TicketForm":
+        """O formulário padrão; cria o 'Formulário padrão' (vazio) se não
+        houver nenhum (banco novo/recém-esvaziado). Nunca devolve nulo."""
+        form = cls.objects.filter(is_default=True).first()
+        if form is None:
+            form, _ = cls.objects.get_or_create(
+                name="Formulário padrão",
+                defaults={"is_default": True, "is_active": True},
+            )
+            if not form.is_default:
+                form.is_default, form.is_active = True, True
+                form.save(update_fields=["is_default", "is_active"])
+        return form
+
+
+class TicketFormField(models.Model):
+    """Um campo dentro de um formulário: posição e obrigatoriedade NAQUELE
+    formulário."""
+
+    form = models.ForeignKey(
+        TicketForm, on_delete=models.CASCADE, related_name="form_fields"
+    )
+    field = models.ForeignKey(
+        TicketField, on_delete=models.CASCADE, related_name="form_links"
+    )
+    order = models.PositiveIntegerField(default=0)
+    is_required = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["form", "field"], name="uniq_form_field")
+        ]
+
+    def __str__(self):
+        return f"{self.form_id}:{self.field_id}"
+
+
+class TicketCustomFieldValue(models.Model):
+    """Valor de um campo personalizado num ticket (uma linha por ticket+campo;
+    sem valor = sem linha). Colunas TIPADAS, uma por tipo, para filtrar com
+    índice: text/textarea -> `text_value`; number -> `number_value`; date ->
+    `date_value`; checkbox -> `bool_value`; dropdown -> `option_value`."""
+
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name="custom_values"
+    )
+    field = models.ForeignKey(
+        TicketField, on_delete=models.PROTECT, related_name="values"
+    )
+    text_value = models.TextField(null=True, blank=True)
+    number_value = models.DecimalField(
+        max_digits=20, decimal_places=6, null=True, blank=True
+    )
+    date_value = models.DateField(null=True, blank=True)
+    bool_value = models.BooleanField(null=True, blank=True)
+    option_value = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "valor de campo personalizado"
+        verbose_name_plural = "valores de campos personalizados"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ticket", "field"], name="uniq_ticket_custom_value"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["field", "option_value"], name="idx_cfv_option"),
+            models.Index(fields=["field", "number_value"], name="idx_cfv_number"),
+            models.Index(fields=["field", "date_value"], name="idx_cfv_date"),
+            models.Index(fields=["field", "bool_value"], name="idx_cfv_bool"),
+        ]
+
+    def __str__(self):
+        return f"{self.ticket_id}:{self.field_id}"
 
 
 def ticket_is_overdue(ticket: Ticket) -> bool:

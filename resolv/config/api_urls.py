@@ -94,6 +94,7 @@ from apps.tickets.admin_api import (
     TicketTagViewSet,
 )
 from apps.tickets.ai_summary_api import TicketAISummaryView
+from apps.tickets.campos_api import TicketFieldViewSet, TicketFormViewSet
 from apps.tickets.views import (
     AttachmentDownloadView,
     ServiceViewSet,
@@ -146,6 +147,8 @@ router.register("settings/services", ServiceAdminViewSet, basename="cfg-service"
 router.register("settings/sla-policies", SLAPolicyAdminViewSet, basename="cfg-sla")
 router.register("settings/tags", TicketTagViewSet, basename="cfg-tag")
 router.register("settings/ticket-macros", TicketMacroViewSet, basename="cfg-ticket-macro")
+router.register("settings/ticket-fields", TicketFieldViewSet, basename="cfg-ticket-field")
+router.register("settings/ticket-forms", TicketFormViewSet, basename="cfg-ticket-form")
 router.register("settings/plans", PlanAdminViewSet, basename="cfg-plan")
 router.register("settings/companies", CompanyAdminViewSet, basename="cfg-company")
 router.register("settings/users", UserAdminViewSet, basename="cfg-user")

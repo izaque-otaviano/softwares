@@ -71,6 +71,9 @@ def create_ticket(
     tags=None,
     first_message_public: bool = True,
     ticket_type: str | None = None,
+    form=None,
+    custom_values: dict | None = None,
+    enforce_required_custom_fields: bool = False,
 ) -> Ticket:
     """Cria o ticket com a primeira mensagem, consumindo cota quando devido.
 
@@ -88,6 +91,11 @@ def create_ticket(
       coluna (`stage` manda; se vierem os dois, têm de concordar). Fechado
       fica de fora: fechar pede as datas da solução (D4);
     - `tags`: etiquetas já existentes (mesma regra de `reclassify`);
+    - `form` / `custom_values`: formulário do ticket e campos personalizados
+      (`{TicketField: valor}` já validado por `custom_fields.interpretar`);
+      só equipe com `ticket.edit_properties`. Com
+      `enforce_required_custom_fields` (a API liga para a EQUIPE), campo
+      obrigatório do formulário sem valor recusa a criação;
     - `first_message_public=False`: a primeira mensagem nasce como nota
       INTERNA — o cliente nunca a vê. Todas as regras são conferidas ANTES de
       gravar qualquer coisa, então uma recusa não deixa chamado pela metade.
@@ -96,6 +104,7 @@ def create_ticket(
     triagem = (
         assignee is not None or initial_status is not None
         or initial_stage is not None or bool(tags) or bool(ticket_type)
+        or form is not None or bool(custom_values)
     )
     if (triagem or not first_message_public) and not actor.is_internal:
         raise TicketRuleViolation(
@@ -156,6 +165,11 @@ def create_ticket(
 
     source = TicketSource.INTERNAL if actor.is_internal else TicketSource.WEB
 
+    if enforce_required_custom_fields:
+        from apps.tickets.services import custom_fields
+
+        custom_fields.exigir_obrigatorios_ao_criar(form, custom_values or {})
+
     with transaction.atomic():
         ticket = Ticket.objects.create(
             reference=next_reference(),
@@ -167,6 +181,7 @@ def create_ticket(
             priority=priority,
             category=category,
             type=ticket_type or None,
+            form=form,
             source=source,
             status=TicketStatus.NEW,
             stage=stage_padrao(TicketStatus.NEW),
@@ -188,6 +203,10 @@ def create_ticket(
             mentions.registrar_mencoes(message=mensagem, author=actor)
         if tags:
             ticket.tags.set(tags)
+        if custom_values:
+            from apps.tickets.services import custom_fields
+
+            custom_fields.aplicar(ticket=ticket, actor=actor, valores=custom_values)
         if source == TicketSource.WEB:
             # levanta QuotaExceeded e desfaz tudo se o período está cheio
             quota_service.check_and_consume(ticket=ticket, actor=requester)
@@ -954,7 +973,8 @@ _NAO_INFORMADO = object()  # sentinela: distingue "não mexer" de "limpar"
 
 
 def reclassify(*, ticket: Ticket, actor, priority=None, category=_NAO_INFORMADO,
-               team=None, tags=None, ticket_type=_NAO_INFORMADO) -> Ticket:
+               team=None, tags=None, ticket_type=_NAO_INFORMADO,
+               form=_NAO_INFORMADO, custom_values: dict | None = None) -> Ticket:
     """Triagem de um chamado já aberto: urgência, categoria, equipe e etiquetas.
 
     Era o buraco da operação — a fila ordena por urgência e categoria, o
@@ -987,6 +1007,12 @@ def reclassify(*, ticket: Ticket, actor, priority=None, category=_NAO_INFORMADO,
             mudancas.append(f"tipo → {ticket.get_type_display() if ticket.type else '—'}")
             campos.append("type")
 
+        # formulário: `null` volta a seguir o padrão; ausente não mexe
+        if form is not _NAO_INFORMADO and (form.pk if form else None) != ticket.form_id:
+            ticket.form = form
+            mudancas.append(f"formulário → {form.name if form else 'padrão'}")
+            campos.append("form")
+
         if team is not None and team.pk != ticket.team_id:
             # mesma regra da criação: equipe interna não recebe chamado de
             # cliente — o ticket sumiria da visão do próprio solicitante
@@ -1009,14 +1035,26 @@ def reclassify(*, ticket: Ticket, actor, priority=None, category=_NAO_INFORMADO,
                 rotulo = ", ".join(sorted(t.name for t in tags)) or "—"
                 mudancas.append(f"etiquetas → {rotulo}")
 
+        notas_cf = []
+        if custom_values:
+            from apps.tickets.services import custom_fields
+
+            notas_cf = custom_fields.aplicar(
+                ticket=ticket, actor=actor, valores=custom_values
+            )
+
         if not campos and not mudancas:
-            return ticket
-        if campos:
-            ticket.save(update_fields=campos)
-        TicketStatusEvent.objects.create(
-            ticket=ticket, from_status=ticket.status, to_status=ticket.status,
-            changed_by=actor, note="; ".join(mudancas)[:200],
-        )
+            if notas_cf:
+                ticket.save(update_fields=["updated_at"])
+            else:
+                return ticket
+        else:
+            if campos:
+                ticket.save(update_fields=campos)
+            TicketStatusEvent.objects.create(
+                ticket=ticket, from_status=ticket.status, to_status=ticket.status,
+                changed_by=actor, note="; ".join(mudancas)[:200],
+            )
     from apps.notifications.services import broadcast_ticket_event
 
     broadcast_ticket_event(ticket=ticket, kind="updated", actor=actor)
@@ -1204,6 +1242,13 @@ def close_ticket(
             raise TicketRuleViolation("Término da solução anterior ao início.")
         if resolution_ended_at > now + dt.timedelta(minutes=1):
             raise TicketRuleViolation("Término da solução no futuro.")
+
+        # campo personalizado obrigatório do formulário do ticket: sem valor,
+        # não fecha (nada foi gravado até aqui; em `add_reply` a exceção
+        # desfaz também a mensagem)
+        from apps.tickets.services import custom_fields
+
+        custom_fields.exigir_obrigatorios_ao_fechar(ticket)
 
         ticket.resolution_started_at = resolution_started_at
         ticket.resolution_ended_at = resolution_ended_at
