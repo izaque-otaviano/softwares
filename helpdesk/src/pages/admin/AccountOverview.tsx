@@ -55,14 +55,13 @@ export default function AccountOverview() {
           ) : data ? (
             <p className="mt-2 text-sm">
               <span className="text-xl font-semibold tabular-nums">{data.used}</span>
-              {/* No modo real o total é um teto local (o backend não tem cotas): não o apresenta como fato. */}
-              <span className="text-fg-muted">{IS_REAL ? (data.used === 1 ? ' agente ativo' : ' agentes ativos') : ` de ${data.total} assentos em uso`}</span>
+              <span className="text-fg-muted">{data.unlimited ? ` ${data.used === 1 ? 'licença em uso' : 'licenças em uso'}, sem limite` : ` de ${data.total} licenças em uso`}</span>
             </p>
           ) : null}
           <p className="mt-2 text-xs text-fg-muted">
             {IS_REAL
-              ? 'Contagem a partir dos usuários internos ativos no diretório. O backend não expõe cotas de licença por plano.'
-              : 'No modo mock o teto é fixo (simulação de assentos).'}
+              ? 'Licença = administrador, supervisor ou agente ativo (convite pendente conta). Clientes e agentes leves não ocupam licença.'
+              : 'No modo mock o total de licenças é simulado.'}
           </p>
           <p className="mt-3 text-sm">
             <Link to="/admin/members" className="text-action hover:text-action-hover hover:underline">

@@ -1,5 +1,5 @@
 import { localHint } from '@/api/capabilities';
-import { ChevronDown, ChevronRight, Sparkles, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { removeKeepingFocus } from '@/components/ui/focusUtils';
 import { usersApi } from '@/api';
@@ -13,6 +13,7 @@ import { useTickets } from '@/store/useTickets';
 import type { Priority, TicketType, User } from '@/types/domain';
 import { AddUserModal } from './AddUserModal';
 import { AssigneePicker } from './AssigneePicker';
+import { FollowerChips, FollowersField } from './CcFollowers';
 import { useFormEntry, useFormStore } from './formStore';
 import { useGroups, useTicketFields } from './useTicketLookups';
 
@@ -129,59 +130,6 @@ function AssigneeField({ ticketKey, disabled }: { ticketKey: string; disabled: b
   );
 }
 
-function FollowersField({ ticketKey, disabled }: { ticketKey: string; disabled: boolean }) {
-  const entry = useFormEntry(ticketKey)!;
-  const users = useDirectory();
-  const meId = useMeId();
-  const { followerIds } = entry.values;
-  const set = (ids: string[]) => useFormStore.getState().patch(ticketKey, { followerIds: ids });
-  const options = useMemo(
-    () => [...users.values()].filter((u) => u.role !== 'end_user' && !followerIds.includes(u.id)).map(userOption),
-    [users, followerIds],
-  );
-  return (
-    <Field
-      label="Seguidores"
-      hint={localHint('ccFollowers', 'Só o seu "seguir" é salvo no servidor; outros seguidores ficam somente neste navegador.')}
-      labelAction={
-        !followerIds.includes(meId) && !disabled ? (
-          <button type="button" className={LINK} onClick={() => set([...followerIds, meId])}>
-            seguir
-          </button>
-        ) : null
-      }
-    >
-      <Combobox value={null} disabled={disabled} options={options} placeholder="Adicionar seguidores" searchPlaceholder="Buscar agentes" onValueChange={(v) => v && set([...followerIds, v])} />
-    </Field>
-  );
-}
-
-function FollowerChips({ ticketKey, disabled }: { ticketKey: string; disabled: boolean }) {
-  const entry = useFormEntry(ticketKey)!;
-  const users = useDirectory();
-  const { followerIds } = entry.values;
-  if (followerIds.length === 0) return null;
-  return (
-    <ul className="-mt-2 flex flex-wrap gap-1" aria-label="Seguidores atuais">
-      {followerIds.map((id) => (
-        <li key={id} className="inline-flex h-6 items-center gap-1 rounded bg-surface-2 pl-1 pr-1 text-xs text-fg">
-          <Avatar name={users.get(id)?.name} size={16} decorative />
-          {users.get(id)?.name ?? id}
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Remover ${users.get(id)?.name ?? id}`}
-            className="flex size-4 items-center justify-center rounded-xs text-fg-muted hover:bg-hover focus-visible:shadow-focus focus-visible:outline-none"
-            onClick={() => useFormStore.getState().patch(ticketKey, { followerIds: followerIds.filter((x) => x !== id) })}
-          >
-            <X aria-hidden="true" className="size-3" />
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function ReadonlyField({ label, value }: { label: string; value?: string }) {
   return (
     <div>
@@ -231,7 +179,8 @@ function AiFields({ ticketKey, disabled, open, onToggle }: { ticketKey: string; 
       </button>
       {open ? (
         <div id={regionId} className="mt-2 space-y-3">
-          {localHint('aiSummary') ? <p className="text-xs text-fg-muted">{localHint('aiSummary')}</p> : null}
+          {/* Resumo, tópico, sentimento e idioma são campos personalizados (locais); o resumo por IA do servidor fica na conversa. */}
+          {localHint('customFields') ? <p className="text-xs text-fg-muted">{localHint('customFields', 'Somente neste navegador: o backend ainda não tem estes campos de IA.')}</p> : null}
           {READONLY_FIELDS.map((f) => (
             <ReadonlyField key={f.id} label={f.label} value={cf[f.id]} />
           ))}
@@ -324,7 +273,7 @@ export function PropertiesPanel({ ticketKey }: { ticketKey: string }) {
           <Field label="Tags">
             <TagInput value={values.tags} disabled={disabled} suggestions={suggestions} placeholder="Adicionar tag" onChange={(tags) => patch(ticketKey, { tags })} />
           </Field>
-          <Field label="Tipo" hint={localHint('ticketType')}>
+          <Field label="Tipo">
             <Select value={values.type ?? NONE} options={TYPE_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { type: (v || null) as TicketType | null })} />
           </Field>
           <Field label="Prioridade">

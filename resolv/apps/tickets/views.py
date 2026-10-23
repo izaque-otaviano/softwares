@@ -44,6 +44,7 @@ from apps.tickets.models import (
     TicketStage,
     TicketStatus,
     TicketStatusEvent,
+    TicketType,
     TicketWatcher,
     UserTicketTabs,
 )
@@ -56,6 +57,10 @@ from apps.tickets.serializers import (
     BulkPrioritySerializer,
     BulkResultSerializer,
     BulkStatusSerializer,
+    CCInputSerializer,
+    CCSerializer,
+    FollowerInputSerializer,
+    FollowerSerializer,
     MentionTargetSerializer,
     PresencaBatimentoSerializer,
     PresencaSerializer,
@@ -302,6 +307,13 @@ class TicketViewSet(viewsets.GenericViewSet):
         ),
         OpenApiParameter("source", str, description="web | chat | internal"),
         OpenApiParameter(
+            "type", str,
+            description=(
+                "question | incident | problem | task — ou uma LISTA separada por "
+                "vírgula; `none` = tickets sem tipo."
+            ),
+        ),
+        OpenApiParameter(
             "view", str,
             description="visão salva da barra lateral: " + " | ".join(SAVED_VIEWS),
         ),
@@ -382,7 +394,16 @@ class TicketViewSet(viewsets.GenericViewSet):
         return self.get_paginated_response(ser.data)
 
     def retrieve(self, request, pk=None):
-        ticket = self.get_object()  # 404 fora do escopo: não vaza existência
+        try:
+            ticket = self.get_object()  # 404 fora do escopo: não vaza existência
+        except Http404:
+            # Ticket apagado (exclusão lógica): 404 para todos, menos para quem
+            # administra — é por aqui que o admin confere antes de restaurar.
+            ticket = None
+            if request.user.is_internal and request.user.can(Perm.SETTINGS_MANAGE):
+                ticket = selectors.deleted_ticket_or_none(request.user, pk)
+            if ticket is None:
+                raise
         if ticket.is_restricted():
             # requisito de auditoria: LEITURA logada, inclusive de interno,
             # inclusive tentativa que recebeu conteúdo mascarado
@@ -444,6 +465,7 @@ class TicketViewSet(viewsets.GenericViewSet):
                 initial_stage=data.get("stage"),
                 tags=data.get("tags"),
                 first_message_public=data.get("is_public", True),
+                ticket_type=data.get("type"),
             )
         except QuotaExceeded as exc:
             # 422 com dados para a mensagem clara exigida pelo requisito
@@ -493,7 +515,7 @@ class TicketViewSet(viewsets.GenericViewSet):
         dados = ser.validated_data
 
         try:
-            if any(k in dados for k in ("priority", "category", "team", "tags")):
+            if any(k in dados for k in ("priority", "category", "team", "tags", "type")):
                 ticket = ticket_service.reclassify(
                     ticket=ticket, actor=request.user,
                     priority=dados.get("priority"),
@@ -501,6 +523,8 @@ class TicketViewSet(viewsets.GenericViewSet):
                     else ticket_service._NAO_INFORMADO,
                     team=dados.get("team"),
                     tags=dados.get("tags"),
+                    ticket_type=dados["type"] if "type" in dados
+                    else ticket_service._NAO_INFORMADO,
                 )
             if "assignee" in dados:
                 ticket = ticket_service.assign(
@@ -511,6 +535,47 @@ class TicketViewSet(viewsets.GenericViewSet):
 
         out = TicketDetailSerializer(ticket, context={"request": request})
         return Response(out.data)
+
+    @extend_schema(responses={204: None})
+    def destroy(self, request, pk=None):
+        """Apaga o ticket (exclusão LÓGICA, só quem administra).
+
+        204 sem corpo. 403 sem `settings.manage`; 404 se não existe ou está
+        fora do escopo; 409 se há horas de manutenção lançadas ou se já foi
+        apagado. O ticket some de listas, buscas, contadores, quadros e
+        relatórios e pode ser restaurado em até 30 dias (`restore/`).
+        """
+        _exige(request.user, Perm.SETTINGS_MANAGE)
+        ticket = self.get_object()
+        try:
+            ticket_service.delete_ticket(ticket=ticket, actor=request.user)
+        except ticket_service.TicketConflict as exc:
+            return Response({"detail": str(exc), "code": "ticket_conflict"},
+                            status=http.HTTP_409_CONFLICT)
+        except TicketRuleViolation as exc:
+            raise PermissionDenied(str(exc)) from exc
+        return Response(status=http.HTTP_204_NO_CONTENT)
+
+    @extend_schema(request=None, responses=TicketDetailSerializer)
+    @action(detail=True, methods=["post"], url_path="restore")
+    def restore(self, request, pk=None):
+        """Restaura um ticket apagado (só quem administra, até 30 dias depois).
+
+        404 se o ticket não existe, não está apagado ou está fora do escopo;
+        409 se o prazo de 30 dias passou."""
+        _exige(request.user, Perm.SETTINGS_MANAGE)
+        ticket = selectors.deleted_ticket_or_none(request.user, pk)
+        if ticket is None:
+            raise NotFound("Ticket apagado não encontrado.")
+        try:
+            ticket = ticket_service.restore_ticket(ticket=ticket, actor=request.user)
+        except ticket_service.TicketConflict as exc:
+            return Response({"detail": str(exc), "code": "ticket_conflict"},
+                            status=http.HTTP_409_CONFLICT)
+        except TicketRuleViolation as exc:
+            raise PermissionDenied(str(exc)) from exc
+        ticket = selectors.visible_ticket_or_none(request.user, ticket.pk) or ticket
+        return Response(TicketDetailSerializer(ticket, context={"request": request}).data)
 
     # ------------------------------------------------------------------ #
     # Ações de negócio
@@ -790,6 +855,111 @@ class TicketViewSet(viewsets.GenericViewSet):
         TicketWatcher.objects.filter(ticket=ticket, user=request.user).delete()
         out = TicketDetailSerializer(ticket, context={"request": request})
         return Response(out.data)
+
+    # ------------------------------------------------------------------ #
+    # CC de terceiros e seguidores de outras pessoas (permissão: editar
+    # propriedades do ticket). Seguir a si mesmo continua em follow/unfollow.
+    # ------------------------------------------------------------------ #
+
+    def _ticket_para_acompanhantes(self, request, pk):
+        """Só equipe, só com permissão de editar propriedades; fora do escopo
+        é 404. Devolve o ticket já resolvido."""
+        if not request.user.is_internal:
+            raise PermissionDenied("Seguidores e CC são ação interna.")
+        _exige(request.user, Perm.TICKET_EDIT_PROPERTIES)
+        return self.get_object()
+
+    def _detalhe(self, request, ticket, status=http.HTTP_200_OK):
+        # recarrega: o serializer lê as relações do banco
+        ticket = selectors.visible_ticket_or_none(request.user, ticket.pk) or ticket
+        out = TicketDetailSerializer(ticket, context={"request": request})
+        return Response(out.data, status=status)
+
+    @extend_schema(methods=["GET"], responses=CCSerializer(many=True))
+    @extend_schema(
+        methods=["POST"], request=CCInputSerializer,
+        responses={200: TicketDetailSerializer, 201: TicketDetailSerializer},
+    )
+    @action(detail=True, methods=["get", "post"], url_path="cc")
+    def cc(self, request, pk=None):
+        """GET lista os e-mails em cópia (`[{id, name, email}]`); POST põe um
+        e-mail de terceiro em cópia (`{"email", "name"?}`) e devolve o detalhe do
+        ticket (201 se criou; 200 se já estava). O CC recebe por e-mail as
+        respostas públicas e não ganha acesso ao sistema."""
+        ticket = self._ticket_para_acompanhantes(request, pk)
+        if request.method == "GET":
+            return Response(CCSerializer(ticket.cc_entries.all(), many=True).data)
+        ser = CCInputSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            _entrada, criada = ticket_service.add_cc(
+                ticket=ticket, actor=request.user,
+                email=ser.validated_data["email"], name=ser.validated_data["name"],
+            )
+        except TicketRuleViolation as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return self._detalhe(
+            request, ticket, http.HTTP_201_CREATED if criada else http.HTTP_200_OK
+        )
+
+    @extend_schema(responses={200: TicketDetailSerializer})
+    @action(detail=True, methods=["delete"], url_path=r"cc/(?P<cc_id>\d+)")
+    def cc_remove(self, request, pk=None, cc_id=None):
+        """Tira um e-mail da cópia. 404 se o id não é CC deste ticket."""
+        ticket = self._ticket_para_acompanhantes(request, pk)
+        try:
+            removido = ticket_service.remove_cc(
+                ticket=ticket, actor=request.user, cc_id=int(cc_id)
+            )
+        except TicketRuleViolation as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        if not removido:
+            raise NotFound("CC não encontrado neste ticket.")
+        return self._detalhe(request, ticket)
+
+    @extend_schema(methods=["GET"], responses=FollowerSerializer(many=True))
+    @extend_schema(
+        methods=["POST"], request=FollowerInputSerializer,
+        responses={200: TicketDetailSerializer, 201: TicketDetailSerializer},
+    )
+    @action(detail=True, methods=["get", "post"], url_path="followers")
+    def followers(self, request, pk=None):
+        """GET lista os seguidores (`[{id, name, email, is_internal}]`); POST faz
+        uma pessoa seguir o ticket (`{"user_id"}`): usuário interno ativo ou
+        cliente ativo da mesma empresa do ticket. Seguir não concede acesso."""
+        ticket = self._ticket_para_acompanhantes(request, pk)
+        if request.method == "GET":
+            qs = ticket.watchers.select_related("user").order_by("user__full_name")
+            return Response(FollowerSerializer(qs, many=True).data)
+        ser = FollowerInputSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        pessoa = User.objects.filter(pk=ser.validated_data["user_id"]).first()
+        if pessoa is None:
+            raise ValidationError({"user_id": "Usuário não encontrado."})
+        try:
+            _w, criado = ticket_service.add_follower(
+                ticket=ticket, actor=request.user, user=pessoa
+            )
+        except TicketRuleViolation as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return self._detalhe(
+            request, ticket, http.HTTP_201_CREATED if criado else http.HTTP_200_OK
+        )
+
+    @extend_schema(responses={200: TicketDetailSerializer})
+    @action(detail=True, methods=["delete"], url_path=r"followers/(?P<user_id>\d+)")
+    def followers_remove(self, request, pk=None, user_id=None):
+        """Tira uma pessoa dos seguidores. 404 se ela não segue este ticket."""
+        ticket = self._ticket_para_acompanhantes(request, pk)
+        try:
+            removido = ticket_service.remove_follower(
+                ticket=ticket, actor=request.user, user_id=int(user_id)
+            )
+        except TicketRuleViolation as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        if not removido:
+            raise NotFound("Esta pessoa não segue o ticket.")
+        return self._detalhe(request, ticket)
 
     @extend_schema(request=PresencaBatimentoSerializer, responses=PresencaSerializer)
     @action(detail=True, methods=["post", "delete"], url_path="presenca")
@@ -1617,6 +1787,17 @@ def _aplicar_filtros(qs, params, user, *, exceto=frozenset()):
 
     if "source" not in exceto and (source := params.get("source")):
         qs = qs.filter(source=source)
+
+    # Tipo do chamado: lista separada por vírgula; `none` = sem tipo. Valor
+    # desconhecido é ignorado (não filtra por lixo), como `view`.
+    if "type" not in exceto and (tipo := params.get("type")):
+        validos = set(TicketType.values)
+        pedidos = [t for t in tipo.split(",") if t in validos or t == "none"]
+        if pedidos:
+            filtro = Q(type__in=[t for t in pedidos if t != "none"])
+            if "none" in pedidos:
+                filtro |= Q(type__isnull=True)
+            qs = qs.filter(filtro)
 
     # Agrupamento por pedido: filtro EXATO, diferente do `?q=` que é parcial.
     # É o que faz "ver os outros chamados deste pedido" devolver o pedido

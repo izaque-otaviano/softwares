@@ -69,7 +69,7 @@ class Command(BaseCommand):
             for empresa, pessoa in alvos:
                 # o chamado acompanha a pessoa: cliente enxerga pelo vínculo de
                 # empresa, e deixar o chamado para trás o tornaria invisível
-                Ticket.objects.filter(company=empresa).update(company=balde)
+                Ticket.all_objects.filter(company=empresa).update(company=balde)
                 pessoa.company = balde
                 # inativo enquanto está no balde — lá todos dividem a mesma
                 # empresa, e cliente ativo veria o chamado dos outros

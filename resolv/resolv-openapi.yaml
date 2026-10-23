@@ -5897,6 +5897,70 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/settings/licenses/:
+    get:
+      operationId: v1_settings_licenses_retrieve
+      description: 'Licenças de agente: `used` conta usuários ativos admin/supervisor/agente.
+        `total: null` = sem limite. Criar, ativar ou promover a agente acima do total
+        devolve 409 `seat_limit_reached`; reduzir o total abaixo do usado, 400 `seat_total_below_used`.'
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Licenses'
+          description: ''
+    put:
+      operationId: v1_settings_licenses_update
+      description: 'Interno lê; só quem administra altera o total (`total: null` = sem
+        limite).'
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LicensesUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LicensesUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LicensesUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Licenses'
+          description: ''
+    patch:
+      operationId: v1_settings_licenses_partial_update
+      description: 'Interno lê; só quem administra altera o total (`total: null` = sem
+        limite).'
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedLicensesUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedLicensesUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedLicensesUpdate'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Licenses'
+          description: ''
   /api/v1/settings/plans/:
     get:
       operationId: v1_settings_plans_list
@@ -8092,6 +8156,12 @@ paths:
           type: string
         description: slug da equipe
       - in: query
+        name: type
+        schema:
+          type: string
+        description: question | incident | problem | task — ou uma LISTA separada
+          por vírgula; `none` = tickets sem tipo.
+      - in: query
         name: view
         schema:
           type: string
@@ -8186,6 +8256,64 @@ paths:
               schema:
                 $ref: '#/components/schemas/TicketDetail'
           description: ''
+    delete:
+      operationId: v1_tickets_destroy
+      description: |-
+        Apaga o ticket (exclusão LÓGICA, só quem administra).
+
+        204 sem corpo. 403 sem `settings.manage`; 404 se não existe ou está
+        fora do escopo; 409 se há horas de manutenção lançadas ou se já foi
+        apagado. O ticket some de listas, buscas, contadores, quadros e
+        relatórios e pode ser restaurado em até 30 dias (`restore/`).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      responses:
+        '204':
+          description: No response body
+  /api/v1/tickets/{id}/ai-summary/:
+    post:
+      operationId: v1_tickets_ai_summary_create
+      description: 'Gera (sem gravar) um resumo do ticket por IA. Só agentes que enxergam
+        o ticket. Envia ao provedor apenas assunto e mensagens (públicas e notas internas)
+        com e-mail, telefone, CPF e CNPJ mascarados, limitadas às mais recentes (`truncated`).
+        503 `ai_not_configured`: IA desligada ou sem chave (variáveis de ambiente).
+        502 `ai_provider_error`: o provedor falhou. 429: teto de 20 resumos/hora por
+        usuário.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketAISummary'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/tickets/{id}/apply-macro/:
     post:
       operationId: v1_tickets_apply_macro_create
@@ -8266,6 +8394,106 @@ paths:
         `mention_targets`, a lista em si não depende do ticket (nem tem
         recorte por equipe: `services/atribuicao.agentes_atribuiveis`).
       parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+  /api/v1/tickets/{id}/cc/:
+    get:
+      operationId: v1_tickets_cc_list
+      description: |-
+        GET lista os e-mails em cópia (`[{id, name, email}]`); POST põe um
+        e-mail de terceiro em cópia (`{"email", "name"?}`) e devolve o detalhe do
+        ticket (201 se criou; 200 se já estava). O CC recebe por e-mail as
+        respostas públicas e não ganha acesso ao sistema.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCCList'
+          description: ''
+    post:
+      operationId: v1_tickets_cc_create
+      description: |-
+        GET lista os e-mails em cópia (`[{id, name, email}]`); POST põe um
+        e-mail de terceiro em cópia (`{"email", "name"?}`) e devolve o detalhe do
+        ticket (201 se criou; 200 se já estava). O CC recebe por e-mail as
+        respostas públicas e não ganha acesso ao sistema.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CCInput'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CCInput'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CCInput'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+  /api/v1/tickets/{id}/cc/{cc_id}/:
+    delete:
+      operationId: v1_tickets_cc_destroy
+      description: Tira um e-mail da cópia. 404 se o id não é CC deste ticket.
+      parameters:
+      - in: path
+        name: cc_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
       - in: path
         name: id
         schema:
@@ -8369,6 +8597,104 @@ paths:
             schema:
               $ref: '#/components/schemas/TicketDetail'
         required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+  /api/v1/tickets/{id}/followers/:
+    get:
+      operationId: v1_tickets_followers_list
+      description: |-
+        GET lista os seguidores (`[{id, name, email, is_internal}]`); POST faz
+        uma pessoa seguir o ticket (`{"user_id"}`): usuário interno ativo ou
+        cliente ativo da mesma empresa do ticket. Seguir não concede acesso.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFollowerList'
+          description: ''
+    post:
+      operationId: v1_tickets_followers_create
+      description: |-
+        GET lista os seguidores (`[{id, name, email, is_internal}]`); POST faz
+        uma pessoa seguir o ticket (`{"user_id"}`): usuário interno ativo ou
+        cliente ativo da mesma empresa do ticket. Seguir não concede acesso.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FollowerInput'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FollowerInput'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FollowerInput'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+  /api/v1/tickets/{id}/followers/{user_id}/:
+    delete:
+      operationId: v1_tickets_followers_destroy
+      description: Tira uma pessoa dos seguidores. 404 se ela não segue este ticket.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: user_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      tags:
+      - v1
       responses:
         '200':
           content:
@@ -8586,6 +8912,29 @@ paths:
         required: true
       responses:
         '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+          description: ''
+  /api/v1/tickets/{id}/restore/:
+    post:
+      operationId: v1_tickets_restore_create
+      description: |-
+        Restaura um ticket apagado (só quem administra, até 30 dias depois).
+
+        404 se o ticket não existe, não está apagado ou está fora do escopo;
+        409 se o prazo de 30 dias passou.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      responses:
+        '200':
           content:
             application/json:
               schema:
@@ -9721,6 +10070,36 @@ components:
       - holidays
       - id
       - name
+    CC:
+      type: object
+      description: E-mail de terceiro em cópia (não é usuário do sistema).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+      required:
+      - email
+      - id
+    CCInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        name:
+          type: string
+          default: ''
+          maxLength: 120
+      required:
+      - email
     Chat:
       type: object
       properties:
@@ -10880,6 +11259,33 @@ components:
       description: |-
         * `resposta` - resposta
         * `nota` - nota
+    Follower:
+      type: object
+      description: Seguidor com contato — só para a equipe (o cliente não recebe a
+        lista).
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        is_internal:
+          type: boolean
+      required:
+      - email
+      - id
+      - is_internal
+      - name
+    FollowerInput:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          minimum: 1
+      required:
+      - user_id
     FormatEnum:
       enum:
       - csv
@@ -11171,6 +11577,33 @@ components:
         * `supervisor` - Supervisor
         * `agent` - Agente
         * `light_agent` - Agente leve
+    Licenses:
+      type: object
+      properties:
+        total:
+          type: integer
+          nullable: true
+        used:
+          type: integer
+        available:
+          type: integer
+          nullable: true
+        unlimited:
+          type: boolean
+      required:
+      - available
+      - total
+      - unlimited
+      - used
+    LicensesUpdate:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          nullable: true
+      required:
+      - total
     LimitPeriodEnum:
       enum:
       - weekly
@@ -11969,6 +12402,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BusinessCalendar'
+    PaginatedCCList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CC'
     PaginatedChatCloseReasonList:
       type: object
       required:
@@ -12153,6 +12609,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DataSubjectRequest'
+    PaginatedFollowerList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Follower'
     PaginatedHolidayList:
       type: object
       required:
@@ -13221,6 +13700,13 @@ components:
           type: string
           format: time
           nullable: true
+    PatchedLicensesUpdate:
+      type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          nullable: true
     PatchedMyCompany:
       type: object
       description: |-
@@ -13605,6 +14091,13 @@ components:
           readOnly: true
         priority:
           $ref: '#/components/schemas/PriorityEnum'
+        type:
+          nullable: true
+          title: Tipo
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
         source:
           $ref: '#/components/schemas/TicketSourceEnum'
         team:
@@ -13760,6 +14253,16 @@ components:
           items:
             $ref: '#/components/schemas/Watcher'
           readOnly: true
+        followers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Follower'
+          readOnly: true
+        cc:
+          type: array
+          items:
+            $ref: '#/components/schemas/CC'
+          readOnly: true
         requester:
           allOf:
           - $ref: '#/components/schemas/Requester'
@@ -13769,6 +14272,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ScheduledReply'
+          readOnly: true
+        deleted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        deleted_by_name:
+          type: string
+          nullable: true
           readOnly: true
     PatchedTicketMacro:
       type: object
@@ -13837,6 +14349,11 @@ components:
           type: array
           items:
             type: integer
+        type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
     PatchedTicketStage:
       type: object
       properties:
@@ -14884,6 +15401,23 @@ components:
           format: email
       required:
       - to
+    TicketAISummary:
+      type: object
+      properties:
+        summary:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        provider:
+          type: string
+        truncated:
+          type: boolean
+      required:
+      - generated_at
+      - provider
+      - summary
+      - truncated
     TicketAccessLog:
       type: object
       properties:
@@ -15087,6 +15621,18 @@ components:
           items:
             type: integer
           description: Ids de etiquetas já existentes.
+        type:
+          nullable: true
+          description: |-
+            Tipo: question | incident | problem | task (opcional; só usuário interno com permissão de editar propriedades).
+
+            * `question` - Pergunta
+            * `incident` - Incidente
+            * `problem` - Problema
+            * `task` - Tarefa
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
         is_public:
           type: boolean
           default: true
@@ -15136,6 +15682,13 @@ components:
           readOnly: true
         priority:
           $ref: '#/components/schemas/PriorityEnum'
+        type:
+          nullable: true
+          title: Tipo
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
         source:
           $ref: '#/components/schemas/TicketSourceEnum'
         team:
@@ -15291,6 +15844,16 @@ components:
           items:
             $ref: '#/components/schemas/Watcher'
           readOnly: true
+        followers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Follower'
+          readOnly: true
+        cc:
+          type: array
+          items:
+            $ref: '#/components/schemas/CC'
+          readOnly: true
         requester:
           allOf:
           - $ref: '#/components/schemas/Requester'
@@ -15301,17 +15864,30 @@ components:
           items:
             $ref: '#/components/schemas/ScheduledReply'
           readOnly: true
+        deleted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        deleted_by_name:
+          type: string
+          nullable: true
+          readOnly: true
       required:
       - assignee_avatar
       - assignee_id
       - assignee_name
       - category_name
+      - cc
       - company_id
       - company_name
       - content_hidden
       - created_at
       - current_status_note
+      - deleted_at
+      - deleted_by_name
       - events
+      - followers
       - id
       - is_restricted
       - messages
@@ -15400,6 +15976,13 @@ components:
           readOnly: true
         priority:
           $ref: '#/components/schemas/PriorityEnum'
+        type:
+          nullable: true
+          title: Tipo
+          oneOf:
+          - $ref: '#/components/schemas/TicketTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
         source:
           $ref: '#/components/schemas/TicketSourceEnum'
         team:
@@ -15865,6 +16448,18 @@ components:
       - id
       - name
       - slug
+    TicketTypeEnum:
+      enum:
+      - question
+      - incident
+      - problem
+      - task
+      type: string
+      description: |-
+        * `question` - Pergunta
+        * `incident` - Incidente
+        * `problem` - Problema
+        * `task` - Tarefa
     TrocarSenha:
       type: object
       properties:

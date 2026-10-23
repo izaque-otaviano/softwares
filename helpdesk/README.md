@@ -168,7 +168,8 @@ Dois modos, escolhidos por `VITE_API_MODE` (ver `.env.example`):
 - Etapas 2 a 4 (leitura e escrita reais): Início, Visualizações, tela do ticket (criar, responder, nota interna, status,
   fechar, atribuir, prioridade, etiquetas, seguir, macro, anexos), ações em lote, Clientes, Organizações, Busca e Admin
   (Membros, Status, Macros) leem e gravam no Resolv. O envio do ticket orquestra de 1 a 4 chamadas sem transação, com
-  relato de falha parcial e "Tentar novamente" que não duplica o que já passou. O que o backend não tem (gatilhos, campos
-  personalizados, formulários, resumo de IA, fusão, apagar ticket, tipo, CC e seguidores arbitrários, licenças) segue
+  relato de falha parcial e "Tentar novamente" que não duplica o que já passou. Tipo, apagar/restaurar, CC e seguidores de
+  terceiros, licenças e resumo de IA também vão ao backend. O que ele não tem (gatilhos, campos personalizados,
+  formulários, fusão) segue
   LOCAL e avisa "somente neste navegador" só nesses pontos. Decisões, o que escreve de verdade e o que segue local:
   `src/api/PENDENTE_NO_BACKEND.md`.

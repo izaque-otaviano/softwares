@@ -13,6 +13,7 @@ from apps.accounts.admin_api import (
     TeamAdminViewSet,
     UserAdminViewSet,
 )
+from apps.accounts.licenses_api import LicensesView
 from apps.accounts.recuperacao import RecuperarSenhaView, RedefinirSenhaView
 from apps.accounts.views import (
     AssinaturaFileView,
@@ -92,6 +93,7 @@ from apps.tickets.admin_api import (
     TicketStageViewSet,
     TicketTagViewSet,
 )
+from apps.tickets.ai_summary_api import TicketAISummaryView
 from apps.tickets.views import (
     AttachmentDownloadView,
     ServiceViewSet,
@@ -161,6 +163,9 @@ router.register("audit/lgpd", DataSubjectRequestViewSet, basename="audit-lgpd")
 router.register("audit/retention", RetentionRunViewSet, basename="audit-retention")
 
 urlpatterns = router.urls + [
+    # fora do router de propósito: arquivo próprio, sem tocar no TicketViewSet
+    path("tickets/<int:pk>/ai-summary/", TicketAISummaryView.as_view(),
+         name="ticket-ai-summary"),
     path("auth/login/", LoginView.as_view(), name="auth-login"),
     # verificação em duas etapas: a segunda etapa do login (sem sessão ainda)…
     path("auth/2fa/", TwoFactorVerifyView.as_view(), name="auth-2fa"),
@@ -201,6 +206,7 @@ urlpatterns = router.urls + [
          name="my-company-user-invite"),
     path("quota/", QuotaView.as_view(), name="quota"),
     path("maintenance/", MaintenanceView.as_view(), name="maintenance"),
+    path("settings/licenses/", LicensesView.as_view(), name="cfg-licenses"),
     path("settings/system/", SystemConfigView.as_view(), name="cfg-system"),
     path("settings/system/test-email/", SystemTestEmailView.as_view(),
          name="cfg-system-test-email"),

@@ -1,4 +1,4 @@
-import { MACRO_WRITE, useCan } from '@/lib/permissions';
+import { MACRO_WRITE, SETTINGS_MANAGE, useCan } from '@/lib/permissions';
 import { Ban, EllipsisVertical, Filter, History, Mail, Globe, Frown, Meh, Smile, Printer, Rows3, Trash2, UserX, Merge, Zap } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -46,13 +46,14 @@ const DANGER_COPY: Record<Danger, { title: string; description: string; confirm:
   },
   spam: {
     title: 'Marcar como spam',
-    description: 'O ticket será removido da fila (apagado localmente se o backend não suportar) e o solicitante será suspenso quando possível.',
+    description: 'O ticket será apagado (o administrador ainda pode restaurá-lo por 30 dias) e o solicitante será suspenso quando possível.',
     confirm: 'Marcar como spam',
     done: 'Ticket tratado como spam',
   },
   delete: {
     title: 'Apagar ticket',
-    description: localHint('deleteTicket', 'O ticket some só neste navegador: o backend não apaga tickets de verdade.') ?? 'O ticket será apagado. Essa ação não pode ser desfeita.',
+    description:
+      'O ticket sai de todas as listas, da busca e dos relatórios para todos. As mensagens e o histórico são guardados e só um administrador pode restaurá-lo, em até 30 dias. Não é possível apagar ticket com horas de manutenção lançadas.',
     confirm: 'Apagar',
     done: 'Ticket apagado',
   },
@@ -82,6 +83,7 @@ function closeTicketTab(ticketId: number): void {
 export function ConversationHeader({ ticket, filter, onFilterChange, showEvents, onToggleEvents, compact, onToggleCompact }: ConversationHeaderProps) {
   const navigate = useNavigate();
   const canWriteMacros = useCan(MACRO_WRITE);
+  const canDelete = useCan(SETTINGS_MANAGE);
   const [danger, setDanger] = useState<Danger | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState('');
@@ -141,7 +143,7 @@ export function ConversationHeader({ ticket, filter, onFilterChange, showEvents,
         }
         const ok = await useTickets.getState().deleteTickets([ticket.id]);
         if (ok) {
-          toast.success(localSaved(DANGER_COPY.spam.done, 'deleteTicket'));
+          toast.success(DANGER_COPY.spam.done);
           closeTicketTab(ticket.id);
         }
       }
@@ -209,24 +211,17 @@ export function ConversationHeader({ ticket, filter, onFilterChange, showEvents,
         tone: 'danger',
         onSelect: () => setDanger('suspend'),
       },
-      {
-        id: 'spam',
-        label: 'Marcar como spam',
-        icon: <Ban />,
-        tone: 'danger',
-        onSelect: () => setDanger('spam'),
-      },
-      {
-        id: 'delete',
-        label: 'Apagar',
-        icon: <Trash2 />,
-        tone: 'danger',
-        onSelect: () => setDanger('delete'),
-      },
+      // Apagar (e spam, que também apaga) é do administrador: o servidor recusa os demais com 403.
+      ...(canDelete
+        ? [
+            { id: 'spam', label: 'Marcar como spam', icon: <Ban />, tone: 'danger' as const, onSelect: () => setDanger('spam') },
+            { id: 'delete', label: 'Apagar', icon: <Trash2 />, tone: 'danger' as const, onSelect: () => setDanger('delete') },
+          ]
+        : []),
     ],
     // ticket identity is enough; handlers close over current ticket
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ticket.id, ticket.requesterId, ticket.subject, ticket.comments, ticket.tags, ticket.priority, ticket.statusId, canWriteMacros],
+    [ticket.id, ticket.requesterId, ticket.subject, ticket.comments, ticket.tags, ticket.priority, ticket.statusId, canWriteMacros, canDelete],
   );
 
   const copy = danger ? DANGER_COPY[danger] : null;

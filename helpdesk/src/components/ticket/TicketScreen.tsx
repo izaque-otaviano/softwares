@@ -1,11 +1,14 @@
 import { useEffect, type KeyboardEvent } from 'react';
 import { Banner } from '@/components/ui';
+import { SETTINGS_MANAGE, useCan } from '@/lib/permissions';
+import { absoluteTime } from '@/lib/time';
+import { useTickets } from '@/store/useTickets';
 import { useIsNarrow } from '@/lib/useMediaQuery';
 import { BottomBar } from './BottomBar';
 import { CloseResolutionModal } from './CloseResolutionModal';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
-import { isNewKey, useFormEntry, useFormStore } from './formStore';
+import { isNewKey, ticketIdFromKey, useFormEntry, useFormStore } from './formStore';
 import { useRightPanel } from './panels/panelState';
 import { PropertiesPanel } from './PropertiesPanel';
 import { TicketRightRail } from './RightRail';
@@ -35,6 +38,28 @@ function SubjectField({ ticketKey }: { ticketKey: string }) {
 }
 
 /**
+ * Ticket apagado (exclusão lógica): só o administrador chega aqui (para os demais o servidor responde 404). Mostra quando
+ * e por quem foi apagado e oferece restaurar (até 30 dias depois); enquanto estiver apagado o ticket é só leitura.
+ */
+function DeletedBanner({ ticketKey }: { ticketKey: string }) {
+  const id = ticketIdFromKey(ticketKey);
+  const ticket = useTickets((s) => s.tickets.find((t) => t.id === id));
+  const canRestore = useCan(SETTINGS_MANAGE);
+  if (!ticket?.deletedAt) return null;
+  return (
+    <Banner
+      tone="warning"
+      title={`Apagado em ${absoluteTime(ticket.deletedAt)}${ticket.deletedByName ? ` por ${ticket.deletedByName}` : ''}`}
+      className="m-3 shrink-0"
+      onRetry={canRestore ? () => void useTickets.getState().restoreTicket(ticket.id) : undefined}
+      retryLabel="Restaurar"
+    >
+      Este ticket não aparece em listas, buscas nem relatórios e está somente para leitura. {canRestore ? 'Restaure-o para voltar a trabalhar nele (só é possível em até 30 dias depois de apagar).' : ''}
+    </Banner>
+  );
+}
+
+/**
  * Tela do ticket (existente ou novo): SubTabs + [PropertiesPanel | centro | TicketRightRail] + BottomBar.
  * Altura total, sem rolagem de página. Ctrl/Cmd+Enter envia.
  */
@@ -59,6 +84,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
     }
   };
 
+  const deleted = useTickets((s) => (isNew ? false : Boolean(s.tickets.find((t) => t.id === ticketIdFromKey(ticketKey))?.deletedAt)));
   if (!entry) return null;
   const commentError = entry.errors.comment;
 
@@ -68,6 +94,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
       <div className="flex min-h-0 flex-1">
         <PropertiesPanel ticketKey={ticketKey} />
         <section aria-label={isNew ? 'Novo ticket' : 'Conversa'} className="flex min-w-0 flex-1 flex-col">
+          <DeletedBanner ticketKey={ticketKey} />
           {entry.apiError ? (
             <Banner tone="error" title="Não foi possível enviar" className="m-3 shrink-0" onRetry={() => void useFormStore.getState().retry(ticketKey)}>
               {entry.apiError} O que você digitou foi mantido.
@@ -87,7 +114,7 @@ export function TicketScreen({ ticketKey }: { ticketKey: string }) {
           ) : (
             <Conversation ticketKey={ticketKey} />
           )}
-          <Composer ticketKey={ticketKey} />
+          {deleted ? null : <Composer ticketKey={ticketKey} />}
         </section>
         <TicketRightRail ticketKey={ticketKey} />
       </div>

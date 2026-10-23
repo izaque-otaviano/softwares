@@ -61,11 +61,33 @@ describe('planTicketUpdate', () => {
       currentStageId: '2',
       macroIds: ['5'],
     });
-    expect(plan.steps.map((s) => s.kind)).toEqual(['macro', 'props', 'follow', 'reply']);
-    expect(plan.steps[1]!.body).toEqual({ priority: 'high', team: 2, assignee: 3, tags: [1] });
-    expect(plan.steps[3]!.body).toMatchObject({ is_public: true, new_status: 'open', stage: 9 }); // status personalizado no próprio reply
-    expect(plan.local).toMatchObject({ subject: 'novo', type: 'task', followerIds: ['7'] });
-    expect(plan.localKeys).toEqual(['subject', 'type', 'followerIds']);
+    expect(plan.steps.map((s) => s.kind)).toEqual(['macro', 'props', 'follow', 'follower_add', 'reply']);
+    expect(plan.steps[1]!.body).toEqual({ priority: 'high', team: 2, assignee: 3, tags: [1], type: 'task' });
+    expect(plan.steps[3]!.body).toEqual({ user_id: 7 }); // outro seguidor: followers/, não mais local
+    expect(plan.steps[4]!.body).toMatchObject({ is_public: true, new_status: 'open', stage: 9 }); // status personalizado no próprio reply
+    expect(plan.local).toEqual({ subject: 'novo' });
+    expect(plan.localKeys).toEqual(['subject']);
+  });
+  it('tipo: trocar manda type; limpar manda type:null; sem mexer não manda', () => {
+    const t = (patch: object) => planTicketUpdate({ ...base, patch, current: open, currentStageId: '2' }).steps[0]?.body;
+    expect(t({ type: 'incident' })).toEqual({ type: 'incident' });
+    expect(t({ type: undefined })).toEqual({ type: null });
+    expect(t({ priority: 'low' })).not.toHaveProperty('type');
+  });
+  it('CC: entra o e-mail novo, sai o tirado (por id do registro), sem repetir o que já está', () => {
+    const plan = planTicketUpdate({ ...base, patch: { ccIds: ['A@x.com', 'novo@x.com'] }, current: { ...open, ccs: [{ id: '4', email: 'a@x.com' }, { id: '5', email: 'velho@x.com' }] }, currentStageId: '2' });
+    expect(plan.steps.map((s) => [s.kind, s.body])).toEqual([
+      ['cc_add', { email: 'novo@x.com' }],
+      ['cc_remove', { cc_id: 5 }],
+    ]);
+  });
+  it('seguidores de terceiros: entra e sai por user_id; o próprio usuário segue por follow/unfollow', () => {
+    const plan = planTicketUpdate({ ...base, patch: { followerIds: ['7'] }, current: { ...open, followerIds: ['1', '8'] }, currentStageId: '2' });
+    expect(plan.steps.map((s) => [s.kind, s.body])).toEqual([
+      ['unfollow', undefined],
+      ['follower_add', { user_id: 7 }],
+      ['follower_remove', { user_id: 8 }],
+    ]);
   });
   it('desatribuir manda assignee:null; prioridade vazia não é enviada', () => {
     const plan = planTicketUpdate({ ...base, patch: { assigneeId: undefined, priority: undefined }, current: open });
@@ -160,9 +182,13 @@ describe('planNewTicket: criar em 1 chamada', () => {
     expect(plan.body).not.toHaveProperty('stage');
     expect(plan.followUp).toEqual({ statusId: '12' });
   });
-  it('seguidores, tipo, CC e campos personalizados ficam para depois/local', () => {
-    const plan = planNewTicket({ ...form, followerIds: ['1'], type: 'task', ccIds: ['a'], customFields: { x: '1' } }, ctx);
-    expect(plan.followUp).toEqual({ followerIds: ['1'], type: 'task', ccIds: ['a'], customFields: { x: '1' } });
+  it('tipo vai no corpo do POST; seguidores, CC e campos personalizados ficam para depois', () => {
+    const plan = planNewTicket({ ...form, followerIds: ['1'], type: 'task', ccIds: ['a@x.com'], customFields: { x: '1' } }, ctx);
+    expect(plan.body).toMatchObject({ type: 'task' });
+    expect(plan.followUp).toEqual({ followerIds: ['1'], ccIds: ['a@x.com'], customFields: { x: '1' } });
+  });
+  it('sem tipo, o POST não manda o campo', () => {
+    expect(planNewTicket(form, ctx).body).not.toHaveProperty('type');
   });
   it('etiqueta que não existe no backend é ignorada no corpo (a execução cria antes)', () => {
     expect(planNewTicket({ ...form, tags: ['nova'] }, ctx).body).not.toHaveProperty('tags');

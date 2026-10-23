@@ -1,9 +1,11 @@
-import { localHint } from '@/api/capabilities';
+import { isRealCapability } from '@/api/capabilities';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDirectory } from '@/components/lists/useDirectory';
-import { Skeleton } from '@/components/ui';
+import { Banner, Button, Skeleton } from '@/components/ui';
+import { relativeTime } from '@/lib/time';
 import { useNow } from '@/lib/useNow';
+import { useAiSummary } from '@/store/useAiSummary';
 import { useTickets } from '@/store/useTickets';
 import type { AuditEvent, Comment, Ticket } from '@/types/domain';
 import { ConversationHeader, type ConversationFilter } from './ConversationHeader';
@@ -25,15 +27,49 @@ export function buildTimeline(ticket: Ticket, filter: ConversationFilter, showEv
   return items.sort((a, b) => a.at - b.at);
 }
 
-function mockSummary(ticket: Ticket, requester?: string): string {
-  const f = ticket.customFields;
-  const parts = [`${requester ?? 'O cliente'} entrou em contato${ticket.channel === 'email' ? ' por e-mail' : ' pelo formulário web'}`];
-  if (f.resumo) parts[0] += `: ${f.resumo.replace(/[.…]+$/, '')}.`;
-  else parts[0] += '.';
-  if (f.topico) parts.push(`Tópico identificado: ${f.topico}.`);
-  if (f.sentimento) parts.push(`Sentimento ${f.sentimento.toLowerCase()}.`);
-  parts.push(`${ticket.comments.length} ${ticket.comments.length === 1 ? 'mensagem' : 'mensagens'} na conversa.`);
-  return parts.join(' ');
+/**
+ * Resumo do ticket por IA. Modo real: `POST /tickets/{id}/ai-summary/` (o servidor mascara dados pessoais antes de enviar
+ * ao provedor). Modo mock: resumo simulado. O resultado fica só em memória (`useAiSummary`), nunca em armazenamento.
+ */
+function AiSummaryPanel({ ticketId }: { ticketId: number }) {
+  const entry = useAiSummary((s) => s.byTicket[ticketId]);
+  const real = isRealCapability('aiSummary');
+  const loading = entry?.status === 'loading';
+  const summary = entry?.summary;
+  const notConfigured = entry?.status === 'error' && entry.code === 'ai_not_configured';
+  return (
+    <section aria-label="Resumo do ticket" aria-busy={loading || undefined} className="mb-4 rounded border border-line bg-surface-1 p-3 text-sm text-fg">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="inline-flex items-center gap-1 text-xs font-semibold text-ai">
+          <Sparkles aria-hidden className="h-3.5 w-3.5" />
+          Resumo gerado por IA
+        </p>
+        <Button size="md" variant="outline" loading={loading} onClick={() => void useAiSummary.getState().generate(ticketId)} className="ml-auto">
+          {summary ? 'Gerar de novo' : 'Gerar resumo'}
+        </Button>
+      </div>
+      {loading ? <p className="mt-2 text-fg-muted">Gerando o resumo…</p> : null}
+      {summary ? (
+        <div className="mt-2">
+          <p className="whitespace-pre-wrap break-words" data-testid="ai-summary-text">
+            {summary.summary}
+          </p>
+          <p className="mt-1 text-xs text-fg-muted">
+            Gerado {relativeTime(summary.generatedAt)}
+            {summary.truncated ? ' · Resumo truncado: só as mensagens mais recentes foram consideradas.' : ''}
+          </p>
+        </div>
+      ) : null}
+      {entry?.status === 'error' ? (
+        <Banner tone={notConfigured ? 'info' : 'error'} className="mt-2">
+          {entry.error}
+        </Banner>
+      ) : null}
+      <p className="mt-2 text-xs text-fg-muted">
+        {real ? 'Dados pessoais são mascarados antes do envio. O resumo não é salvo: fica só nesta tela.' : 'Resumo simulado (modo de demonstração): nada é enviado a um provedor de IA.'}
+      </p>
+    </section>
+  );
 }
 
 function ConversationSkeleton() {
@@ -71,7 +107,6 @@ export function Conversation({ ticketKey }: { ticketKey: string }) {
   }, [commentCount, ticket?.id, Boolean(ticket)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ticket) return <ConversationSkeleton />;
-  const requester = users.get(ticket.requesterId);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="conversation">
@@ -94,15 +129,7 @@ export function Conversation({ ticketKey }: { ticketKey: string }) {
           {summaryOpen ? <ChevronDown aria-hidden className="h-4 w-4" /> : <ChevronRight aria-hidden className="h-4 w-4" />}
           {summaryOpen ? 'Ocultar resumo do ticket' : 'Exibir resumo do ticket'}
         </button>
-        {summaryOpen ? (
-          <section aria-label="Resumo do ticket" className="mb-4 rounded border border-line bg-surface-1 p-3 text-sm text-fg">
-            <p className="mb-1 inline-flex items-center gap-1 text-xs font-semibold text-ai">
-              <Sparkles aria-hidden className="h-3.5 w-3.5" />
-              Resumo gerado por IA{localHint('aiSummary') ? ' (somente neste navegador)' : ''}
-            </p>
-            <p>{mockSummary(ticket, requester?.name)}</p>
-          </section>
-        ) : null}
+        {summaryOpen ? <AiSummaryPanel ticketId={ticket.id} /> : null}
         {items.length === 0 ? <p className="py-6 text-center text-sm text-fg-muted">Nenhuma mensagem neste filtro.</p> : null}
         <div className="space-y-4">
           {items.map((it) =>

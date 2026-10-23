@@ -79,7 +79,7 @@ def collect(dsr) -> dict:
         )
 
     tickets = (
-        Ticket.objects.filter(requester=user)
+        Ticket.all_objects.filter(requester=user)
         .select_related("team", "company")
         .prefetch_related("messages__author")
         .order_by("created_at")

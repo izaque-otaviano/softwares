@@ -25,7 +25,7 @@ export function mergeCounts(views: View[], tickets: Ticket[], c: { meId: string;
   const out: ViewCounts = {};
   const local = countViews(
     views.filter((v) => !v.query),
-    tickets,
+    tickets.filter((t) => !t.deletedAt), // ticket apagado (aberto por um admin) não entra em contagem nenhuma
     c,
   );
   for (const v of views) out[v.countKey] = server[v.countKey] ?? (v.query ? null : (local[v.countKey] ?? null));
@@ -37,7 +37,9 @@ export function keepDetails(prev: Ticket[], next: Ticket[]): Ticket[] {
   const byId = new Map(prev.filter((t) => t.detailed).map((t) => [t.id, t]));
   return next.map((t) => {
     const d = byId.get(t.id);
-    return d && t.detailed === false ? { ...t, comments: d.comments, events: d.events, followerIds: d.followerIds, requesterId: t.requesterId || d.requesterId, detailed: true } : t;
+    return d && t.detailed === false
+      ? { ...t, comments: d.comments, events: d.events, followerIds: d.followerIds, ccIds: d.ccIds, ccList: d.ccList, followerList: d.followerList, deletedAt: d.deletedAt, deletedByName: d.deletedByName, requesterId: t.requesterId || d.requesterId, detailed: true }
+      : t;
   });
 }
 
@@ -62,6 +64,8 @@ interface TicketsState {
   viewIds: Record<string, number[]>;
   /** Só modo real: paginação por visão do servidor (total no servidor, quantos já vieram, se há mais). */
   viewMeta: Record<string, { total: number; loaded: number; hasMore: boolean }>;
+  /** Só modo real: filtro de tipo (`?type=`) aplicado NO SERVIDOR à lista de cada visão (ausente = sem filtro). */
+  viewType: Record<string, string | undefined>;
 
   load: () => Promise<void>;
   /**
@@ -70,7 +74,7 @@ interface TicketsState {
    */
   loadRelated: (filter: { requesterId?: string; orgId?: string }) => Promise<void>;
   /** Só modo real: carrega do servidor a lista de uma visão com `query` (visões do sistema extras e pessoais). */
-  loadView: (viewId: string, opts?: { limit?: number }) => Promise<void>;
+  loadView: (viewId: string, opts?: { limit?: number; type?: string }) => Promise<void>;
   loadMoreView: (viewId: string) => Promise<void>;
   reloadViews: () => Promise<void>;
   createPersonalView: (name: string, filters?: Record<string, string>) => Promise<View | null>;
@@ -107,7 +111,15 @@ interface TicketsState {
   /** Confirma o lote com as janelas aprovadas: devolve o que fechou e as falhas por ticket (o diálogo as mostra). */
   submitBulkClose: (resolutions: api.BulkResolution[]) => Promise<{ updated: number; failed: { id: number; message: string }[] }>;
   setPriority: (ids: number[], priority: Priority) => Promise<boolean>;
+  /** Apaga no servidor (só admin). `true` só se TODOS foram apagados; quem falha continua na lista e o motivo vai em toast. */
   deleteTickets: (ids: number[]) => Promise<boolean>;
+  /** Restaura um ticket apagado (admin). Devolve o ticket restaurado, ou `null` se falhou (o motivo vai em toast). */
+  restoreTicket: (id: number) => Promise<Ticket | null>;
+  /** CC de terceiros e seguidores: gravam na hora e devolvem o ticket atualizado; a falha sobe (a tela mostra no campo). */
+  addCc: (id: number, input: { email: string; name?: string }) => Promise<Ticket>;
+  removeCc: (id: number, ccId: string) => Promise<Ticket>;
+  addFollower: (id: number, userId: string) => Promise<Ticket>;
+  removeFollower: (id: number, userId: string) => Promise<Ticket>;
   mergeTickets: (targetId: number, sourceIds: number[]) => Promise<boolean>;
 }
 
@@ -115,7 +127,7 @@ function ctx(statuses: TicketStatus[]) {
   return { meId: getMeId(), now: new Date(), statuses };
 }
 
-const FIELD_LABEL: Record<string, string> = { subject: 'assunto', requesterId: 'solicitante', type: 'tipo', ccIds: 'CC', customFields: 'campos personalizados', followerIds: 'seguidores' };
+const FIELD_LABEL: Record<string, string> = { subject: 'assunto', requesterId: 'solicitante', customFields: 'campos personalizados' };
 
 /** Modo real: campos da edição que o backend não tem avisam "somente neste navegador" (e só eles). */
 export function localFieldsNote(t: Ticket): string {
@@ -193,6 +205,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
     error: null,
     viewIds: {},
     viewMeta: {},
+    viewType: {},
     bulkClose: null,
 
     load: async () => {
@@ -211,6 +224,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
           counts: mergeCounts(views, tickets, ctx(statuses), counts),
           viewIds: {},
           viewMeta: {},
+          viewType: {},
           loaded: true,
           loading: false,
         });
@@ -235,7 +249,9 @@ export const useTickets = create<TicketsState>()((set, get) => {
     },
 
     applyServerTicket: (ticket) => {
-      upsert([ticket]);
+      // Apagado por outra pessoa (o administrador ainda recebe o detalhe com `deletedAt`): sai da lista em vez de voltar.
+      if (ticket.deletedAt) recompute(get().tickets.filter((t) => t.id !== ticket.id));
+      else upsert([ticket]);
       afterWrite();
     },
 
@@ -263,11 +279,12 @@ export const useTickets = create<TicketsState>()((set, get) => {
       if (viewLoads.has(viewId)) return;
       viewLoads.add(viewId);
       try {
-        const list = await api.runView(viewId, { offset: 0, limit: opts?.limit });
+        const list = await api.runView(viewId, { offset: 0, limit: opts?.limit, type: opts?.type });
         upsert(list.map((t) => get().tickets.find((x) => x.id === t.id && x.detailed && !t.detailed) ?? t));
         const meta = api.viewPageMeta[viewId];
         set((s) => ({
           viewIds: { ...s.viewIds, [viewId]: list.map((t) => t.id) },
+          viewType: { ...s.viewType, [viewId]: opts?.type },
           viewMeta: {
             ...s.viewMeta,
             [viewId]: meta
@@ -276,7 +293,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
           },
         }));
       } catch (e) {
-        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: [] }, viewMeta: { ...s.viewMeta, [viewId]: { total: 0, loaded: 0, hasMore: false } } }));
+        set((s) => ({ viewIds: { ...s.viewIds, [viewId]: [] }, viewType: { ...s.viewType, [viewId]: opts?.type }, viewMeta: { ...s.viewMeta, [viewId]: { total: 0, loaded: 0, hasMore: false } } }));
         toast.error(e instanceof Error ? e.message : 'Não foi possível carregar a visualização.');
       } finally {
         viewLoads.delete(viewId);
@@ -290,7 +307,7 @@ export const useTickets = create<TicketsState>()((set, get) => {
       viewLoads.add(viewId);
       try {
         const offset = get().viewIds[viewId]?.length ?? 0;
-        const list = await api.runView(viewId, { offset });
+        const list = await api.runView(viewId, { offset, type: get().viewType[viewId] });
         upsert(list.map((t) => get().tickets.find((x) => x.id === t.id && x.detailed && !t.detailed) ?? t));
         const next = api.viewPageMeta[viewId];
         set((s) => {
@@ -389,9 +406,9 @@ export const useTickets = create<TicketsState>()((set, get) => {
       if (view?.query) {
         const ids = get().viewIds[viewId];
         const byId = new Map(tickets.map((t) => [t.id, t]));
-        return (ids ?? []).map((id) => byId.get(id)).filter((t): t is Ticket => Boolean(t));
+        return (ids ?? []).map((id) => byId.get(id)).filter((t): t is Ticket => Boolean(t) && !t!.deletedAt);
       }
-      return view ? runViewPure(view, tickets, ctx(statuses)) : [];
+      return view ? runViewPure(view, tickets.filter((t) => !t.deletedAt), ctx(statuses)) : [];
     },
 
     updateTicket: async (id, patch, comment, opts) => {
@@ -459,15 +476,67 @@ export const useTickets = create<TicketsState>()((set, get) => {
     setPriority: (ids, priority) => bulk(ids, { priority }, `Prioridade alterada em ${ids.length} ${ids.length === 1 ? 'ticket' : 'tickets'}`),
 
     deleteTickets: async (ids) => {
+      let result: api.DeleteResult;
       try {
-        await api.deleteTickets(ids);
-        recompute(get().tickets.filter((t) => !ids.includes(t.id)));
-        toast.success(localSaved(ids.length === 1 ? `Ticket #${ids[0]} apagado` : `${ids.length} tickets apagados`, 'deleteTicket'));
-        return true;
-      } catch {
-        toast.error('Não foi possível apagar os tickets.', { action: { label: 'Tentar novamente', onClick: () => void get().deleteTickets(ids) } });
+        result = await api.deleteTickets(ids);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível apagar os tickets.', { action: { label: 'Tentar novamente', onClick: () => void get().deleteTickets(ids) } });
         return false;
       }
+      // Só sai da tela o que o servidor confirmou; quem falhou continua na lista e na store.
+      if (result.deleted.length > 0) {
+        const gone = new Set(result.deleted);
+        recompute(get().tickets.filter((t) => !gone.has(t.id)));
+        set((s) => ({ viewIds: Object.fromEntries(Object.entries(s.viewIds).map(([k, v]) => [k, v.filter((id) => !gone.has(id))])) }));
+        afterWrite();
+      }
+      if (result.failed.length === 0) {
+        toast.success(result.deleted.length === 1 ? `Ticket #${result.deleted[0]} apagado` : `${result.deleted.length} tickets apagados`);
+        return true;
+      }
+      const failedIds = result.failed.map((f) => f.id);
+      const first = result.failed[0]!;
+      toast.error(
+        result.deleted.length > 0
+          ? `${result.deleted.length} de ${ids.length} tickets apagados. Não apagados: ${failedIds.map((id) => `#${id}`).join(', ')}. ${first.message}`
+          : first.message,
+        { action: { label: 'Tentar novamente', onClick: () => void get().deleteTickets(failedIds) } },
+      );
+      return false;
+    },
+
+    restoreTicket: async (id) => {
+      try {
+        const restored = await api.restoreTicket(id);
+        upsert([restored]);
+        afterWrite();
+        toast.success(`Ticket #${id} restaurado`);
+        return restored;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Não foi possível restaurar o ticket.');
+        return null;
+      }
+    },
+
+    addCc: async (id, input) => {
+      const t = await api.addTicketCc(id, input);
+      upsert([t]);
+      return t;
+    },
+    removeCc: async (id, ccId) => {
+      const t = await api.removeTicketCc(id, ccId);
+      upsert([t]);
+      return t;
+    },
+    addFollower: async (id, userId) => {
+      const t = await api.addTicketFollower(id, userId);
+      upsert([t]);
+      return t;
+    },
+    removeFollower: async (id, userId) => {
+      const t = await api.removeTicketFollower(id, userId);
+      upsert([t]);
+      return t;
     },
 
     mergeTickets: async (targetId, sourceIds) => {
@@ -521,7 +590,7 @@ function reloadOpenViews(): void {
     const { viewIds, viewMeta } = useTickets.getState();
     for (const viewId of Object.keys(viewIds)) {
       const keep = Math.min(500, Math.max(100, viewMeta[viewId]?.loaded ?? viewIds[viewId]?.length ?? 0));
-      void useTickets.getState().loadView(viewId, { limit: keep });
+      void useTickets.getState().loadView(viewId, { limit: keep, type: useTickets.getState().viewType[viewId] });
     }
   }, 800);
 }

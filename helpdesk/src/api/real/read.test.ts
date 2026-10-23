@@ -14,6 +14,7 @@ import tickets from './__fixtures__/tickets.json';
 import usersClient from './__fixtures__/users-client.json';
 import usersInternal from './__fixtures__/users-internal.json';
 import tags from './__fixtures__/tags.json';
+import licensesUnlimited from './__fixtures__/licenses-unlimited.json';
 import { ApiError } from '../errors';
 import * as realMacros from './macros';
 import * as realMeta from './meta';
@@ -68,6 +69,7 @@ function route(method: string, path: string, q: URLSearchParams): { status?: num
     return { body: { ...item, messages: [], events: [], watchers: [], requester: { id: item.requester_id ?? 5, name: item.requester_display, email: 'x@y.z' } } };
   }
   if (p === '/tickets/resumo/') return { body: summary };
+  if (p === '/settings/licenses/') return { body: licensesUnlimited };
   if (p === '/ticket-views/') return { body: opts.personalViews ?? [] };
   if (p === '/settings/statuses/') return { body: statuses };
   if (p === '/settings/tags/') return { body: tags };
@@ -281,7 +283,7 @@ describe('real: pessoas, empresas, grupos, status, macros, membros', () => {
     expect(members.find((m) => m.name === 'Sofia Supervisora')).toMatchObject({ roleLabel: 'Supervisor', groups: ['Suporte', 'Financeiro'] });
     expect((await realMembers.listRoles()).find((r) => r.id === 'agent')?.members).toBe(2);
     expect((await realMembers.listGroupRows())[0]).toMatchObject({ name: 'Suporte', members: 2 });
-    expect(await realMembers.getLicenses()).toEqual({ used: 3, total: 5 });
+    expect(await realMembers.getLicenses()).toEqual({ used: 6, total: null, available: null, unlimited: true });
   });
 });
 
@@ -311,9 +313,7 @@ describe('real/search', () => {
 });
 
 describe('real: o que o backend não tem continua LOCAL e nunca chama o backend', () => {
-  it('apagar e fundir tickets rodam só no navegador', async () => {
-    await realTickets.deleteTickets([1]);
-    expect((await realTickets.listTickets()).map((t) => t.id)).not.toContain(1);
+  it('fundir tickets roda só no navegador', async () => {
     const res = await realTickets.mergeTickets(2, [3]);
     expect(res.sources[0]!.tags).toContain('mesclado');
     expect(calls.every((c) => c.method === 'GET')).toBe(true);

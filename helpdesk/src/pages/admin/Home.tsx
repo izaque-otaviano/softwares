@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { localHint } from '@/api/capabilities';
 import { fieldsApi, macrosApi, membersApi, triggersApi } from '@/api';
 import { AdminBody, ProgressBar } from '@/components/admin/AdminPage';
 import { useAdminName } from '@/components/admin/AdminTopBar';
@@ -81,8 +80,12 @@ export default function AdminHome() {
           id: 'agents',
           label: 'Agentes',
           value: data.licenses.used,
-          max: Math.max(data.licenses.total, data.licenses.used),
-          hint: localHint('licenses', 'Agentes ativos no diretório; o teto é local (o backend não expõe cotas de licença).'),
+          // Licenças do servidor (`/settings/licenses/`); `total` nulo = sem limite.
+          max: data.licenses.total === null ? null : Math.max(data.licenses.total, data.licenses.used),
+          hint:
+            data.licenses.total === null
+              ? 'Sem limite de licenças de agente nesta conta.'
+              : `${data.licenses.available === 1 ? '1 licença livre' : `${data.licenses.available} licenças livres`}. Convites pendentes ocupam licença.`,
         },
         {
           id: 'fields',
@@ -134,10 +137,8 @@ export default function AdminHome() {
               : usage.map((u) => (
                   <li key={u.id} className="rounded border border-line p-4">
                     <p className="text-xs font-semibold text-fg-muted">{u.label}</p>
-                    <p className="mb-3 mt-1 text-xl">
-                      {u.value} de {u.max}
-                    </p>
-                    <ProgressBar value={u.value} max={u.max} label={`${u.label}: ${u.value} de ${u.max}`} />
+                    <p className={u.max === null ? 'mt-1 text-xl' : 'mb-3 mt-1 text-xl'}>{u.max === null ? `${u.value} (sem limite)` : `${u.value} de ${u.max}`}</p>
+                    {u.max === null ? null : <ProgressBar value={u.value} max={u.max} label={`${u.label}: ${u.value} de ${u.max}`} />}
                     {u.hint ? <p className="mt-2 text-xs text-fg-muted">{u.hint}</p> : null}
                   </li>
                 ))}

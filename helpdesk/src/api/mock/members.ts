@@ -7,8 +7,6 @@ export type StaffRole = 'agent' | 'admin';
 
 export const ROLE_LABEL: Record<StaffRole, string> = { agent: 'Agente', admin: 'Administrador' };
 
-/** Licenças de agente contratadas (protótipo). */
-export const AGENT_SEATS = 5;
 
 export interface Member {
   id: string;
@@ -26,7 +24,10 @@ export interface Member {
 
 export interface Licenses {
   used: number;
-  total: number;
+  /** `null` = sem limite. */
+  total: number | null;
+  available: number | null;
+  unlimited: boolean;
 }
 
 export interface RoleRow {
@@ -65,11 +66,38 @@ export function listMembers(): Promise<Member[]> {
   return simulate(() => db.users.filter(isStaff).map(toMember));
 }
 
+// Licenças do protótipo: o total (`db.seatTotal`, 5 de início) o administrador muda na tela de Membros; `null` = sem
+// limite. Membros criados na sessão (convite pendente) também ocupam vaga, como no backend.
+const seatsUsed = (): number => db.users.filter((u) => u.role === 'agent' && (u.lastSeenAt || db.createdSeats.includes(u.id)) && !u.suspended).length;
+
+const licensesNow = (): Licenses => {
+  const used = seatsUsed();
+  return db.seatTotal === null ? { used, total: null, available: null, unlimited: true } : { used, total: db.seatTotal, available: Math.max(0, db.seatTotal - used), unlimited: false };
+};
+
+/** Mesma regra do backend: sem vaga livre, criar/reativar um agente é recusado com 409 `seat_limit_reached`. */
+function assertSeatFree(): void {
+  const l = licensesNow();
+  if (!l.unlimited && l.available! <= 0) {
+    throw new ApiError(`O limite de licenças de agente foi atingido (${l.used} de ${l.total}). Aumente o total de licenças ou desative um agente.`, { status: 409, code: 'seat_limit_reached' });
+  }
+}
+
 export function getLicenses(): Promise<Licenses> {
-  return simulate(() => ({
-    used: db.users.filter((u) => u.role === 'agent' && u.lastSeenAt && !u.suspended).length,
-    total: AGENT_SEATS,
-  }));
+  return simulate(() => licensesNow());
+}
+
+/** Só administrador. `null` = sem limite; abaixo do uso é recusado (400 `seat_total_below_used`). */
+export function setLicenseTotal(total: number | null): Promise<Licenses> {
+  return simulate(() => {
+    const used = seatsUsed();
+    if (total !== null && (!Number.isInteger(total) || total < 0)) throw new ApiError('Informe um número inteiro maior ou igual a zero.', { status: 400, fieldErrors: { total: ['Informe um número inteiro maior ou igual a zero.'] } });
+    if (total !== null && total < used) {
+      throw new ApiError(`O total não pode ser menor que as licenças em uso (${used}). Desative agentes antes de reduzir.`, { status: 400, code: 'seat_total_below_used', fieldErrors: { total: [`O total não pode ser menor que as licenças em uso (${used}).`] } });
+    }
+    db.seatTotal = total;
+    return licensesNow();
+  });
 }
 
 export interface NewMember {
@@ -83,6 +111,7 @@ export function createMember(input: NewMember): Promise<Member> {
   return simulate(() => {
     const email = input.email.trim().toLowerCase();
     if (db.users.some((u) => u.email.toLowerCase() === email)) throw new ApiError('Já existe um usuário com este e-mail.');
+    assertSeatFree();
     const now = new Date().toISOString();
     const user: User = {
       id: `m${Date.now().toString(36)}${db.users.length}`,
@@ -96,6 +125,7 @@ export function createMember(input: NewMember): Promise<Member> {
       updatedAt: now,
     };
     db.users.push(user);
+    db.createdSeats.push(user.id);
     if (input.groupId) {
       db.groups = db.groups.map((g) => (g.id === input.groupId ? { ...g, agentIds: [...g.agentIds, user.id] } : g));
     }
@@ -108,6 +138,7 @@ export function setMemberSuspended(id: string, suspended: boolean): Promise<Memb
     const i = db.users.findIndex((u) => u.id === id);
     const u = db.users[i];
     if (!u || !isStaff(u)) throw new ApiError('Membro não encontrado.');
+    if (!suspended && u.suspended && u.role === 'agent') assertSeatFree(); // reativar ocupa um assento
     db.users[i] = { ...u, suspended, updatedAt: new Date().toISOString() };
     return toMember(db.users[i] as User & { role: StaffRole });
   });

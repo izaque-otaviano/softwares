@@ -374,6 +374,11 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "TicketStatusEnum": "apps.tickets.models.TicketStatus.choices",
         "TicketSourceEnum": "apps.tickets.models.TicketSource.choices",
+        "TicketTypeEnum": "apps.tickets.models.TicketType.choices",
+        # `type` também existe no alvo de menção (user | team). Com dois
+        # conjuntos de mesmo campo o gerador renomeava o antigo `TypeEnum`
+        # para um hash; fixar o nome mantém o contrato do front.
+        "TypeEnum": [("user", "user"), ("team", "team")],
         "UserKindEnum": "apps.accounts.models.UserKind.choices",
         "LimitPeriodEnum": "apps.customers.models.LimitPeriod.choices",
         # RBAC: o mesmo conjunto aparece em `User.internal_role` e em
@@ -679,3 +684,17 @@ if SENTRY_DSN:
             max_request_body_size="never",
             traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
         )
+
+
+# --- Licenças de agente (assentos) ---
+# Padrão do ambiente para o total de assentos; o valor gravado em
+# Configurações > Licenças (SeatLicense) tem precedência. Vazio = sem limite.
+AGENT_SEAT_LIMIT = env.int("AGENT_SEAT_LIMIT", default=None)
+
+# --- Resumo de ticket por IA (apps/tickets/ai_summary.py) ---
+# Desligado por padrão. A chave SÓ vem do ambiente, nunca do banco nem do código.
+AI_SUMMARY_ENABLED = env.bool("AI_SUMMARY_ENABLED", default=False)
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+AI_SUMMARY_MODEL = env("AI_SUMMARY_MODEL", default="claude-haiku-5-5")
+AI_SUMMARY_TIMEOUT = env.int("AI_SUMMARY_TIMEOUT", default=30)
+AI_SUMMARY_MAX_CHARS = env.int("AI_SUMMARY_MAX_CHARS", default=12000)

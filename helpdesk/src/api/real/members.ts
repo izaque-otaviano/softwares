@@ -1,10 +1,9 @@
-import * as mock from '../mock/members';
 import type { GroupRow, Licenses, Member, NewMember, RoleRow } from '../mock/members';
 import { http } from './http';
-import { mapGroupRows, mapMember, mapRoles, type UserDto } from './mappers';
+import { mapGroupRows, mapLicenses, mapMember, mapRoles, type LicensesDto, type UserDto } from './mappers';
 import { getGroups, getStaff, getStaffDtos } from './refs';
 
-export { ROLE_LABEL, AGENT_SEATS } from '../mock/members';
+export { ROLE_LABEL } from '../mock/members';
 
 /** MEMBROS (Admin > Membros/Funções/Grupos), leitura real: `/settings/users/?kind=internal` + roster de equipes. */
 export async function listMembers(): Promise<Member[]> {
@@ -12,10 +11,17 @@ export async function listMembers(): Promise<Member[]> {
   return dtos.map((d) => mapMember(d, groups));
 }
 
-/** Licenças: o backend não as tem por usuário (`capabilities.licenses = 'local'`): `used` = agentes ativos reais, `total` fixo. */
+/**
+ * Licenças de agente (assentos) do servidor: `GET /settings/licenses/` (qualquer interno). Assento = interno ativo com
+ * papel admin, supervisor ou agent; convite pendente conta. `total` nulo = sem limite.
+ */
 export async function getLicenses(): Promise<Licenses> {
-  const dtos = await getStaffDtos();
-  return { used: dtos.filter((u) => u.internal_role !== 'admin' && u.is_active !== false).length, total: mock.AGENT_SEATS };
+  return mapLicenses(await http.get<LicensesDto>('/settings/licenses/'));
+}
+
+/** Só administrador. `{total:N}` ou `{total:null}` (sem limite); abaixo do uso o servidor recusa (400 `seat_total_below_used`). */
+export async function setLicenseTotal(total: number | null): Promise<Licenses> {
+  return mapLicenses(await http.patch<LicensesDto>('/settings/licenses/', { total }));
 }
 
 export async function listRoles(): Promise<RoleRow[]> {

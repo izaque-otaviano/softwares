@@ -224,6 +224,148 @@ GET /ticket-views/?page=2&limit=2
 
 ---
 
+## Licenças de agente e resumo de ticket por IA
+
+### Licenças (assentos de agente)
+
+**Assento** = usuário **interno, ativo**, com papel `admin`, `supervisor` ou `agent`. Não contam
+cliente, agente leve (`light_agent`), conta inativa/suspensa. Convite pendente conta (a vaga já é
+dele). O total fica no singleton `SeatLicense` (migração `accounts/0015`); se estiver vazio vale o
+padrão do ambiente `AGENT_SEAT_LIMIT`; vazio de novo = **sem limite** (`unlimited: true`).
+
+```http
+GET /settings/licenses/            (qualquer interno)
+200 {"total": 5, "used": 3, "available": 2, "unlimited": false}
+
+PATCH|PUT /settings/licenses/      (só admin)    {"total": 8}      # ou {"total": null} = sem limite
+200 (mesmo formato)   400 {"detail": "...", "code": "seat_total_below_used"}  # total < used
+```
+
+Bloqueio (**409**, `{"detail": "O limite de licenças de agente foi atingido (5 de 5). ...",
+"code": "seat_limit_reached"}`) em: `POST /settings/users/` (agente/supervisor/admin ativo),
+`PATCH /settings/users/{id}/` que **reativa** (`is_active: true`) ou **promove** (cliente ou agente
+leve para agente/supervisor/admin), `POST /settings/teams/{id}/agents/` ao criar agente novo e o
+primeiro login Google de alguém novo (volta ao login com `?erro=licencas`). Editar quem já ocupa
+assento, trocar entre papéis de assento, criar agente leve/cliente/conta já inativa e desativar
+nunca bloqueiam. A checagem roda em transação sobre a linha `SeatLicense` (`SELECT ... FOR UPDATE`),
+então duas criações simultâneas não furam o limite. A alteração do total vai para a auditoria.
+Não cobertos: comandos de management/seed e o import do Movidesk (cria agentes **inativos**; ao
+ativá-los vale o bloqueio).
+
+### Resumo de ticket por IA
+
+```http
+POST /tickets/{id}/ai-summary/     (sem corpo; agente que enxerga o ticket)
+200 {"summary": "...", "generated_at": "2026-10-23T12:00:00Z", "provider": "anthropic", "truncated": false}
+503 {"detail": "O resumo por IA não está configurado neste ambiente.", "code": "ai_not_configured"}
+502 {"detail": "...", "code": "ai_provider_error"}     404 fora do escopo     403 cliente / ticket restrito
+429 teto de 20 resumos por hora por usuário
+```
+
+Configuração **só por variáveis de ambiente** (ver `.env.example`): `AI_SUMMARY_ENABLED` (padrão
+desligado), `ANTHROPIC_API_KEY`, `AI_SUMMARY_MODEL` (padrão `claude-haiku-5-5`),
+`AI_SUMMARY_TIMEOUT`, `AI_SUMMARY_MAX_CHARS` (padrão 12000). Provedor padrão: API da Anthropic por
+HTTP (`requests`; sem dependência nova), atrás da interface `SummaryProvider`
+(`apps/tickets/ai_summary.py`). **Privacidade:** vai só o assunto e as mensagens (públicas e notas
+internas, sem as apagadas) com e-mail, telefone, CPF e CNPJ mascarados, autores trocados por
+"Cliente"/"Agente", limitadas às mensagens mais recentes (`truncated: true` se cortou). Cada
+resumo gera um `AuditLog` (ação `export`: quem, ticket, provedor, modelo, nº de mensagens; **sem
+conteúdo**) e, em equipe restrita, um `TicketAccessLog`. Conteúdo e chave nunca vão para log. O
+resumo **não é gravado** (sem migração). O mascaramento é por regex: nomes próprios e endereços em
+texto livre não são removidos.
+
+---
+
+## Tipo, apagar ticket, CC e seguidores
+
+Tudo aditivo. Migrações `tickets/0031_ticket_type`, `0032_ticket_soft_delete`, `0033_ticket_cc`.
+
+### Tipo do ticket (`type`)
+
+`question` (Pergunta) \| `incident` (Incidente) \| `problem` (Problema) \| `task` (Tarefa); **nulo por padrão**.
+
+* `POST /tickets/` e `PATCH /tickets/{id}/` aceitam `type` (`null` no PATCH limpa; ausente não mexe). Como
+  `assignee`/`tags`, é triagem **interna** e exige `ticket.edit_properties`: cliente ou agente leve que o
+  envia leva 400 (criação) ou 400/403 (PATCH), como as demais propriedades.
+* Sai em `type` na lista e no detalhe (inclusive para o cliente).
+* Filtro `GET /tickets/?type=incident` — lista separada por vírgula (`question,incident`); `none` = sem
+  tipo; valor desconhecido é ignorado.
+* Auditoria: evento de histórico `tipo → Incidente` (`—` ao limpar), sem evento se não mudou.
+* Fora do escopo (não é trivial): relatórios/CSV continuam sem a coluna de tipo.
+
+### Apagar e restaurar ticket (exclusão **lógica**)
+
+```http
+DELETE /tickets/{id}/            (só quem tem settings.manage)
+204 sem corpo
+403 sem permissão   404 não existe / fora do escopo / já apagado
+409 {"detail": "...", "code": "ticket_conflict"}   # horas de manutenção lançadas
+
+POST /tickets/{id}/restore/      (só settings.manage; sem corpo)
+200 detalhe do ticket   403   404 (não existe ou não está apagado)
+409 {"code": "ticket_conflict"}  # passou de 30 dias
+```
+
+Decisões:
+
+* **Soft delete**: `deleted_at`, `deleted_by`, `deleted_origin_chat_id` no ticket. Nada é removido
+  (mensagens, anexos, histórico, consumo de cota ficam). Não criei a permissão `ticket.delete`: usa
+  `settings.manage` (só o admin tem), porque `apps/accounts` não podia mudar nesta rodada.
+* Some para **todos**: `visible_to()` e o manager padrão (`Ticket.objects`) não devolvem apagado, então
+  listas, busca, filtros, facets/contadores, resumo, feed de atividade, quadros kanban, relatórios,
+  tarefas de fundo (SLA, fechamento automático, lembretes de prazo do quadro) e relações
+  (`company.tickets`) o ignoram. `Ticket.all_objects` enxerga tudo (usado por restauração e LGPD:
+  exportação, anonimização e retenção continuam alcançando o ticket apagado).
+* `GET /tickets/{id}/` de apagado: **404** para todos; o admin (`settings.manage`) recebe 200 com
+  `deleted_at` e `deleted_by_name` (nulos em ticket vivo) para conferir antes de restaurar. Qualquer
+  outra ação (`reply`, `PATCH`, anexos...) em ticket apagado dá 404.
+* **409** se há horas de manutenção lançadas (`resolution_started_at` e `resolution_ended_at`). "Fusão
+  pendente" não existe neste backend (não há fusão de tickets); quando existir, entra como outro motivo.
+* Restauração só até **30 dias** depois; depois disso o registro continua no banco (política: nada é
+  apagado de verdade), mas a API recusa (409).
+* Auditoria: `AuditLog` (`delete`/`update`) com quem, quando, referência e assunto, mais evento no
+  histórico do ticket (`ticket apagado` / `ticket restaurado`).
+* Chat convertido: o chat **continua existindo**; o vínculo (`origin_chat`) vai a nulo e o chat volta a
+  poder ser convertido. A restauração religa se o chat ainda estiver livre.
+* Nada vaza: respostas agendadas pendentes são canceladas; e-mails já na fila são marcados `skipped`;
+  `notify()`/`queue_email()` ignoram ticket apagado; avisos antigos do sino do ticket somem de
+  `/notifications/`; WebSocket (`ws/me/`) não empurra mais nada do ticket — a única dica é um
+  `ticket_event` `updated` (só `ticket_id` + `kind`, sem conteúdo) no ato de apagar, para as telas
+  abertas revalidarem a lista.
+
+### CC de terceiros e seguidores
+
+Só equipe com `ticket.edit_properties` (cliente: 403). Ticket fora do escopo/inexistente: 404.
+
+```http
+GET    /tickets/{id}/cc/                      200 [{"id": 1, "name": "", "email": "a@x.com"}]
+POST   /tickets/{id}/cc/  {"email": "A@X.com", "name": "Alice"}
+       201 detalhe do ticket (200 se o e-mail já estava)   400 e-mail inválido, é o do solicitante, ou > 20
+DELETE /tickets/{id}/cc/{cc_id}/              200 detalhe   404
+
+GET    /tickets/{id}/followers/               200 [{"id": 7, "name": "...", "email": "...", "is_internal": false}]
+POST   /tickets/{id}/followers/  {"user_id": 7}
+       201 detalhe (200 se já seguia)   400 inativo / solicitante / cliente de outra empresa / inexistente
+DELETE /tickets/{id}/followers/{user_id}/     200 detalhe   404
+```
+
+* O **detalhe** do ticket ganha `cc` (`[{id, name, email}]`) e `followers` (`[{id, name, email,
+  is_internal}]`), **só para a equipe** (cliente recebe `[]`). `watchers` segue igual (sem e-mail).
+* **CC** é e-mail de terceiro (tabela `TicketCC`): normalizado em minúsculas, sem duplicado, **até 20**
+  por ticket, nunca o do solicitante. Não cria usuário nem dá acesso ao sistema.
+* Recebe **um e-mail por endereço a cada resposta pública de agente** (também respostas agendadas), pelo
+  mesmo outbox (`OutboundEmail`, molde `ticket_replied_cc`), com o **texto** da resposta (o CC não entra
+  no portal). **Nunca** nota interna, nem resposta do cliente. Em ticket de equipe restrita vai só o
+  aviso, sem o texto.
+* **Seguidor** reaproveita `TicketWatcher`: usuário interno ativo, ou **cliente ativo da mesma empresa**
+  do ticket (contato que acompanha sem ser o solicitante). Seguir não concede acesso (ticket restrito
+  continua mascarado). O seguidor cliente que pode ler o ticket recebe aviso no sino e e-mail a cada
+  resposta pública de agente.
+* Auditoria: eventos de histórico `cc + a@x.com`, `cc − a@x.com`, `seguidor + Nome`, `seguidor − Nome`.
+* Não há campos `cc`/`followers` no `PATCH` nem no `POST /tickets/`: só as rotas acima.
+
+---
+
 ## Tipos TypeScript
 
 `resolv/frontend/src/api/schema.d.ts` é gerado do YAML (`npm run generate:api`) e não é

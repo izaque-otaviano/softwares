@@ -25,7 +25,7 @@ def warn_overdue_cards() -> int:
 
     agora = timezone.now()
     vencidos = (
-        Card.objects.filter(due_at__lt=agora)
+        Card.objects.filter(due_at__lt=agora, ticket__deleted_at__isnull=True)
         .exclude(ticket__status=TicketStatus.CLOSED)
         .select_related("ticket__assignee", "ticket__owner", "ticket__team__supervisor",
                         "board")

@@ -2,6 +2,7 @@ import { localHint } from '@/api/capabilities';
 import { useState } from 'react';
 import { ChevronDown, GitMerge, Trash2, UserCheck, X } from 'lucide-react';
 import { Button, ConfirmModal, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui';
+import { SETTINGS_MANAGE, useCan } from '@/lib/permissions';
 import { PRIORITY_LABEL } from '@/lib/status';
 import { useTickets } from '@/store/useTickets';
 import type { Priority } from '@/types/domain';
@@ -16,6 +17,7 @@ export function BulkBar({ ids, onClear }: BulkBarProps) {
   const statuses = useTickets((s) => s.statuses);
   const { assignToMe, requestSetStatus, setPriority, deleteTickets, mergeTickets } = useTickets.getState();
   const [confirm, setConfirm] = useState<'delete' | 'merge' | null>(null);
+  const canDelete = useCan(SETTINGS_MANAGE);
   const n = ids.length;
   const target = Math.min(...ids);
   const done = (ok: boolean) => {
@@ -55,9 +57,11 @@ export function BulkBar({ ids, onClear }: BulkBarProps) {
       <Button variant="outline" leadingIcon={<GitMerge />} disabled={n < 2} onClick={() => setConfirm('merge')}>
         Fundir
       </Button>
-      <Button variant="danger" leadingIcon={<Trash2 />} onClick={() => setConfirm('delete')}>
-        Apagar
-      </Button>
+      {canDelete ? (
+        <Button variant="danger" leadingIcon={<Trash2 />} onClick={() => setConfirm('delete')}>
+          Apagar
+        </Button>
+      ) : null}
       <Button variant="ghost" leadingIcon={<X />} onClick={onClear} className="ml-auto">
         Limpar seleção
       </Button>
@@ -66,7 +70,7 @@ export function BulkBar({ ids, onClear }: BulkBarProps) {
         open={confirm === 'delete'}
         onOpenChange={(o) => !o && setConfirm(null)}
         title={n === 1 ? 'Apagar ticket?' : `Apagar ${n} tickets?`}
-        description={`Os tickets serão removidos das visualizações. Esta ação não pode ser desfeita.${localHint('deleteTicket') ? ' O backend não apaga tickets: isto vale somente neste navegador.' : ''}`}
+        description={`${n === 1 ? 'O ticket sai' : 'Os tickets saem'} de todas as listas, da busca e dos relatórios para todos. As mensagens e o histórico são guardados e só um administrador pode restaurar em até 30 dias. Ticket com horas de manutenção lançadas não pode ser apagado e será mantido.`}
         confirmLabel="Apagar"
         onConfirm={async () => {
           done(await deleteTickets(ids));

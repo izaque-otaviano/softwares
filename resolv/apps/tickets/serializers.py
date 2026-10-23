@@ -18,12 +18,14 @@ from apps.tickets.models import (
     Ticket,
     TicketAttachment,
     TicketCategory,
+    TicketCC,
     TicketMessage,
     TicketPriority,
     TicketStage,
     TicketStatus,
     TicketStatusEvent,
     TicketTag,
+    TicketType,
 )
 from apps.tickets.services import mentions as mentions_service
 
@@ -314,7 +316,7 @@ class TicketListSerializer(_MaskingMixin, serializers.ModelSerializer):
         model = Ticket
         fields = [
             "id", "reference", "subject", "order_number", "status", "stage",
-            "stage_name", "stage_color", "priority", "source",
+            "stage_name", "stage_color", "priority", "type", "source",
             "team", "requester_display", "requester_id", "company_id",
             "assignee_name", "assignee_avatar",
             "assignee_id", "owner_name", "owner_id",
@@ -491,6 +493,36 @@ class WatcherSerializer(serializers.Serializer):
     name = serializers.CharField(source="user.full_name")
 
 
+class FollowerSerializer(serializers.Serializer):
+    """Seguidor com contato — só para a equipe (o cliente não recebe a lista)."""
+
+    id = serializers.IntegerField(source="user.id")
+    name = serializers.CharField(source="user.full_name")
+    email = serializers.EmailField(source="user.email")
+    is_internal = serializers.BooleanField(source="user.is_internal")
+
+
+class CCSerializer(serializers.ModelSerializer):
+    """E-mail de terceiro em cópia (não é usuário do sistema)."""
+
+    class Meta:
+        model = TicketCC
+        fields = ["id", "name", "email"]
+
+
+class CCInputSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+    name = serializers.CharField(max_length=120, required=False, allow_blank=True,
+                                 default="")
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class FollowerInputSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField(min_value=1)
+
+
 class RequesterSerializer(serializers.Serializer):
     """Contato do solicitante para o painel do cliente no detalhe. Os campos
     já existiam (User.email, User.ui_language; o fuso vem da empresa do
@@ -512,16 +544,26 @@ class TicketDetailSerializer(TicketListSerializer):
     messages = serializers.SerializerMethodField()
     events = serializers.SerializerMethodField()
     watchers = serializers.SerializerMethodField()
+    followers = serializers.SerializerMethodField()
+    cc = serializers.SerializerMethodField()
     requester = serializers.SerializerMethodField()
     scheduled_replies = serializers.SerializerMethodField()
+    # Exclusão lógica: nulos em todo ticket "vivo". Só o admin chega a ler um
+    # ticket apagado (a consulta por id), então é ele quem vê estes valores.
+    deleted_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    deleted_by_name = serializers.SerializerMethodField()
 
     # `satisfaction` e `closed_at` SUBIRAM para a lista (a tela de Avaliações
     # do portal precisa da nota sem abrir cada chamado) — herdados daqui.
     class Meta(TicketListSerializer.Meta):
         fields = TicketListSerializer.Meta.fields + [
             "messages", "events", "resolution_started_at", "resolution_ended_at",
-            "sla_cycle", "watchers", "requester", "scheduled_replies",
+            "sla_cycle", "watchers", "followers", "cc", "requester",
+            "scheduled_replies", "deleted_at", "deleted_by_name",
         ]
+
+    def get_deleted_by_name(self, obj) -> str | None:
+        return obj.deleted_by.full_name if obj.deleted_at and obj.deleted_by else None
 
     @extend_schema_field(ScheduledReplySerializer(many=True))
     def get_scheduled_replies(self, obj):
@@ -555,6 +597,25 @@ class TicketDetailSerializer(TicketListSerializer):
             return []
         qs = obj.watchers.select_related("user").order_by("user__full_name")
         return WatcherSerializer(qs, many=True).data
+
+    @extend_schema_field(FollowerSerializer(many=True))
+    def get_followers(self, obj):
+        """Seguidores com id/nome/e-mail — INTERNO. É a mesma tabela de
+        `watchers` (que segue como estava, sem e-mail), mais rica: o e-mail de
+        outras pessoas não vai para o cliente."""
+        user = self.context["request"].user
+        if not user.is_internal or not self._visible(obj):
+            return []
+        qs = obj.watchers.select_related("user").order_by("user__full_name")
+        return FollowerSerializer(qs, many=True).data
+
+    @extend_schema_field(CCSerializer(many=True))
+    def get_cc(self, obj):
+        """E-mails de terceiros em cópia — INTERNO (id/nome/e-mail)."""
+        user = self.context["request"].user
+        if not user.is_internal or not self._visible(obj):
+            return []
+        return CCSerializer(obj.cc_entries.all(), many=True).data
 
     @extend_schema_field(TicketEventSerializer(many=True))
     def get_events(self, obj):
@@ -641,6 +702,11 @@ class TicketCreateSerializer(serializers.Serializer):
         queryset=TicketTag.objects.all(), many=True, required=False,
         help_text="Ids de etiquetas já existentes.",
     )
+    type = serializers.ChoiceField(
+        choices=TicketType.choices, required=False, allow_null=True,
+        help_text="Tipo: question | incident | problem | task (opcional; só usuário "
+                  "interno com permissão de editar propriedades).",
+    )
     is_public = serializers.BooleanField(
         default=True,
         help_text="false = a primeira mensagem nasce como nota INTERNA.",
@@ -665,6 +731,10 @@ class TicketReclassifySerializer(serializers.Serializer):
     # lista SUBSTITUI o conjunto (vazia = limpar); ausente não mexe
     tags = serializers.PrimaryKeyRelatedField(
         queryset=TicketTag.objects.all(), many=True, required=False,
+    )
+    # `null` LIMPA o tipo; ausente não mexe
+    type = serializers.ChoiceField(
+        choices=TicketType.choices, required=False, allow_null=True,
     )
 
 

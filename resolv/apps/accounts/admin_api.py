@@ -22,6 +22,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.encoding import force_bytes
@@ -33,7 +34,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
-from apps.accounts import assinatura, avatars, rbac
+from apps.accounts import assinatura, avatars, licenses, rbac
 from apps.accounts.models import (
     AccessEventKind,
     AgentTeam,
@@ -239,7 +240,14 @@ class TeamAdminViewSet(viewsets.ModelViewSet):
                 or InternalRole.AGENT,
             })
             serializer.is_valid(raise_exception=True)
-            agent = serializer.save()
+            d = serializer.validated_data
+            with transaction.atomic():
+                if licenses.ocupa_assento(
+                    kind=UserKind.INTERNAL, internal_role=d.get("internal_role"),
+                    is_active=d.get("is_active", True),
+                ):
+                    licenses.reservar_assento()  # 409 seat_limit_reached
+                agent = serializer.save()
             # nunca nasce com senha utilizável — e é POR ISSO que o convite
             # precisa sair daqui também. Este caminho de criação (o "+ Adicionar
             # agente" da equipe) é o mais usado dos dois e era o que não
@@ -441,7 +449,15 @@ class UserAdminViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        user = serializer.save()
+        d = serializer.validated_data
+        ocupa = licenses.ocupa_assento(
+            kind=d.get("kind"), internal_role=d.get("internal_role"),
+            is_active=d.get("is_active", True),
+        )
+        with transaction.atomic():
+            if ocupa:
+                licenses.reservar_assento()  # 409 seat_limit_reached
+            user = serializer.save()
         # nasce sem senha utilizável; o convite é o único caminho para ganhar
         # uma — e ele vai para o INTERNO também quando o Google está desligado,
         # senão o agente recém-criado não teria porta nenhuma de entrada
@@ -449,6 +465,21 @@ class UserAdminViewSet(viewsets.ModelViewSet):
         user.save(update_fields=["password"])
         if precisa_de_convite(user):
             send_invite(user)
+
+    def perform_update(self, serializer):
+        # criar/reativar/promover cliente a agente ocupa assento; só confere
+        # quando a mudança TRANSFORMA quem não ocupava em quem ocupa
+        inst = serializer.instance
+        d = serializer.validated_data
+        passa_a_ocupar = licenses.ocupa_assento(
+            kind=d.get("kind", inst.kind),
+            internal_role=d.get("internal_role", inst.internal_role),
+            is_active=d.get("is_active", inst.is_active),
+        ) and not licenses.user_ocupa_assento(inst)
+        with transaction.atomic():
+            if passa_a_ocupar:
+                licenses.reservar_assento()
+            serializer.save()
 
     def perform_destroy(self, instance):
         # D11: nada é hard-deleted

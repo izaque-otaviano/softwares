@@ -107,6 +107,11 @@ interface FormState {
    * (o texto do editor não é afetado); com edições pendentes, não mexe em nada (o agente decide ao enviar).
    */
   rebase: (key: string, ticket: Ticket) => void;
+  /**
+   * CC e seguidores já gravados no servidor (resposta de `cc/` ou `followers/`): atualiza o valor e o original desses
+   * dois campos sem mexer no resto do formulário (texto, outras propriedades pendentes).
+   */
+  syncRelations: (key: string, ticket: Ticket) => void;
 }
 
 export const isNewKey = (key: string): boolean => key.startsWith('new-ticket:');
@@ -597,6 +602,14 @@ export const useFormStore = create<FormState>()((set, get) => {
     },
 
     clearErrors: (key) => update(key, () => ({ errors: {}, apiError: null })),
+
+    syncRelations: (key, ticket) => {
+      const server = valuesFromTicket(ticket);
+      update(key, (e) => ({
+        values: { ...e.values, ccIds: server.ccIds, followerIds: server.followerIds },
+        original: { ...e.original, ccIds: server.ccIds, followerIds: server.followerIds },
+      }));
+    },
 
     rebase: (key, ticket) => {
       const e = get().forms[key];

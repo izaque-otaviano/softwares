@@ -18,14 +18,15 @@ export const realCapabilities: Record<CapabilityKey, Capability> = {
   members: 'real',
   // Etapas 3 e 4: LEITURAS e ESCRITAS (tickets, status, macros, membros, empresas, clientes, etiquetas) vão ao backend.
   writes: 'real',
+  // Ligados ao backend (tipo, apagar/restaurar, CC e seguidores de terceiros, licenças e resumo de IA).
+  ticketType: 'real',
+  deleteTicket: 'real',
+  ccFollowers: 'real',
+  licenses: 'real',
+  aiSummary: 'real',
   // Sem equivalente no backend Resolv: permanecem 'local' (ver PENDENTE_NO_BACKEND.md).
   triggers: 'local',
   customFields: 'local',
   forms: 'local',
-  aiSummary: 'local',
   merge: 'local',
-  deleteTicket: 'local',
-  ticketType: 'local',
-  ccFollowers: 'local',
-  licenses: 'local',
 };

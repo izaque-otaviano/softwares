@@ -1,6 +1,6 @@
-import type { GroupRow, Member, RoleRow } from '@/api/members';
+import type { GroupRow, Licenses, Member, RoleRow } from '@/api/members';
 import type { Group } from '@/types/domain';
-import type { UserDto } from './dto';
+import type { LicensesDto, UserDto } from './dto';
 import { INTERNAL_ROLE_LABEL, mapRole } from './user';
 
 /** Agente/admin do backend -> Member (Admin > Membros). `pending` = convite ainda não aceito (`invite_status`). */
@@ -45,4 +45,15 @@ export function mapGroupRows(groups: Group[], staff: UserDto[]): GroupRow[] {
     const names = g.agentIds.map((id) => nameById.get(id)).filter((n): n is string => Boolean(n));
     return { id: g.id, name: g.inactive ? `${g.name} (inativa)` : g.name, members: g.agentIds.length, memberNames: names };
   });
+}
+
+/** `GET /settings/licenses/` -> licenças. `total` nulo = sem limite (`unlimited`). */
+export function mapLicenses(dto: LicensesDto): Licenses {
+  const unlimited = dto.unlimited || dto.total === null;
+  return {
+    used: dto.used,
+    total: unlimited ? null : dto.total,
+    available: unlimited ? null : (dto.available ?? Math.max(0, (dto.total ?? 0) - dto.used)),
+    unlimited,
+  };
 }
