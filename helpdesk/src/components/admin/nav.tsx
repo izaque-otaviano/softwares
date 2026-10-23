@@ -1,4 +1,4 @@
-import { Building2, Home, LayoutGrid, Radio, Shapes, Users, type LucideIcon } from 'lucide-react';
+import { Building2, Home, LayoutGrid, Radio, Settings, Shapes, Users, type LucideIcon } from 'lucide-react';
 
 export interface AdminNavItem {
   label: string;
@@ -118,6 +118,39 @@ export const ADMIN_SECTIONS: AdminSection[] = [
           { label: 'Macros', to: '/admin/macros' },
         ],
       },
+      {
+        label: 'Atendimento',
+        items: [
+          { label: 'SLA e prazos', to: '/admin/sla' },
+          { label: 'Calendários e feriados', to: '/admin/calendarios' },
+          { label: 'Planos', to: '/admin/planos' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'system',
+    label: 'Sistema',
+    icon: Settings,
+    to: '/admin/backups',
+    groups: [
+      { label: 'Ferramentas', items: [{ label: 'Backups', to: '/admin/backups' }] },
+      {
+        label: 'Auditoria',
+        items: [
+          { label: 'Registros', to: '/admin/auditoria' },
+          { label: 'Retenção de dados', to: '/admin/retencao' },
+          { label: 'LGPD', to: '/admin/lgpd' },
+        ],
+      },
+      {
+        label: 'Comunicação',
+        items: [
+          { label: 'Avisos', to: '/admin/avisos' },
+          { label: 'Notificações', to: '/admin/notificacoes' },
+        ],
+      },
+      { label: 'Segurança', items: [{ label: 'Segurança da conta', to: '/admin/seguranca' }] },
     ],
   },
 ];

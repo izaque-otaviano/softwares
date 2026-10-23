@@ -1,4 +1,4 @@
-import { Building2, Home, Inbox, PanelLeftClose, PanelLeftOpen, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Building2, Columns3, Home, Inbox, MessagesSquare, PanelLeftClose, PanelLeftOpen, Users, type LucideIcon } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Tooltip } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -16,6 +16,9 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/agent/views', label: 'Visualizações', icon: Inbox },
   { to: '/agent/customers', label: 'Clientes', icon: Users },
   { to: '/agent/orgs', label: 'Organizações', icon: Building2 },
+  { to: '/agent/board', label: 'Quadro', icon: Columns3 },
+  { to: '/agent/chat', label: 'Chat', icon: MessagesSquare },
+  { to: '/agent/reports', label: 'Relatórios', icon: BarChart3 },
 ];
 
 /** Trilho de navegação à esquerda. Recolhido (w-rail) mostra só ícones com tooltip; expandido mostra os rótulos. */
