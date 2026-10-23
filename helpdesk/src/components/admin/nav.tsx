@@ -108,6 +108,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
         label: 'Tickets',
         items: [
           { label: 'Campos', to: '/admin/fields' },
+          { label: 'Formulários', to: '/admin/forms' },
           { label: 'Status do ticket', to: '/admin/statuses' },
         ],
       },

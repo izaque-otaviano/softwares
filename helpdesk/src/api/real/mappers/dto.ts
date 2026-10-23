@@ -137,6 +137,8 @@ export interface TicketDto {
   sla?: { first_response?: SlaClockDto; resolution?: SlaClockDto };
   tags: { id?: number; name: string; slug?: string; color?: string }[];
   content_hidden?: boolean;
+  /** Formulário do ticket (o padrão vigente se não tem próprio); `null`/ausente para cliente. Vem na lista e no detalhe. */
+  form_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -190,6 +192,8 @@ export interface TicketEventDto {
 }
 
 export interface TicketDetailDto extends TicketDto {
+  /** Valores dos campos personalizados, por slug, só dos que têm valor. Só no DETALHE (a lista não traz); cliente recebe `{}`. */
+  custom_fields?: Record<string, string | number | boolean | null>;
   messages: MessageDto[];
   events: TicketEventDto[];
   watchers: { id: number; name: string }[];
@@ -242,4 +246,48 @@ export interface AiSummaryDto {
   generated_at: string;
   provider: string;
   truncated: boolean;
+}
+
+/** `GET /settings/ticket-fields/`. */
+export interface TicketFieldDto {
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  type: string;
+  options: { value: string; label: string }[];
+  is_required: boolean;
+  is_active: boolean;
+  order: number;
+  is_system: boolean;
+  values_count: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TicketFormFieldDto {
+  field: number;
+  slug: string;
+  title: string;
+  type: string;
+  field_is_active: boolean;
+  is_required: boolean;
+  order: number;
+}
+
+/** `GET /settings/ticket-forms/`. */
+export interface TicketFormDto {
+  id: number;
+  name: string;
+  description: string;
+  is_active: boolean;
+  is_default: boolean;
+  order: number;
+  default_team: number | null;
+  default_team_name: string | null;
+  type: string | null;
+  form_fields: TicketFormFieldDto[];
+  ticket_count: number;
+  created_at?: string;
+  updated_at?: string;
 }

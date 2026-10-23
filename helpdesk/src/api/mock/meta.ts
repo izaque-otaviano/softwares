@@ -1,11 +1,10 @@
-import type { Group, TicketField, TicketStatus } from '@/types/domain';
+import type { Group, TicketStatus } from '@/types/domain';
 import { ApiError } from '../errors';
 import { simulate } from './delay';
 import { db } from './db';
 
 export const listGroups = (): Promise<Group[]> => simulate(() => db.groups);
 export const listStatuses = (): Promise<TicketStatus[]> => simulate(() => db.statuses);
-export const listFields = (): Promise<TicketField[]> => simulate(() => db.fields);
 
 /** Cria (sem `id`) ou substitui (com `id`) um status. Muta o mesmo array para quem o referencia. */
 export function saveStatus(status: Omit<TicketStatus, 'id'> & { id?: string }): Promise<TicketStatus> {

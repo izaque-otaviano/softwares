@@ -26,6 +26,8 @@ export interface ModalProps {
   size?: ModalSize;
   /** Substitui o foco inicial. Por padrão vai para o primeiro campo do corpo (ou para "Fechar" se não houver). */
   onOpenAutoFocus?: (event: Event) => void;
+  /** Ao fechar: chame `event.preventDefault()` para decidir o foco você mesmo (senão volta a quem o tinha ao abrir). */
+  onCloseAutoFocus?: (event: Event) => void;
   className?: string;
 }
 
@@ -43,9 +45,14 @@ export function Modal({
   footer,
   size = 'md',
   onOpenAutoFocus,
+  onCloseAutoFocus: customCloseAutoFocus,
   className,
 }: ModalProps) {
-  const { bodyRef, onOpenAutoFocus: handleOpenAutoFocus, onCloseAutoFocus } = useDialogFocus(open, onOpenAutoFocus);
+  const { bodyRef, onOpenAutoFocus: handleOpenAutoFocus, onCloseAutoFocus: restoreFocus } = useDialogFocus(open, onOpenAutoFocus);
+  const onCloseAutoFocus = (event: Event) => {
+    customCloseAutoFocus?.(event);
+    if (!event.defaultPrevented) restoreFocus(event);
+  };
 
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>

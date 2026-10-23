@@ -24,9 +24,10 @@ export const realCapabilities: Record<CapabilityKey, Capability> = {
   ccFollowers: 'real',
   licenses: 'real',
   aiSummary: 'real',
+  // Campos personalizados e formulários de ticket (só equipe): /settings/ticket-fields/ e /settings/ticket-forms/.
+  customFields: 'real',
+  forms: 'real',
   // Sem equivalente no backend Resolv: permanecem 'local' (ver PENDENTE_NO_BACKEND.md).
   triggers: 'local',
-  customFields: 'local',
-  forms: 'local',
   merge: 'local',
 };

@@ -1,0 +1,208 @@
+{
+  "id": 183,
+  "reference": "TD-00183",
+  "subject": "AG-front fixture",
+  "order_number": "",
+  "status": "new",
+  "stage": 1,
+  "stage_name": "Novo",
+  "stage_color": "#6C4E9C",
+  "priority": "normal",
+  "type": "incident",
+  "source": "internal",
+  "form_id": 2,
+  "team": {
+    "id": 1,
+    "name": "Suporte",
+    "slug": "suporte",
+    "visibility": "company_wide",
+    "order": 1,
+    "internal_only": false
+  },
+  "requester_display": "AG-front Cliente",
+  "requester_id": 17,
+  "company_id": 1,
+  "assignee_name": null,
+  "assignee_avatar": null,
+  "assignee_id": null,
+  "owner_name": null,
+  "owner_id": null,
+  "company_name": "Acme Marketing",
+  "plan": {
+    "slug": "black",
+    "name": "Black"
+  },
+  "sla": {
+    "first_response": {
+      "due_at": "2026-10-23T17:11:00.129100Z",
+      "state": "ok",
+      "minutes_left": 119
+    },
+    "resolution": {
+      "due_at": "2026-10-26T14:11:00.129100Z",
+      "state": "ok",
+      "minutes_left": 4259
+    }
+  },
+  "category": null,
+  "category_name": null,
+  "service_name": null,
+  "is_restricted": false,
+  "content_hidden": false,
+  "restriction_reason": "",
+  "reopen_count": 0,
+  "last_reopened_at": null,
+  "first_response_at": null,
+  "auto_closed": false,
+  "current_status_note": "campo: AG-front Contrato: — → C-1",
+  "tags": [],
+  "satisfaction": null,
+  "closed_at": null,
+  "created_at": "2026-10-23T12:11:00.129100-03:00",
+  "updated_at": "2026-10-23T12:11:23.552676-03:00",
+  "messages": [
+    {
+      "id": 223,
+      "author_id": 1,
+      "author_name": "Alice Admin",
+      "author_avatar": null,
+      "author_is_internal": true,
+      "body": "Teste",
+      "is_public": true,
+      "source": "web",
+      "is_first_response": false,
+      "created_at": "2026-10-23T12:11:00.245007-03:00",
+      "attachments": [],
+      "mentions": [],
+      "edited_at": null,
+      "is_deleted": false,
+      "can_edit": true,
+      "signature_html": ""
+    }
+  ],
+  "events": [
+    {
+      "id": 377,
+      "from_status": null,
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "",
+      "created_at": "2026-10-23T12:11:00.133251-03:00"
+    },
+    {
+      "id": 378,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Contrato: — → C-1",
+      "created_at": "2026-10-23T12:11:00.252576-03:00"
+    },
+    {
+      "id": 379,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Aceite: — → não",
+      "created_at": "2026-10-23T12:11:00.253971-03:00"
+    },
+    {
+      "id": 380,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Valor: — → 12.5",
+      "created_at": "2026-10-23T12:11:00.255254-03:00"
+    },
+    {
+      "id": 381,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Severidade: — → Alta",
+      "created_at": "2026-10-23T12:11:00.256265-03:00"
+    },
+    {
+      "id": 382,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Prazo: — → 31/12/2026",
+      "created_at": "2026-10-23T12:11:00.257359-03:00"
+    },
+    {
+      "id": 383,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Contrato: C-1 → —",
+      "created_at": "2026-10-23T12:11:07.632135-03:00"
+    },
+    {
+      "id": 384,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Contrato: — → C-1",
+      "created_at": "2026-10-23T12:11:07.802095-03:00"
+    },
+    {
+      "id": 385,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Contrato: C-1 → —",
+      "created_at": "2026-10-23T12:11:16.121923-03:00"
+    },
+    {
+      "id": 386,
+      "from_status": "new",
+      "to_status": "new",
+      "actor_name": "Alice Admin",
+      "is_reopen": false,
+      "is_automatic": false,
+      "note": "campo: AG-front Contrato: — → C-1",
+      "created_at": "2026-10-23T12:11:23.551554-03:00"
+    }
+  ],
+  "resolution_started_at": null,
+  "resolution_ended_at": null,
+  "sla_cycle": 1,
+  "watchers": [],
+  "followers": [],
+  "cc": [],
+  "requester": {
+    "id": 17,
+    "name": "AG-front Cliente",
+    "email": "ag-chat-1@acme.test",
+    "ui_language": "pt-br",
+    "timezone": "America/Sao_Paulo"
+  },
+  "scheduled_replies": [],
+  "deleted_at": null,
+  "deleted_by_name": null,
+  "custom_fields": {
+    "ag_front_contrato": "C-1",
+    "ag_front_severidade": "alta",
+    "ag_front_valor": 12.5,
+    "ag_front_prazo": "2026-12-31",
+    "ag_front_aceite": false
+  }
+}

@@ -3,6 +3,7 @@ import type { AiSummary, AuditEvent, Comment, Priority, SlaState, Ticket, Ticket
 import type { AiSummaryDto, MessageDto, SlaClockDto, TicketDetailDto, TicketDto, TicketEventDto } from './dto';
 import { markdownToHtml } from './markdown';
 import { mapCategory, resolveStatusId } from './status';
+import { mapFieldValues } from './customFields';
 
 const PRIORITIES: ReadonlySet<string> = new Set(['low', 'normal', 'high', 'urgent']);
 
@@ -62,7 +63,7 @@ export function mapTicketListItem(dto: TicketDto, ctx: TicketMapContext): Ticket
     statusId: resolveStatusId({ status: dto.status, stage: dto.stage }, ctx.statuses),
     channel: mapChannel(dto.source),
     source: SOURCES.has(dto.source) ? (dto.source as Ticket['source']) : 'web',
-    formId: 'default',
+    formId: dto.form_id != null ? String(dto.form_id) : '',
     customFields: {},
     sla: mapSla(dto.sla),
     comments: [],
@@ -155,6 +156,8 @@ export function mapTicketDetail(dto: TicketDetailDto, ctx: DetailMapContext): Ti
     ccList: (dto.cc ?? []).map(mapCc),
     followerList: (dto.followers ?? []).map(mapFollower),
     ...(dto.deleted_at ? { deletedAt: dto.deleted_at, deletedByName: dto.deleted_by_name ?? undefined } : {}),
+    // A lista não traz `custom_fields`; o detalhe traz só os campos com valor (ausente = ainda não carregado).
+    fieldValues: mapFieldValues(dto.custom_fields),
     comments: dto.messages.map(mapMessage),
     events: dto.events.map((e) => mapEvent(e, { staff: ctx.staff })),
     detailed: true,

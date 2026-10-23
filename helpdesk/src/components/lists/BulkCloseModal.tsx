@@ -5,6 +5,8 @@ import type { ResolutionSuggestion } from '@/api/tickets';
 import { IS_REAL } from '@/api/mode';
 import { validateResolutionWindow } from '@/api/real/mappers/outbound';
 import { Banner, Button, Field, Input, Modal } from '@/components/ui';
+import { openTicket } from '@/components/shell/openTab';
+import { namesFromRequiredDetail } from '@/lib/customFields';
 import { formatDuration, fromLocalInput, toLocalInput } from '@/lib/datetimeLocal';
 import { useTickets } from '@/store/useTickets';
 
@@ -15,6 +17,33 @@ interface Row extends ResolutionSuggestion {
   /** Término efetivo (o comum, se o agente o editou). */
   endedAt: string;
   error: string | null;
+}
+
+/** Motivo da falha de um ticket. Campos obrigatórios pendentes: lista os nomes e leva ao ticket para preenchê-los. */
+function FailureReason({ id, reason, alert }: { id: number; reason: string; alert: boolean }) {
+  const names = alert ? namesFromRequiredDetail(reason) : null;
+  if (!names) {
+    return (
+      <p role={alert ? 'alert' : undefined} className="basis-full text-xs text-danger">
+        {reason}
+      </p>
+    );
+  }
+  return (
+    <p role="alert" className="flex basis-full flex-wrap items-center gap-x-2 text-xs text-danger">
+      <span>{names.length > 0 ? `Campos obrigatórios pendentes: ${names.join(', ')}.` : reason}</span>
+      <button
+        type="button"
+        className="rounded text-action underline-offset-2 hover:underline focus-visible:shadow-focus focus-visible:outline-none"
+        onClick={() => {
+          useTickets.getState().cancelBulkClose();
+          openTicket(id);
+        }}
+      >
+        Abrir ticket para preencher
+      </button>
+    </p>
+  );
 }
 
 /**
@@ -177,9 +206,7 @@ export function BulkCloseModal() {
                       {when(r.started)} → {when(r.endedAt)} <span className="text-fg">({formatDuration(r.started, r.endedAt)})</span>
                     </span>
                     {reason ? (
-                      <p role={failures[r.id] ? 'alert' : undefined} className="basis-full text-xs text-danger">
-                        {reason}
-                      </p>
+                      <FailureReason id={r.id} reason={reason} alert={Boolean(failures[r.id])} />
                     ) : null}
                   </li>
                 );

@@ -1,4 +1,4 @@
-import { localHint } from '@/api/capabilities';
+import { IS_REAL } from '@/api/mode';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { removeKeepingFocus } from '@/components/ui/focusUtils';
@@ -15,7 +15,9 @@ import { AddUserModal } from './AddUserModal';
 import { AssigneePicker } from './AssigneePicker';
 import { FollowerChips, FollowersField } from './CcFollowers';
 import { useFormEntry, useFormStore } from './formStore';
-import { useGroups, useTicketFields } from './useTicketLookups';
+import { AI_OPTIONS } from '@/lib/systemFields';
+import { CustomFieldsSection, fieldControlId, useHasCustomFields } from './CustomFieldsSection';
+import { useGroups } from './useTicketLookups';
 
 const ADD_USER = '__add_user__';
 const NONE = '';
@@ -143,11 +145,10 @@ function ReadonlyField({ label, value }: { label: string; value?: string }) {
 
 function AiFields({ ticketKey, disabled, open, onToggle }: { ticketKey: string; disabled: boolean; open: boolean; onToggle: () => void }) {
   const entry = useFormEntry(ticketKey)!;
-  const defs = useTicketFields();
   const cf = entry.values.customFields;
   const set = (id: string, value: string) => useFormStore.getState().patch(ticketKey, { customFields: { ...cf, [id]: value || undefined } });
-  const choices = (id: string, fallback: string[]) => {
-    const list = defs.find((d) => d.id === id)?.options ?? fallback;
+  const choices = (id: 'topico' | 'sentimento' | 'idioma') => {
+    const list = AI_OPTIONS[id];
     const current = cf[id];
     return current && !list.includes(current) ? [...list, current] : list;
   };
@@ -179,16 +180,16 @@ function AiFields({ ticketKey, disabled, open, onToggle }: { ticketKey: string; 
       </button>
       {open ? (
         <div id={regionId} className="mt-2 space-y-3">
-          {/* Resumo, tópico, sentimento e idioma são campos personalizados (locais); o resumo por IA do servidor fica na conversa. */}
-          {localHint('customFields') ? <p className="text-xs text-fg-muted">{localHint('customFields', 'Somente neste navegador: o backend ainda não tem estes campos de IA.')}</p> : null}
+          {/* Campos de IA (resumo, tópico, sentimento, idioma) seguem LOCAIS: não são campos personalizados do backend; o resumo por IA do servidor fica na conversa. */}
+          {IS_REAL ? <p className="text-xs text-fg-muted">Somente neste navegador: o backend ainda não tem estes campos de IA.</p> : null}
           {READONLY_FIELDS.map((f) => (
             <ReadonlyField key={f.id} label={f.label} value={cf[f.id]} />
           ))}
-          {dropdown('topico', 'Tópico', choices('topico', []))}
+          {dropdown('topico', 'Tópico', choices('topico'))}
           {dropdown('topico_confianca', 'Confiança do tópico', confidence('topico_confianca'), true)}
-          {dropdown('sentimento', 'Sentimento', choices('sentimento', ['Positivo', 'Neutro', 'Negativo']))}
+          {dropdown('sentimento', 'Sentimento', choices('sentimento'))}
           {dropdown('sentimento_confianca', 'Confiança do sentimento', confidence('sentimento_confianca'), true)}
-          {dropdown('idioma', 'Idioma', choices('idioma', ['Português', 'Inglês', 'Espanhol']))}
+          {dropdown('idioma', 'Idioma', choices('idioma'))}
           {dropdown('idioma_confianca', 'Confiança do idioma', confidence('idioma_confianca'), true)}
         </div>
       ) : null}
@@ -244,16 +245,33 @@ function PropertyGroup({ id, title, narrow, open, onToggle, children }: { id: st
 /** Propriedades do ticket (`w-props`, rola sozinho). Tudo que se edita aqui fica PENDENTE no formStore até o envio. */
 export function PropertiesPanel({ ticketKey }: { ticketKey: string }) {
   const entry = useFormEntry(ticketKey);
+  const hasCustom = useHasCustomFields(ticketKey);
   const allTags = useTickets((s) => s.tickets);
   const narrow = useIsNarrow();
   const [aiOpen, setAiOpen] = useState(!narrow);
   // Acordeão (< 1024 px): abre só o primeiro grupo; erros de validação reabrem o grupo do campo.
-  const [groups, setGroups] = useState<Record<string, boolean>>({ people: true, classify: false });
+  const [groups, setGroups] = useState<Record<string, boolean>>({ people: true, classify: false, fields: false });
   const toggleGroup = (id: string) => setGroups((g) => ({ ...g, [id]: !g[id] }));
   const hasPeopleError = Boolean(entry?.errors.requester || entry?.errors.assignee);
   useEffect(() => {
     if (hasPeopleError) setGroups((g) => ({ ...g, people: true }));
   }, [hasPeopleError]);
+  // Atalho "Ir ao campo" (diálogo de obrigatórios): abre o grupo e foca o controle do campo.
+  const focusRequest = useFormStore((s) => s.focusRequest);
+  useEffect(() => {
+    if (!focusRequest || focusRequest.key !== ticketKey) return;
+    setGroups((g) => ({ ...g, fields: true }));
+    const t = window.setTimeout(() => {
+      const el = document.getElementById(fieldControlId(ticketKey, focusRequest.slug));
+      el?.scrollIntoView?.({ block: 'center' });
+      el?.focus();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [focusRequest, ticketKey]);
+  const hasFieldsError = Boolean(entry && Object.keys(entry.fieldErrors).length > 0);
+  useEffect(() => {
+    if (hasFieldsError) setGroups((g) => ({ ...g, fields: true }));
+  }, [hasFieldsError]);
   const suggestions = useMemo(() => [...new Set(allTags.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [allTags]);
   if (!entry) return null;
   const { values } = entry;
@@ -280,6 +298,11 @@ export function PropertiesPanel({ ticketKey }: { ticketKey: string }) {
             <Select value={values.priority ?? NONE} options={PRIORITY_OPTIONS} disabled={disabled} onValueChange={(v) => patch(ticketKey, { priority: (v || null) as Priority | null })} />
           </Field>
         </PropertyGroup>
+        {hasCustom ? (
+          <PropertyGroup id="fields" title="Campos do formulário" narrow={narrow} open={groups.fields} onToggle={() => toggleGroup('fields')}>
+            <CustomFieldsSection ticketKey={ticketKey} disabled={disabled} />
+          </PropertyGroup>
+        ) : null}
         <AiFields ticketKey={ticketKey} disabled={disabled} open={aiOpen} onToggle={() => setAiOpen((o) => !o)} />
         <SetupCard onStart={() => setAiOpen(true)} />
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { metaApi, orgsApi } from '@/api';
-import type { Group, Org, TicketField } from '@/types/domain';
+import type { Group, Org } from '@/types/domain';
 
 function makeCachedList<T>(load: () => Promise<T[]>) {
   let cache: T[] | null = null;
@@ -29,15 +29,12 @@ function makeCachedList<T>(load: () => Promise<T[]>) {
 
 const groups = makeCachedList<Group>(() => metaApi.listGroups());
 const orgs = makeCachedList<Org>(() => orgsApi.listOrgs());
-const fields = makeCachedList<TicketField>(() => metaApi.listFields());
 
 export const useGroups = groups.useList;
 export const useOrgs = orgs.useList;
-export const useTicketFields = fields.useList;
 
 /** Só para testes: o banco foi reiniciado. */
 export function resetTicketLookups(): void {
   groups.reset();
   orgs.reset();
-  fields.reset();
 }

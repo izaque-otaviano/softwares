@@ -1,0 +1,9 @@
+{
+  "updated": [],
+  "failed": [
+    {
+      "id": 183,
+      "detail": "Preencha os campos obrigatórios antes de resolver ou fechar o ticket: AG-front Contrato."
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import { HELPDESK_VIEWS, SYSTEM_EXTRA_VIEWS, aiSummaryError, ccError, countsFrom
 import { getGroups, getStaff, getStatuses, getTags, memo } from './refs';
 import { ensureTags } from './tags';
 import { LOCAL_ONLY_KEYS, labelOf, planNewTicket, planTicketUpdate, resolutionWindow, toFormData, type PlanStep, type ResolutionWindow, type TicketPlan } from './mappers/outbound';
+import { cleanValues } from '@/lib/customFields';
 import { htmlToMarkdown } from './mappers/htmlToMarkdown';
 import { resolveStatusId } from './mappers/status';
 import { db } from '../mock/db';
@@ -488,7 +489,7 @@ export async function createTicket(input: NewTicketInput): Promise<Ticket> {
   const markdown = htmlToMarkdown(input.bodyHtml);
   if (!markdown) throw new ApiError('Escreva a descrição do ticket. Nada foi criado.');
   const { body, followUp } = planNewTicket(
-    { subject: input.subject, requesterId: input.requesterId, markdown, teamId: Number(team), priority: input.priority, assigneeId: input.assigneeId, statusId: input.statusId, tags: input.tags, public: input.public, followerIds: input.followerIds, type: input.type, ccIds: input.ccIds, customFields: input.customFields },
+    { subject: input.subject, requesterId: input.requesterId, markdown, teamId: Number(team), priority: input.priority, assigneeId: input.assigneeId, statusId: input.statusId, tags: input.tags, public: input.public, followerIds: input.followerIds, type: input.type, ccIds: input.ccIds, customFields: input.customFields, formId: input.formId, fieldValues: cleanValues(input.fieldValues) },
     { statuses, tags },
   );
   const created = await http.post<TicketDetailDto>('/tickets/', input.files?.length ? toFormData(body, input.files) : body);

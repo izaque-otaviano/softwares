@@ -35,6 +35,7 @@ const AdminMembers = lazy(() => import('@/pages/admin/Members'));
 const AdminRoles = lazy(() => import('@/pages/admin/Roles'));
 const AdminGroups = lazy(() => import('@/pages/admin/Groups'));
 const AdminFields = lazy(() => import('@/pages/admin/Fields'));
+const AdminForms = lazy(() => import('@/pages/admin/Forms'));
 const AdminStatuses = lazy(() => import('@/pages/admin/Statuses'));
 const AdminTriggers = lazy(() => import('@/pages/admin/Triggers'));
 const AdminTriggerEdit = lazy(() => import('@/pages/admin/TriggerEdit'));
@@ -90,6 +91,7 @@ export const routes: RouteObject[] = [
       { path: 'roles', element: <AdminRoles /> },
       { path: 'groups', element: <AdminGroups /> },
       { path: 'fields', element: <AdminFields /> },
+      { path: 'forms', element: <AdminForms /> },
       { path: 'statuses', element: <AdminStatuses /> },
       { path: 'triggers', element: <AdminTriggers /> },
       { path: 'triggers/new', element: <AdminTriggerEdit /> },

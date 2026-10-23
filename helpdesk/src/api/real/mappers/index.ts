@@ -13,3 +13,4 @@ export * from './member';
 export * from './htmlToMarkdown';
 export * from './outbound';
 export * from './ticketErrors';
+export * from './customFields';

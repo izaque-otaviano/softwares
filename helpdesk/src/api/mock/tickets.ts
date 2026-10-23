@@ -2,7 +2,8 @@ import { ME_ID } from './data';
 import { countViews, runView as runViewPure, type ViewContext } from '@/lib/views';
 import { TYPE_LABEL } from '@/lib/status';
 import { EMAIL_RE, MAX_CC, ticketCcList } from '@/lib/ticketContacts';
-import type { AiSummary, AuditEvent, Comment, Priority, Ticket, TicketContact, View } from '@/types/domain';
+import { cleanValues, fieldKey, formatFieldValue, formForTicket, isFilled, missingRequired, requiredError, slotsFor } from '@/lib/customFields';
+import type { AiSummary, AuditEvent, Comment, FieldValue, Priority, Ticket, TicketContact, View } from '@/types/domain';
 import { ApiError } from '../errors';
 import { simulate } from './delay';
 import { db } from './db';
@@ -65,7 +66,59 @@ export function runView(viewId: string, _opts: { offset?: number; limit?: number
 
 export type TicketPatch = Partial<
   Pick<Ticket, 'subject' | 'requesterId' | 'assigneeId' | 'assigneeGroupId' | 'statusId' | 'priority' | 'type' | 'tags' | 'followerIds' | 'ccIds' | 'customFields'>
->;
+> & {
+  /** Campos personalizados que mudaram, por slug: valor novo ou `null` para apagar (ausente não mexe). */
+  fieldValues?: Record<string, FieldValue | null>;
+  /** Formulário do ticket; `null` volta ao padrão. */
+  formId?: string | null;
+};
+
+const fieldErr = (errors: Record<string, string>) =>
+  new ApiError(Object.values(errors)[0] ?? 'Dados inválidos.', { status: 400, fieldErrors: { custom_fields: [JSON.stringify(errors)] }, body: { custom_fields: errors } });
+
+/** Valida os valores enviados como o servidor: campo desconhecido, desativado (só aceita `null`) e tipo errado = 400 por campo. */
+function checkFieldValues(values: Record<string, FieldValue | null>): void {
+  const errors: Record<string, string> = {};
+  for (const [slug, v] of Object.entries(values)) {
+    const f = db.fields.find((x) => x.slug === slug || x.id === slug);
+    if (!f) {
+      errors[slug] = 'Campo personalizado inexistente.';
+      continue;
+    }
+    if (!isFilled(v)) continue;
+    if (!f.active) errors[slug] = 'Este campo está desativado: só é possível apagar o valor.';
+    else if (f.type === 'number' && typeof v !== 'number') errors[slug] = 'Informe um número (até 9 dígitos inteiros e 6 decimais, com ponto).';
+    else if (f.type === 'checkbox' && typeof v !== 'boolean') errors[slug] = 'Informe verdadeiro ou falso.';
+    else if (f.type === 'date' && !(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))) errors[slug] = 'Informe uma data válida (AAAA-MM-DD).';
+    else if (f.type === 'dropdown' && !f.options?.some((o) => o.value === v)) errors[slug] = 'Escolha uma das opções da lista.';
+    else if ((f.type === 'text' && String(v).length > 2000) || (f.type === 'textarea' && String(v).length > 10000)) errors[slug] = 'Texto longo demais.';
+  }
+  if (Object.keys(errors).length) throw fieldErr(errors);
+}
+
+/** Mescla o patch (`null` apaga) em `current` e devolve os valores e os eventos de auditoria `campo: Título: a → b`. */
+function mergeFieldValues(current: Record<string, FieldValue>, patch: Record<string, FieldValue | null>): { next: Record<string, FieldValue>; notes: string[] } {
+  const next = { ...current };
+  const notes: string[] = [];
+  for (const [rawSlug, v] of Object.entries(patch)) {
+    const f = db.fields.find((x) => x.slug === rawSlug || x.id === rawSlug)!;
+    const slug = fieldKey(f);
+    const before = current[slug];
+    const after = isFilled(v) ? v : undefined;
+    if (before === after) continue;
+    if (after === undefined) delete next[slug];
+    else next[slug] = after;
+    const cut = (t: string) => (t.length > 50 ? `${t.slice(0, 49)}…` : t);
+    notes.push(`campo: ${f.title}: ${cut(formatFieldValue(f, before))} → ${cut(formatFieldValue(f, after))}`);
+  }
+  return { next, notes };
+}
+
+/** Obrigatórios que faltam no ticket (formulário dele, ou o padrão); vazio se está tudo preenchido. */
+function missingFor(formId: string | undefined, values: Record<string, FieldValue>) {
+  const slots = slotsFor(formForTicket(formId, db.forms), db.fields, values);
+  return missingRequired(slots, values).map((s) => ({ id: s.field.id, slug: fieldKey(s.field), title: s.field.title }));
+}
 
 export interface NewComment {
   authorId: string;
@@ -99,8 +152,21 @@ export function updateTicket(id: number, patch: TicketPatch = {}, comment?: NewC
     const prev = db.tickets[i];
     const now = new Date().toISOString();
     const events: AuditEvent[] = [];
-    (Object.keys(patch) as (keyof TicketPatch)[]).forEach((key) => {
-      if (key === 'customFields' || JSON.stringify(prev[key]) === JSON.stringify(patch[key])) return;
+    const { fieldValues: fvPatch, formId: formPatch, ...plain } = patch;
+    if (fvPatch) checkFieldValues(fvPatch);
+    if (formPatch && !db.forms.some((f) => f.id === formPatch)) throw new ApiError('Formulário não encontrado.', { status: 400, fieldErrors: { form_id: ['Formulário não encontrado.'] } });
+    const merged = fvPatch ? mergeFieldValues(prev.fieldValues ?? {}, fvPatch) : { next: prev.fieldValues ?? {}, notes: [] as string[] };
+    const newFormId: string = formPatch === undefined ? prev.formId : formPatch ? formPatch : (db.forms.find((f) => f.isDefault)?.id ?? prev.formId);
+    // Resolver/fechar exige os obrigatórios (nada é gravado se faltar), como o servidor.
+    const category = (id: string) => db.statuses.find((s) => s.id === id)?.category;
+    if (plain.statusId && plain.statusId !== prev.statusId && category(plain.statusId) === 'solved' && category(prev.statusId) !== 'solved') {
+      const missing = missingFor(newFormId, merged.next);
+      if (missing.length) throw requiredError(missing, 'resolver ou fechar');
+    }
+    if (newFormId !== prev.formId) events.push({ id: uid('e'), authorId: ME_ID, kind: 'field_change', text: `formulário → ${db.forms.find((f) => f.id === newFormId)?.name ?? '—'}`, createdAt: now });
+    merged.notes.forEach((text) => events.push({ id: uid('e'), authorId: ME_ID, kind: 'field_change', text, createdAt: now }));
+    (Object.keys(plain) as (keyof typeof plain)[]).forEach((key) => {
+      if (key === 'customFields' || JSON.stringify(prev[key]) === JSON.stringify(plain[key])) return;
       if (key === 'type') {
         // Igual ao servidor: evento de auditoria "tipo → Incidente" (— ao limpar), sem De/Para.
         events.push({ id: uid('e'), authorId: ME_ID, kind: 'field_change', text: `tipo → ${patch.type ? TYPE_LABEL[patch.type] : '—'}`, createdAt: now });
@@ -120,8 +186,10 @@ export function updateTicket(id: number, patch: TicketPatch = {}, comment?: NewC
       : prev.comments;
     const next: Ticket = {
       ...prev,
-      ...patch,
-      customFields: { ...prev.customFields, ...patch.customFields },
+      ...plain,
+      customFields: { ...prev.customFields, ...plain.customFields },
+      fieldValues: merged.next,
+      formId: newFormId,
       comments,
       events: [...prev.events, ...events],
       updatedAt: now,
@@ -206,6 +274,10 @@ export interface NewTicketInput {
   ccIds?: string[];
   followerIds?: string[];
   customFields?: Ticket['customFields'];
+  /** Formulário escolhido (`form_id`); a equipe e o tipo padrão dele valem se o envio não trouxe os seus. */
+  formId?: string;
+  /** Campos personalizados (slug -> valor). */
+  fieldValues?: Record<string, FieldValue | null>;
   /** Primeiro comentário público? Padrão: true. `false` cria o ticket com observação interna. */
   public?: boolean;
   authorId?: string;
@@ -222,21 +294,30 @@ export function createTicket(input: NewTicketInput): Promise<Ticket> {
     const requester = db.users.find((u) => u.id === input.requesterId);
     const org = db.orgs.find((o) => o.id === requester?.orgId);
     const channel = input.channel ?? 'web_form';
+    const form = input.formId ? db.forms.find((f) => f.id === input.formId) : undefined;
+    if (input.formId && !form) throw new ApiError('Formulário não encontrado.', { status: 400, fieldErrors: { form_id: ['Formulário não encontrado.'] } });
+    const given = input.fieldValues ?? {};
+    checkFieldValues(given);
+    const values = cleanValues(given as Record<string, FieldValue>);
+    // Obrigatório já na criação: o ticket nem é criado. Sem `form_id`, vale o formulário padrão (que o servidor também exige).
+    const missing = missingFor(form?.id, values);
+    if (missing.length) throw requiredError(missing, 'criar');
     const ticket: Ticket = {
       id,
       subject: input.subject,
       requesterId: input.requesterId,
-      assigneeGroupId: input.assigneeGroupId ?? org?.groupId ?? db.groups[0].id,
+      assigneeGroupId: input.assigneeGroupId ?? form?.defaultTeamId ?? org?.groupId ?? db.groups[0].id,
       assigneeId: input.assigneeId,
       followerIds: input.followerIds ?? [],
       ccIds: input.ccIds ?? [],
       tags: input.tags ?? [],
-      type: input.type,
+      type: input.type ?? form?.defaultType,
       priority: input.priority,
       statusId: input.statusId ?? (input.assigneeId ? 'open' : 'new'),
       channel,
-      formId: 'default',
+      formId: form?.id ?? db.forms.find((f) => f.isDefault)?.id ?? '',
       customFields: input.customFields ?? {},
+      fieldValues: values,
       comments: [{ id: uid('c'), authorId: input.authorId ?? input.requesterId, public: input.public ?? true, bodyHtml: input.bodyHtml, channel, attachments: [], createdAt: now }],
       events: [{ id: uid('e'), authorId: 'system', kind: 'notification', text: 'Ticket criado', createdAt: now }],
       createdAt: now,
@@ -254,10 +335,11 @@ export function applyAutomation(id: number, patch: TicketPatch, events: AuditEve
       const i = db.tickets.findIndex((t) => t.id === id);
       if (i < 0) throw new ApiError('Ticket não encontrado.');
       const prev = db.tickets[i];
+      const { fieldValues: _fv, formId: _form, ...plain } = patch; // gatilhos não mexem em campos personalizados
       const next: Ticket = {
         ...prev,
-        ...patch,
-        customFields: { ...prev.customFields, ...patch.customFields },
+        ...plain,
+        customFields: { ...prev.customFields, ...plain.customFields },
         events: [...prev.events, ...events],
         updatedAt: new Date().toISOString(),
       };
@@ -433,7 +515,8 @@ export function simulateIncomingTicket(): Ticket {
     priority: spec.priority,
     statusId: 'new',
     channel: spec.channel,
-    formId: 'default',
+    formId: db.forms.find((f) => f.isDefault)?.id ?? '',
+    fieldValues: {},
     customFields: {},
     sla: { name: 'Primeira resposta', target: 'first_reply', dueAt: new Date(Date.now() + 4 * 3_600_000).toISOString(), state: 'ok' },
     comments: [{ id: uid('c'), authorId: spec.requesterId, public: true, bodyHtml: `<p>${spec.body}</p>`, channel: spec.channel, attachments: [], createdAt: now }],

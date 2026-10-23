@@ -1,0 +1,92 @@
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Formulário padrão",
+      "description": "",
+      "is_active": true,
+      "is_default": true,
+      "order": 0,
+      "default_team": null,
+      "default_team_name": null,
+      "type": null,
+      "form_fields": [],
+      "ticket_count": 0,
+      "created_at": "2026-10-23T12:10:04.238636-03:00",
+      "updated_at": "2026-10-23T12:10:04.238656-03:00"
+    },
+    {
+      "id": 2,
+      "name": "AG-front Incidentes",
+      "description": "x",
+      "is_active": true,
+      "is_default": false,
+      "order": 1,
+      "default_team": 1,
+      "default_team_name": "Suporte",
+      "type": "incident",
+      "form_fields": [
+        {
+          "field": 1,
+          "slug": "ag_front_contrato",
+          "title": "AG-front Contrato",
+          "type": "text",
+          "field_is_active": true,
+          "is_required": true,
+          "order": 0
+        },
+        {
+          "field": 2,
+          "slug": "ag_front_severidade",
+          "title": "AG-front Severidade",
+          "type": "dropdown",
+          "field_is_active": true,
+          "is_required": false,
+          "order": 1
+        },
+        {
+          "field": 3,
+          "slug": "ag_front_valor",
+          "title": "AG-front Valor",
+          "type": "number",
+          "field_is_active": true,
+          "is_required": false,
+          "order": 2
+        },
+        {
+          "field": 4,
+          "slug": "ag_front_prazo",
+          "title": "AG-front Prazo",
+          "type": "date",
+          "field_is_active": true,
+          "is_required": false,
+          "order": 3
+        },
+        {
+          "field": 5,
+          "slug": "ag_front_aceite",
+          "title": "AG-front Aceite",
+          "type": "checkbox",
+          "field_is_active": true,
+          "is_required": true,
+          "order": 4
+        },
+        {
+          "field": 6,
+          "slug": "ag_front_obs",
+          "title": "AG-front Obs",
+          "type": "textarea",
+          "field_is_active": true,
+          "is_required": false,
+          "order": 5
+        }
+      ],
+      "ticket_count": 1,
+      "created_at": "2026-10-23T12:10:52.787895-03:00",
+      "updated_at": "2026-10-23T12:10:52.787916-03:00"
+    }
+  ]
+}

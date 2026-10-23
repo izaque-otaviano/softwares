@@ -1,5 +1,4 @@
-import type { Group, TicketField, TicketStatus } from '@/types/domain';
-import * as mock from '../mock/meta';
+import type { Group, TicketStatus } from '@/types/domain';
 import { http } from './http';
 import { layers, mirror } from './local';
 import { mapStatus, statusColorToHex, toBackendCategory, type StatusDto } from './mappers';
@@ -21,9 +20,6 @@ export async function listStatuses(): Promise<TicketStatus[]> {
   mirror.statuses(list);
   return list;
 }
-
-/** Campos de ticket: o backend não tem campos personalizados (capabilities.customFields = 'local'). */
-export const listFields = (): Promise<TicketField[]> => mock.listFields();
 
 /**
  * Cria (sem `id`) ou edita um status REAL (`POST`/`PATCH /settings/statuses/`; só administrador: 403 vira mensagem de

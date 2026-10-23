@@ -129,9 +129,15 @@ export interface Ticket {
   priority?: Priority;
   statusId: string;
   channel: 'email' | 'web_form';
+  /** Formulário do ticket (`form_id`; o padrão vigente quando o ticket não tem um próprio). Vazio = desconhecido. */
   formId: string;
-  /** resumo, tópico, sentimento, idioma + confianças */
+  /** Campos de IA (resumo, tópico, sentimento, idioma + confianças): continuam locais, não são campos personalizados do backend. */
   customFields: Record<string, string | undefined>;
+  /**
+   * Valores dos campos personalizados (só equipe), por slug: `custom_fields` do detalhe, só dos campos com valor.
+   * Ausente = ainda não carregado (a LISTA do backend não traz valores; só o detalhe).
+   */
+  fieldValues?: Record<string, FieldValue>;
   sla?: TicketSla;
   comments: Comment[];
   events: AuditEvent[];
@@ -269,18 +275,68 @@ export interface Trigger {
   actions: TriggerAction[];
 }
 
+/** Tipos de campo personalizado (v1). */
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'checkbox' | 'dropdown';
+export const FIELD_TYPES: readonly FieldType[] = ['text', 'textarea', 'number', 'date', 'checkbox', 'dropdown'];
+
+/** Valor de um campo personalizado: texto/parágrafo/data (AAAA-MM-DD)/opção = string, número = number, checkbox = boolean. */
+export type FieldValue = string | number | boolean;
+
+export interface FieldOption {
+  /** Valor guardado nos tickets: estável mesmo que o rótulo mude. */
+  value: string;
+  label: string;
+  /** Só no editor do Admin: opção ainda não salva (renomear muda o valor junto). */
+  fresh?: boolean;
+}
+
 export interface TicketField {
+  /** Backend: id numérico em texto. Mock: o próprio slug. Campos de sistema do front: chave fixa (`subject`...). */
   id: string;
+  /** Chave estável usada em `custom_fields` (nasce do título e não muda). Ausente nos campos de sistema do front. */
+  slug?: string;
   title: string;
-  type: 'text' | 'textarea' | 'dropdown' | 'number' | 'system';
-  /** Campos de sistema não podem ser removidos. */
+  type: FieldType | 'system';
+  /** Campos padrão do front (assunto, responsável, campos de IA...): aparecem na lista, sem edição. */
   system: boolean;
   active: boolean;
   required: boolean;
   description?: string;
-  options?: string[];
+  /** Só dropdown, em ordem. */
+  options?: FieldOption[];
+  /** Posição na lista de campos. */
+  order?: number;
+  /** Quantos tickets têm valor neste campo (campo usado não pode ser apagado, só desativado). */
+  valuesCount?: number;
   /** Última modificação (ISO). */
   updatedAt?: string;
+}
+
+/** Campo dentro de um formulário: a ordem da lista é a ordem de exibição. */
+export interface FormFieldItem {
+  fieldId: string;
+  slug: string;
+  title: string;
+  type: FieldType;
+  /** O campo foi desativado depois de entrar no formulário. */
+  fieldActive: boolean;
+  /** Obrigatório NESTE formulário (além do `required` do próprio campo). */
+  required: boolean;
+}
+
+/** Formulário de ticket: lista ordenada de campos + equipe e tipo padrão. */
+export interface TicketForm {
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  isDefault: boolean;
+  order: number;
+  defaultTeamId?: string;
+  defaultTeamName?: string;
+  defaultType?: TicketType;
+  ticketCount: number;
+  fields: FormFieldItem[];
 }
 
 export interface SearchResults {

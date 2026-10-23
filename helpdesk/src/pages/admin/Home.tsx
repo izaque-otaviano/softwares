@@ -5,9 +5,11 @@ import { useAdminName } from '@/components/admin/AdminTopBar';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { useAsync } from '@/components/admin/useAsync';
 import { Banner, EmptyState, Skeleton, Table, type ColumnDef } from '@/components/ui';
+import { MAX_ACTIVE_FIELDS } from '@/lib/customFields';
 import type { Macro, TicketField, Trigger } from '@/types/domain';
 
-const LIMITS = { fields: 20, triggers: 10 };
+// Campos: limite real do backend (60 ativos). Gatilhos: teto sugerido local.
+const LIMITS = { fields: MAX_ACTIVE_FIELDS, triggers: 10 };
 
 interface HomeData {
   licenses: membersApi.Licenses;
@@ -92,7 +94,7 @@ export default function AdminHome() {
           label: 'Campos personalizados',
           value: data.fields.filter((f) => !f.system && f.active).length,
           max: Math.max(LIMITS.fields, data.fields.filter((f) => !f.system && f.active).length),
-          hint: 'Limite operacional sugerido da conta.',
+          hint: `Limite de ${MAX_ACTIVE_FIELDS} campos ativos por conta.`,
         },
         {
           id: 'triggers',
