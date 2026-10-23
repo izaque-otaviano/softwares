@@ -5,10 +5,12 @@ import { membersApi, metaApi } from '@/api';
 import type { Member, StaffRole } from '@/api/members';
 import { AdminBody, Toolbar } from '@/components/admin/AdminPage';
 import { PageHeader } from '@/components/admin/PageHeader';
+import { UserSecurityPanel } from '@/components/admin/security/UserSecurityPanel';
 import { useAsync } from '@/components/admin/useAsync';
 import {
   Avatar,
   Badge,
+  Drawer,
   Button,
   Field,
   Input,
@@ -125,6 +127,7 @@ export default function Members() {
   const [query, setQuery] = useState('');
   const [role, setRole] = useState('all');
   const [creating, setCreating] = useState(false);
+  const [securityOf, setSecurityOf] = useState<Member | null>(null);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -190,6 +193,7 @@ export default function Members() {
 
   const rowActions = (m: Member): MenuItemSpec[] => [
     { id: 'suspend', label: m.suspended ? 'Reativar' : 'Suspender', onSelect: () => void toggleSuspend(m) },
+    { id: 'security', label: 'Sessões e acessos', onSelect: () => setSecurityOf(m) },
   ];
 
   return (
@@ -258,6 +262,16 @@ export default function Members() {
           rowActions={rowActions}
         />
       </AdminBody>
+      <Drawer
+        open={securityOf !== null}
+        onOpenChange={(o) => {
+          if (!o) setSecurityOf(null);
+        }}
+        title={securityOf ? `Sessões e acessos de ${securityOf.name}` : 'Sessões e acessos'}
+        width="w-[480px]"
+      >
+        {securityOf ? <UserSecurityPanel userId={securityOf.id} userName={securityOf.name} canManage /> : null}
+      </Drawer>
       <CreateMemberModal open={creating} onOpenChange={setCreating} onCreated={reloadAll} />
     </>
   );

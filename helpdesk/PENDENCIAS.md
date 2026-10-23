@@ -54,6 +54,33 @@ Gatilhos editáveis, campos personalizados, formulários de ticket, resumo de IA
 7. **Conta, Canais e Espaços: páginas informativas** (sem edição). Conta = sessão + agentes ativos; Canais = texto explicativo; Espaços = layouts (texto) + atalhos reais. Marca/cobrança/SSO seguem fora.
 8. **Visualizações pessoais: feito.** Criar/editar/clonar/apagar via `/ticket-views/` e filtros da gaveta (prioridade, status, assunto, solicitante, período) gravados e reidratados ao reabrir; verificado com curl. Tipo e tags não têm par no backend e não são gravados. Clonar visão do Helpdesk/sistema grava `{view: slug}`.
 
+## Áreas novas (Quadro, Chat, Relatórios, Sistema)
+
+Todas funcionam no modo mock e no real. O que o backend não tem fica marcado "somente neste navegador".
+
+### Só no front (a criar no backend)
+- Quadro: a ordem dentro da coluna não é gravada; "adicionar ticket ao quadro" não existe (o quadro mostra todos os não resolvidos; o prazo interno e as colunas de organização são os equivalentes reais).
+- SLA: metas por prioridade e calendário aplicado à política; feriado "repete todo ano".
+- Backups: nome do backup e retenção editável (a retenção vem de `BACKUP_ROTATION_DAYS`).
+- Chat: não há resposta rápida do agente (as rápidas do backend são frases do cliente); macros de chat não substituem `{{solicitante}}`/`{{empresa}}` no servidor.
+
+### Defeitos do backend encontrados
+- Exportações/downloads (`reports/tickets/export`, backups, PDF do chat) respondem 406 se o `Accept` não for `*/*`.
+- `reports/indicators`: variações absurdas (+17200%) e `previous_start` desalinhado em intervalo livre. `chat/reports` não filtra por período nem responsável. CSV exporta `status`/`source` crus.
+- Kanban: `entries()` filtra por `team_id` (card de outra equipe nunca aparece); `kanban.move` não é checada no servidor; lane duplicada devolve erro em inglês técnico.
+- Auditoria: logs sem filtro por ticket, data final ou texto; prazos de retenção não expostos; `audit.view` existe mas as views exigem `settings.manage`; candidatos de redação trazem só o rótulo, não o trecho.
+- Planos: `slug` obrigatório e não derivado; sem rota para excluir. Erro de unicidade (SLA, feriado) em inglês técnico.
+- Chat: mensagens sem id do autor (só nome); `close`/`join`/`leave` não checam o dono; `can_edit` do WebSocket vale para a sala toda; a fila é reenviada a cada conexão de `ws/me`.
+
+### Verificado só em teste (não no navegador real)
+Restaurar backup, executar/anonimizar/rejeitar LGPD, ativar/desativar 2FA, trocar senha, encerrar sessões, criar/excluir quadro, entrar/assumir/sair do chat. Ações destrutivas nunca foram executadas contra o banco compartilhado.
+
+### Resíduos de teste no banco de desenvolvimento (prefixo AG-)
+Tickets TD-00176 a 178, chats 3 a 7 e usuários ag-chat-1..5, plano e avisos AG-adminA, pedidos LGPD 1 e 2 e ciclo de retenção 1. Sem rota de exclusão; ignorar ou rejeitar.
+
+### Ligações feitas no shell
+Sino de notificações no `TopBar`, banner de avisos no `AgentLayout` e "Sessões e acessos" no menu de membros. "Ver todas" do sino leva a `/admin/notificacoes/central` (área de admin): para agente comum falta uma rota fora de `/admin`.
+
 ## Decisão em aberto
 
 - **Contraste das bordas dos campos:** `line-strong` (2,01:1) como manda o brief, ou trocar por um token que dê 3:1 (WCAG 2.2). Também `fg-subtle` em placeholders (3,3:1) e o `ai` (#8E5FD1, 4,46:1).

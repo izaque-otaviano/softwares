@@ -38,7 +38,7 @@ Design de interfaces e protótipos (Mac e Windows). Baseado em [storytold/figcra
 
 ## Helpdesk
 
-Protótipo de sistema de tickets de atendimento (React, TypeScript, Vite e Tailwind): área do agente com abas de trabalho, visualizações, tela do ticket com macros e envio por status, clientes, organizações e busca, mais a administração (membros, campos, status, gatilhos e macros). Funciona com dados de exemplo (`npm run dev`) ou ligado ao backend do Resolv (`npm run dev:real`), com login, leitura e escrita reais.
+Protótipo de sistema de tickets de atendimento (React, TypeScript, Vite e Tailwind): área do agente com abas de trabalho, visualizações, tela do ticket com macros e envio por status, clientes, organizações e busca, Quadro Kanban, Chat de atendimento e Relatórios, mais a administração (membros, campos, status, gatilhos, macros, SLA, calendários, planos, backups, avisos, auditoria, retenção, LGPD, notificações e segurança da conta). Funciona com dados de exemplo (`npm run dev`) ou ligado ao backend do Resolv (`npm run dev:real`), com login, leitura e escrita reais.
 
 - Código: [`helpdesk/`](helpdesk/) (instruções em [`helpdesk/README.md`](helpdesk/README.md))
 - O que falta e os problemas conhecidos do backend: [`helpdesk/PENDENCIAS.md`](helpdesk/PENDENCIAS.md)

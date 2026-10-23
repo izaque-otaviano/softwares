@@ -1,0 +1,63 @@
+{
+  "count": 7,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Resolvido",
+      "slug": "resolvido",
+      "requires_note": false,
+      "is_active": true,
+      "order": 0
+    },
+    {
+      "id": 2,
+      "name": "Sem resposta do cliente",
+      "slug": "sem-resposta-do-cliente",
+      "requires_note": false,
+      "is_active": true,
+      "order": 1
+    },
+    {
+      "id": 3,
+      "name": "Cliente desistiu",
+      "slug": "cliente-desistiu",
+      "requires_note": false,
+      "is_active": true,
+      "order": 2
+    },
+    {
+      "id": 4,
+      "name": "Duplicado",
+      "slug": "duplicado",
+      "requires_note": false,
+      "is_active": true,
+      "order": 3
+    },
+    {
+      "id": 5,
+      "name": "Virou ticket",
+      "slug": "virou-chamado",
+      "requires_note": false,
+      "is_active": true,
+      "order": 4
+    },
+    {
+      "id": 6,
+      "name": "Transferido para outro canal",
+      "slug": "transferido-para-outro-canal",
+      "requires_note": true,
+      "is_active": true,
+      "order": 5
+    },
+    {
+      "id": 7,
+      "name": "Outro",
+      "slug": "outro",
+      "requires_note": true,
+      "is_active": true,
+      "order": 6
+    }
+  ]
+}

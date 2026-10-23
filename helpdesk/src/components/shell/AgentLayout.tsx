@@ -1,6 +1,7 @@
 import { Suspense, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { MAIN_ID, SkipLink } from '@/components/a11y/SkipLink';
+import { AnnouncementBanner } from '@/components/admin/announcements/AnnouncementBanner';
 import { BulkCloseModal } from '@/components/lists/BulkCloseModal';
 import { Spinner } from '@/components/ui';
 import { startLiveUpdates, stopLiveUpdates, useTickets } from '@/store/useTickets';
@@ -39,6 +40,7 @@ export function AgentLayout() {
     <div className="flex h-screen flex-col overflow-hidden bg-surface text-sm text-fg">
       <SkipLink />
       <RealModeNotice />
+      <AnnouncementBanner />
       <TopBar />
       <div className="flex min-h-0 flex-1">
         <NavRail />

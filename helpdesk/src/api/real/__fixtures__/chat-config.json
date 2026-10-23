@@ -1,0 +1,14 @@
+{
+  "welcome_message": "Olá {{nome_do_cliente}}, como podemos ajudar?",
+  "queue_timeout_minutes": 10,
+  "max_chats_per_agent": 3,
+  "score_min": 0,
+  "score_max": 10,
+  "low_score_threshold": 5,
+  "default_team": null,
+  "default_team_name": null,
+  "queue_open": false,
+  "queue_opens_at": "2026-10-23T12:00:00+00:00",
+  "inactivity_warning_minutes": 0,
+  "inactivity_close_minutes": 0
+}
