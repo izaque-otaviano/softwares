@@ -83,10 +83,10 @@ class TicketStatus(models.TextChoices):
 # (o default plano do campo `color` abaixo), sem relação nenhuma com a
 # categoria escolhida.
 COR_POR_CATEGORIA = {
-    TicketStatus.NEW: "#6C4E9C",
-    TicketStatus.OPEN: "#5A87B8",
-    TicketStatus.PENDING_CUSTOMER: "#E9A23B",
-    TicketStatus.CLOSED: "#8A8A85",
+    TicketStatus.NEW: "#855800",
+    TicketStatus.OPEN: "#A12620",
+    TicketStatus.PENDING_CUSTOMER: "#465365",
+    TicketStatus.CLOSED: "#216338",
 }
 
 

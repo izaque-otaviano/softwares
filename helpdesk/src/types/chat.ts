@@ -2,7 +2,7 @@
 
 export type ChatStatus = 'queued' | 'active' | 'closed';
 
-export type ChatPresence = 'available' | 'away' | 'offline';
+export type ChatPresence = 'available' | 'away' | 'offline' | 'dnd';
 
 export type ChatPriority = 'low' | 'normal' | 'high' | 'urgent';
 

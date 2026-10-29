@@ -35,7 +35,7 @@ function ProductSwitcher() {
   );
 }
 
-const PRESENCES: Presence[] = ['available', 'away', 'offline'];
+const PRESENCES: Presence[] = ['available', 'away', 'dnd', 'offline'];
 
 function AgentMenu() {
   const presence = useAgentPresence((s) => s.presence);

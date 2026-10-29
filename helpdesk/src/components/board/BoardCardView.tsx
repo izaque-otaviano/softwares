@@ -65,7 +65,7 @@ export function BoardCardView(p: BoardCardViewProps) {
   const moveItems: MenuItemSpec[] = p.targets.map((t) => ({
     id: `move-${t.key}`,
     label: t.name,
-    icon: t.color ? <StatusDot color={t.color} /> : <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-xs bg-ink" />,
+    icon: t.color ? <StatusDot color={t.color} /> : <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-ink" />,
     onSelect: () => p.onMove(t.key),
   }));
   const otherItems: MenuItemSpec[] = [

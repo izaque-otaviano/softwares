@@ -146,9 +146,10 @@ describe('Avatar: presença', () => {
   });
 
   it.each([
-    ['available', 'Disponível', 'bg-sla-text'],
-    ['away', 'Ausente', 'bg-note-badge'],
-    ['offline', 'Offline', 'bg-fg-subtle'],
+    ['available', 'Disponível', 'bg-presence-available'],
+    ['away', 'Ausente', 'bg-presence-away'],
+    ['dnd', 'Não perturbe', 'bg-presence-dnd'],
+    ['offline', 'Offline', 'bg-presence-offline'],
   ] as const)('presença %s: nome acessível inclui "%s" e o ponto usa %s', (presence, label, cls) => {
     const { container } = render(<Avatar name="Ana Silva" presence={presence} />);
     expect(screen.getByRole('img', { name: `Ana Silva, ${label}` })).toBeInTheDocument();

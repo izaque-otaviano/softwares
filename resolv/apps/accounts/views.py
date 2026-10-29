@@ -818,7 +818,7 @@ class MyAccessHistoryView(APIView):
 
 
 class MyPresenceView(APIView):
-    """Muda o status ao vivo do PRÓPRIO agente — Disponível/Ausente/Offline.
+    """Muda o status ao vivo do PRÓPRIO agente — Disponível/Ausente/Não perturbe/Offline.
 
     Só interno usa isto: cliente não tem colega de equipe pra enxergar o
     próprio status, e a régua de `presence` (PresenceStatus) é toda pensada

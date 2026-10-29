@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import * as chatApi from '@/api/chat';
 import { orgsApi, ticketsApi, usersApi } from '@/api';
 import { openOrg, openTicket, openUser } from '@/components/shell/openTab';
-import { Avatar, Banner, Button, Field, Input, Pill, SkeletonText, StatusBadge } from '@/components/ui';
+import { Avatar, Banner, Button, Field, Input, Pill, SkeletonText, PRESENCE_LABEL, StatusBadge } from '@/components/ui';
 import { DEFAULT_STATUSES } from '@/lib/status';
 import { absoluteTime, relativeTime } from '@/lib/time';
 import { isParticipating, useChatStore } from '@/store/chat';
@@ -62,7 +62,7 @@ function ProfileSection({ chat }: { chat: Chat }) {
         <Avatar name={chat.clientName} src={chat.clientAvatar ?? undefined} size={48} decorative presence={chat.clientPresence ?? undefined} />
         <div className="min-w-0">
           <h3 className="truncate text-md font-semibold text-fg">{chat.clientName}</h3>
-          <p className="text-xs text-fg-muted">{chat.clientPresence === 'available' ? 'Online agora' : chat.clientPresence === 'away' ? 'Ausente' : 'Offline'}</p>
+          <p className="text-xs text-fg-muted">{chat.clientPresence === 'available' ? 'Online agora' : PRESENCE_LABEL[chat.clientPresence ?? 'offline']}</p>
         </div>
       </div>
       <dl className="mt-3 space-y-1.5 text-sm">

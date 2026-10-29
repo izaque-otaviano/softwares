@@ -42,7 +42,7 @@ class TwoFactorMethod(models.TextChoices):
 
 
 class PresenceStatus(models.TextChoices):
-    """Status ao vivo do agente — Disponível/Ausente/Offline.
+    """Status ao vivo do agente — Disponível/Ausente/Não perturbe/Offline.
 
     Existia só no front (um `useState` que resetava a cada F5, sem ninguém
     além do próprio agente ver — achado da auditoria original, ver
@@ -54,6 +54,7 @@ class PresenceStatus(models.TextChoices):
 
     AVAILABLE = "available", "Disponível"
     AWAY = "away", "Ausente"
+    DND = "dnd", "Não perturbe"
     OFFLINE = "offline", "Offline"
 
 

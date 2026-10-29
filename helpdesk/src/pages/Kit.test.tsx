@@ -93,11 +93,11 @@ describe('Kit (/kit)', () => {
     expect(within(tokens as HTMLElement).getByText('#1F73B7')).toBeInTheDocument();
   });
 
-  it('lista os 32 tokens de cor', () => {
+  it('lista os 45 tokens de cor', () => {
     renderizar();
     const tokens = document.getElementById('tokens') as HTMLElement;
     const nomes = within(tokens).getAllByText(/^--[a-z0-9-]+$/);
-    expect(nomes).toHaveLength(32);
+    expect(nomes).toHaveLength(45);
   });
 
   it('dispara toasts a partir dos botões da seção de avisos', async () => {

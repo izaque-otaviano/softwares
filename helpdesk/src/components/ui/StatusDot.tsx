@@ -1,19 +1,20 @@
 import { cn } from '@/lib/cn';
 import { statusColor } from '@/lib/status';
 
-export type Presence = 'available' | 'away' | 'offline';
+export type Presence = 'available' | 'away' | 'offline' | 'dnd';
 
 export const PRESENCE_LABEL: Record<Presence, string> = {
   available: 'Disponível',
   away: 'Ausente',
   offline: 'Offline',
+  dnd: 'Não perturbe',
 };
 
 const PRESENCE_CLASS: Record<Presence, string> = {
-  available: 'bg-sla-text',
-  // note.badge sobre surface tem só 2,0:1: o contorno de 1px em note.badgeText (dentro dos 10px) leva o ponto a >= 3:1.
-  away: 'border border-note-badgeText bg-note-badge',
-  offline: 'bg-fg-subtle',
+  available: 'bg-presence-available',
+  away: 'bg-presence-away',
+  offline: 'bg-presence-offline',
+  dnd: 'bg-presence-dnd',
 };
 
 export interface StatusDotProps {
@@ -33,7 +34,7 @@ export function StatusDot({ color, presence, label, className }: StatusDotProps)
     <span
       aria-hidden={label ? undefined : true}
       data-presence={presence}
-      className={cn('relative inline-block h-2.5 w-2.5 shrink-0 rounded-xs', fallback, className)}
+      className={cn('relative inline-block h-2.5 w-2.5 shrink-0 rounded-full', fallback, className)}
       style={color === undefined ? undefined : { backgroundColor: statusColor(color) }}
     >
       {label ? <span className="sr-only">{label}</span> : null}

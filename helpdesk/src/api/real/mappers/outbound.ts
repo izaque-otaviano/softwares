@@ -431,7 +431,7 @@ export function toFormData(fields: Record<string, unknown>, files: File[] = []):
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Tokens de cor do Helpdesk -> hex que o backend guarda. */
-const STATUS_TOKEN_HEX: Record<string, string> = { new: '#F5A04A', open: '#CC3340', hold: '#8F2A35', pending: '#1F73B7', solved: '#39434B' };
+const STATUS_TOKEN_HEX: Record<string, string> = { new: '#855800', open: '#A12620', hold: '#394B80', pending: '#465365', solved: '#216338' };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 export function statusColorToHex(color: string): string {
