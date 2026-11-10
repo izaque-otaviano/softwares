@@ -51,6 +51,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # macOS: as duas arquiteturas, para o DMG universal (Apple Silicon + Intel).
+          targets: ${{ matrix.os == 'macos-15' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: fontmanager }
       - uses: actions/setup-node@v4
@@ -63,14 +66,25 @@ jobs:
       - name: Compilar o app (sem instalador)
         if: ${{ !inputs.bundle }}
         run: npm run tauri -- build --no-bundle
-      - name: Compilar com instaladores
-        if: ${{ inputs.bundle }}
-        run: npm run tauri -- build
+      - name: Compilar instalador (Windows .exe)
+        if: ${{ inputs.bundle && matrix.os == 'windows-latest' }}
+        run: npm run tauri -- build --bundles nsis
+      - name: Compilar instalador (macOS .dmg universal)
+        if: ${{ inputs.bundle && matrix.os == 'macos-15' }}
+        run: npm run tauri -- build --target universal-apple-darwin --bundles dmg
+      - name: Conferir o DMG
+        if: ${{ inputs.bundle && matrix.os == 'macos-15' }}
+        run: |
+          dmg=$(ls target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          hdiutil verify "$dmg"
+          app=target/universal-apple-darwin/release/bundle/macos/*.app
+          lipo -archs $app/Contents/MacOS/* | tee /dev/stderr | grep -q "x86_64 arm64"
+          echo "### $(basename "$dmg") ($(du -h "$dmg" | cut -f1), universal)" >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.bundle }}
         with:
           name: font-manager-${{ matrix.name }}
           path: |
             fontmanager/target/release/bundle/nsis/*.exe
-            fontmanager/target/release/bundle/dmg/*.dmg
+            fontmanager/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
