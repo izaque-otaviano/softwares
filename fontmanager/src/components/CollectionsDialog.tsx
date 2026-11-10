@@ -18,13 +18,13 @@ export function CollectionsDialog({ open, onOpenChange, familyKey, member }: { o
         <ul className="max-h-64 space-y-1 overflow-auto">
           {cols.data?.map((c) => (
             <li key={c.id}>
-              <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-muted">
+              <label className="flex items-center gap-2 rounded-[6px] px-2 py-1.5 text-[13px] hover:bg-fill-2">
                 <input type="checkbox" checked={member.includes(c.id)} onChange={async (e) => { await api.collectionMember(c.id, familyKey, e.target.checked); refresh(); }} />
-                {c.name} <span className="ml-auto text-xs text-muted-foreground">{c.count}</span>
+                {c.name} <span className="tabular ml-auto text-[11px] text-label-2">{c.count}</span>
               </label>
             </li>
           ))}
-          {cols.data?.length === 0 && <li className="px-2 py-3 text-sm text-muted-foreground">Nenhuma coleção ainda.</li>}
+          {cols.data?.length === 0 && <li className="px-2 py-3 text-[13px] text-label-2">Nenhuma coleção ainda.</li>}
         </ul>
         <form className="mt-3 flex gap-2" onSubmit={async (e) => {
           e.preventDefault();
@@ -32,7 +32,7 @@ export function CollectionsDialog({ open, onOpenChange, familyKey, member }: { o
           catch (err) { useToasts.getState().push({ tone: "error", text: (err as Error).message }); }
         }}>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nova coleção" aria-label="Nome da nova coleção" maxLength={80} />
-          <Button type="submit" disabled={!name.trim()}><Plus /> Criar</Button>
+          <Button type="submit" variant="primary" disabled={!name.trim()}><Plus /> Criar</Button>
         </form>
       </DialogContent>
     </Dialog>

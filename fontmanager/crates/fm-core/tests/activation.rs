@@ -216,3 +216,15 @@ async fn rejeita_variante_que_nao_existe_no_catalogo() {
     assert!(msg.contains("900 italic"), "{msg}");
     assert_eq!(*backend.0.lock().unwrap(), 0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn baixar_guarda_em_cache_sem_registrar_no_sistema() {
+    let tmp = tempfile::tempdir().unwrap();
+    let backend = Arc::new(Refusing(Mutex::new(0)));
+    let fm = manager(tmp.path(), backend.clone()).await;
+    assert_eq!(fm.download("tiny5", |_| {}).await.unwrap(), 1);
+    assert_eq!(*backend.0.lock().unwrap(), 0, "baixar não chama o SO");
+    let s = &fm.query(&CatalogQuery { limit: 10, ..Default::default() }).unwrap().items[0];
+    assert!(s.cached);
+    assert_eq!(s.state, ActivationState::Inactive);
+}

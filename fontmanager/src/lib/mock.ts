@@ -5,27 +5,33 @@
  */
 import type { FamilySummary } from "./types";
 
-const NAMES = [
+// Famílias reais do Google Fonts, para que a prévia use as fontes de verdade via CDN.
+const NAMES: [string, string, boolean][] = [
   ["Inter", "sans-serif", true], ["Roboto", "sans-serif", true], ["Open Sans", "sans-serif", true], ["Lora", "serif", true],
   ["Playfair Display", "serif", true], ["Merriweather", "serif", false], ["Fira Code", "monospace", true], ["JetBrains Mono", "monospace", true],
   ["Lobster", "display", false], ["Pacifico", "handwriting", false], ["Montserrat", "sans-serif", true], ["Poppins", "sans-serif", false],
   ["Space Grotesk", "sans-serif", true], ["DM Serif Display", "serif", false], ["Caveat", "handwriting", true], ["Bebas Neue", "display", false],
-] as const;
+  ["Fraunces", "serif", true], ["Space Mono", "monospace", false], ["Syne", "sans-serif", true], ["Bricolage Grotesque", "sans-serif", true],
+  ["Instrument Serif", "serif", false], ["Archivo", "sans-serif", true], ["IBM Plex Mono", "monospace", false], ["Abril Fatface", "display", false],
+  ["Cormorant Garamond", "serif", false], ["Work Sans", "sans-serif", true], ["Nunito", "sans-serif", true], ["Rubik", "sans-serif", true],
+  ["Libre Baskerville", "serif", false], ["Permanent Marker", "handwriting", false], ["Unbounded", "display", true], ["Manrope", "sans-serif", true],
+];
 
 const store = {
-  fams: NAMES.flatMap((n, i) =>
-    Array.from({ length: 40 }, (_, j): FamilySummary => {
-      const name = j === 0 ? n[0] : `${n[0]} Demo ${j}`;
-      return {
-        key: name.toLowerCase().replace(/[^a-z0-9]/g, ""), name, category: n[1], providers: i % 3 === 0 ? ["fontsource", "google"] : ["fontsource"],
-        weights: [400, 500, 700], hasItalic: i % 2 === 0, variable: n[2], license: "OFL-1.1", favorite: false, state: "inactive",
-        cached: false, installable: true, previewCdn: j === 0 ? "google" : null, previewId: j === 0 ? n[0] : null,
-      };
-    }),
-  ),
-  collections: [{ id: 1, name: "Projeto Demo", count: 0 }],
+  fams: NAMES.map(([name, category, variable], i): FamilySummary => ({
+    key: name.toLowerCase().replace(/[^a-z0-9]/g, ""), name, category, providers: i % 3 === 0 ? ["fontsource", "google"] : ["fontsource"],
+    weights: [400, 500, 700], hasItalic: i % 2 === 0, variable, license: "OFL-1.1", favorite: i === 4, state: "inactive",
+    cached: false, installable: true, previewCdn: "google", previewId: name,
+  })),
+  collections: [{ id: 1, name: "Identidade visual", count: 4 }, { id: 2, name: "Editorial", count: 2 }],
   settings: { scope: "session", theme: "system" } as Record<string, string>,
 };
+
+// Estados de exemplo para visualizar a interface (não são ativações reais).
+store.fams[1].state = "active"; store.fams[1].cached = true;
+store.fams[2].cached = true;
+store.fams[3].state = "system";
+store.fams[9].state = "active"; store.fams[9].cached = true;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,7 +53,7 @@ export async function mockInvoke(cmd: string, a: Record<string, unknown> = {}): 
         summary: s, collections: [],
         sources: s.providers.map((p) => ({
           providerId: p, providerFamilyId: s.name, origin: "google", version: "v1", license: "OFL-1.1", licenseUrl: null, lastModified: null,
-          subsets: ["latin", "cyrillic"], variable: s.variable, axes: s.variable ? [{ tag: "wght", min: 100, max: 900, default: 400 }] : [],
+          subsets: ["latin", "cyrillic"], variable: s.variable, axes: s.variable ? [{ tag: "wght", min: 400, max: 700, default: 400 }] : [],
           variants: s.weights.flatMap((w) => [{ weight: w, style: "normal" }, ...(s.hasItalic ? [{ weight: w, style: "italic" }] : [])]),
         })),
       };

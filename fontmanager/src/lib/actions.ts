@@ -3,7 +3,7 @@ import { api } from "./api";
 import { useUi } from "@/store/ui";
 import { useToasts } from "@/store/toasts";
 
-/** Ativar/desativar com tratamento de erro e atualização das listas. Nunca sinaliza sucesso em falha. */
+/** Ativar / baixar / desativar. Nunca sinaliza sucesso em falha; mensagens usam o mesmo verbo da ação. */
 export function useFontActions() {
   const qc = useQueryClient();
   const refresh = () => {
@@ -11,25 +11,44 @@ export function useFontActions() {
     qc.invalidateQueries({ queryKey: ["detail"] });
     qc.invalidateQueries({ queryKey: ["info"] });
   };
+  const toast = useToasts.getState().push;
   return {
     refresh,
     async activate(key: string, name: string) {
-      const { setPhase } = useUi.getState();
+      const { setPhase, setBusy } = useUi.getState();
+      setBusy(key, "activate");
       setPhase(key, { phase: "resolving" });
       try {
         const r = await api.activate(key);
         if (r.outcome === "already_in_system") {
           setPhase(key, null);
-          useToasts.getState().push({ tone: "info", text: r.message });
+          toast({ tone: "info", text: r.message });
         } else {
-          // As fases ActiveInSystem → WaitingApp chegam por evento; garante o estado final mesmo sem eventos.
           setPhase(key, { phase: "waiting_app" });
-          useToasts.getState().push({ tone: "success", text: `${name}: registrada no sistema. Aplicativos já abertos podem exigir atualização da lista de fontes.` });
+          toast({ tone: "success", text: `${name} ativada no sistema. Apps já abertos podem precisar recarregar a lista de fontes.` });
         }
       } catch (e) {
         const message = (e as Error).message;
         setPhase(key, { phase: "error", message });
-        useToasts.getState().push({ tone: "error", text: `Erro ao ativar ${name}: ${message}` });
+        toast({ tone: "error", text: `Não foi possível ativar ${name}: ${message}` });
+      } finally {
+        setBusy(key, null);
+      }
+      refresh();
+    },
+    async download(key: string, name: string) {
+      const { setPhase, setBusy } = useUi.getState();
+      setBusy(key, "download");
+      setPhase(key, { phase: "resolving" });
+      try {
+        const n = await api.download(key);
+        setPhase(key, null);
+        toast({ tone: "success", text: `${name} baixada (${n} arquivo${n === 1 ? "" : "s"}). Disponível offline, ainda não ativada.` });
+      } catch (e) {
+        setPhase(key, null);
+        toast({ tone: "error", text: `Não foi possível baixar ${name}: ${(e as Error).message}` });
+      } finally {
+        setBusy(key, null);
       }
       refresh();
     },
@@ -37,12 +56,11 @@ export function useFontActions() {
       try {
         const r = await api.deactivate(key);
         useUi.getState().setPhase(key, null);
-        if (r.warnings.length) useToasts.getState().push({ tone: "warning", text: `${name}: ${r.warnings.join("; ")}` });
-        else if (r.keptByOtherOwners > 0)
-          useToasts.getState().push({ tone: "info", text: `${name}: ${r.keptByOtherOwners} arquivo(s) continuam ativos porque outra coleção os usa.` });
-        else useToasts.getState().push({ tone: "success", text: `${name} desativada.` });
+        if (r.warnings.length) toast({ tone: "warning", text: `${name}: ${r.warnings.join("; ")}` });
+        else if (r.keptByOtherOwners > 0) toast({ tone: "info", text: `${name} continua ativa: uma coleção ativa também a usa.` });
+        else toast({ tone: "success", text: `${name} desativada. Os arquivos continuam disponíveis offline.` });
       } catch (e) {
-        useToasts.getState().push({ tone: "error", text: `Erro ao desativar ${name}: ${(e as Error).message}` });
+        toast({ tone: "error", text: `Não foi possível desativar ${name}: ${(e as Error).message}` });
       }
       refresh();
     },

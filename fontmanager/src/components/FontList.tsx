@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { GitCompare, Star } from "lucide-react";
+import { GitCompare, Lock, Star } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { useUi } from "@/store/ui";
+import { useUi, DEFAULT_TEXT } from "@/store/ui";
 import type { CatalogQuery, FamilySummary } from "@/lib/types";
-import { ActivationButton } from "./ActivationButton";
-import { Badge } from "./ui/badge";
+import { ActivateButton, DownloadButton } from "./ActivationButton";
 import { useFontPreview } from "./useFontPreview";
 
 const PAGE = 80;
@@ -21,20 +20,86 @@ export function useCatalogFilters(): Omit<CatalogQuery, "offset" | "limit"> {
       provider: s.provider || undefined,
       variableOnly: s.variableOnly,
       italicOnly: s.italicOnly,
-      view: s.view === "all" ? undefined : s.view === "collection" ? "collection" : s.view,
+      view: s.view === "all" ? undefined : s.view,
       collectionId: s.view === "collection" ? (s.collectionId ?? undefined) : undefined,
     }),
     [s.search, s.category, s.provider, s.variableOnly, s.italicOnly, s.view, s.collectionId],
   );
 }
 
-function Row({ f, grid }: { f: FamilySummary; grid: boolean }) {
-  const { previewText, previewSize, previewWeight, previewItalic, selected, compare } = useUi();
-  const set = useUi((s) => s.set);
+/** Indicador no canto, como em gerenciadores do macOS: ponto verde = ativa; cadeado = do sistema. */
+function StateMark({ f }: { f: FamilySummary }) {
+  if (f.state === "active" || f.state === "partial") return <span className="size-2 shrink-0 rounded-full bg-green" title="Ativa no sistema" aria-label="Ativa" role="img" />;
+  if (f.state === "system") return <Lock className="size-3 shrink-0 text-accent" aria-label="Instalada no sistema" />;
+  return null;
+}
+
+function Actions({ f }: { f: FamilySummary }) {
+  const compare = useUi((s) => s.compare);
   const toggleCompare = useUi((s) => s.toggleCompare);
   const qc = useQueryClient();
+  const inCompare = compare.includes(f.key);
+  return (
+    <div className="flex items-center gap-0.5">
+      <button
+        aria-label={inCompare ? `Remover ${f.name} da comparação` : `Comparar ${f.name}`}
+        aria-pressed={inCompare}
+        title="Comparar"
+        onClick={(e) => { e.stopPropagation(); toggleCompare(f.key); }}
+        className={cn("inline-flex size-6 items-center justify-center rounded-[5px] text-label-3 opacity-0 hover:bg-fill-2 hover:text-label-2 group-hover:opacity-100 focus-visible:opacity-100", inCompare && "text-accent opacity-100")}
+      >
+        <GitCompare className="size-[14px]" />
+      </button>
+      <button
+        aria-label={f.favorite ? `Remover ${f.name} das favoritas` : `Favoritar ${f.name}`}
+        aria-pressed={f.favorite}
+        title={f.favorite ? "Favorita" : "Favoritar"}
+        onClick={async (e) => { e.stopPropagation(); await api.setFavorite(f.key, !f.favorite); qc.invalidateQueries({ queryKey: ["catalog"] }); }}
+        className={cn("inline-flex size-6 items-center justify-center rounded-[5px] text-label-3 opacity-0 hover:bg-fill-2 hover:text-label-2 group-hover:opacity-100 focus-visible:opacity-100", f.favorite && "text-orange opacity-100")}
+      >
+        <Star className={cn("size-[14px]", f.favorite && "fill-current")} />
+      </button>
+      <DownloadButton f={f} />
+      <span className="ml-1"><ActivateButton f={f} /></span>
+    </div>
+  );
+}
+
+function Card({ f, grid }: { f: FamilySummary; grid: boolean }) {
+  const { previewText, previewSize, previewWeight, previewItalic, selected } = useUi();
+  const set = useUi((s) => s.set);
   const { style, ready } = useFontPreview(f, previewWeight, previewItalic);
   const isSel = selected === f.key;
+  // Na grade, o texto padrão vira o espécime curto clássico.
+  const text = grid && previewText === DEFAULT_TEXT ? "AaBbGg" : previewText || f.name;
+  const count = f.weights.length * (f.hasItalic ? 2 : 1);
+
+  if (grid)
+    return (
+      <div
+        role="option"
+        aria-selected={isSel}
+        tabIndex={-1}
+        onClick={() => set("selected", f.key)}
+        className={cn(
+          "group relative flex h-full flex-col overflow-hidden rounded-[10px] bg-card ring-1 ring-separator",
+          isSel && "ring-2 ring-accent",
+        )}
+      >
+        <div className="flex items-center gap-1.5 px-3 pt-2.5">
+          <StateMark f={f} />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-label-2" title={f.name}>{f.name}</span>
+          <span className="tabular text-[12px] text-label-3" title={`${count} estilos`}>{count}</span>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3" aria-hidden={!ready}>
+          <span className={cn("truncate leading-none transition-opacity duration-300", !ready && "text-label-3 opacity-40")} style={{ ...style, fontSize: previewSize }}>{text}</span>
+        </div>
+        <div className="flex items-center justify-end px-2 pb-2">
+          {f.variable && <span className="mr-auto pl-1 text-[11px] text-label-3">Variável</span>}
+          <Actions f={f} />
+        </div>
+      </div>
+    );
 
   return (
     <div
@@ -42,49 +107,21 @@ function Row({ f, grid }: { f: FamilySummary; grid: boolean }) {
       aria-selected={isSel}
       tabIndex={-1}
       onClick={() => set("selected", f.key)}
-      className={cn(
-        "group flex h-full cursor-default flex-col gap-1 border-b px-4 py-2.5 hover:bg-muted/60",
-        grid && "rounded-lg border bg-card",
-        isSel && "bg-accent hover:bg-accent",
-      )}
+      className={cn("group flex h-full items-center gap-4 border-b border-separator px-4", isSel ? "bg-accent/10" : "hover:bg-fill-2")}
     >
-      <div className="flex items-center gap-2">
-        <span className="min-w-[4ch] shrink truncate text-sm font-semibold" title={f.name}>{f.name}</span>
-        {!grid && <Badge className="hidden sm:inline-flex">{f.weights.length} {f.weights.length === 1 ? "estilo" : "pesos"}</Badge>}
-        {f.variable && <Badge tone="primary">Variável</Badge>}
-        {!grid && f.providers.length > 1 && <Badge title={f.providers.join(", ")}>{f.providers.length} fontes</Badge>}
-        <span className="ml-auto flex items-center gap-1.5">
-          <button
-            aria-label={compare.includes(f.key) ? "Remover da comparação" : "Comparar"}
-            aria-pressed={compare.includes(f.key)}
-            onClick={(e) => { e.stopPropagation(); toggleCompare(f.key); }}
-            className={cn("rounded p-1 text-muted-foreground opacity-0 hover:bg-muted group-hover:opacity-100 focus:opacity-100", compare.includes(f.key) && "text-primary opacity-100")}
-          >
-            <GitCompare className="size-4" />
-          </button>
-          <button
-            aria-label={f.favorite ? "Remover dos favoritos" : "Favoritar"}
-            aria-pressed={f.favorite}
-            onClick={async (e) => { e.stopPropagation(); await api.setFavorite(f.key, !f.favorite); qc.invalidateQueries({ queryKey: ["catalog"] }); }}
-            className={cn("rounded p-1 text-muted-foreground hover:bg-muted", f.favorite && "text-warning")}
-          >
-            <Star className={cn("size-4", f.favorite && "fill-current")} />
-          </button>
-          <ActivationButton f={f} compact={grid} />
-        </span>
+      <div className="w-44 shrink-0">
+        <div className="flex items-center gap-1.5"><StateMark f={f} /><span className="truncate text-[13px] font-medium" title={f.name}>{f.name}</span></div>
+        <div className="mt-0.5 text-[11px] text-label-2">{count} {count === 1 ? "estilo" : "estilos"}{f.variable && ", variável"}</div>
       </div>
-      <div
-        className={cn("truncate leading-tight transition-opacity", !ready && "opacity-40")}
-        style={{ ...style, fontSize: previewSize }}
-        aria-hidden={!ready}
-      >
-        {previewText || f.name}
+      <div className={cn("min-w-0 flex-1 truncate leading-tight transition-opacity duration-300", !ready && "text-label-3 opacity-40")} style={{ ...style, fontSize: previewSize }} aria-hidden={!ready}>
+        {text}
       </div>
+      <Actions f={f} />
     </div>
   );
 }
 
-export function FontList() {
+export function FontList({ onCount }: { onCount?: (n: number) => void }) {
   const filters = useCatalogFilters();
   const layout = useUi((s) => s.layout);
   const previewSize = useUi((s) => s.previewSize);
@@ -106,9 +143,11 @@ export function FontList() {
 
   const items = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
   const total = q.data?.pages[0]?.total ?? 0;
+  useEffect(() => onCount?.(total), [total, onCount]);
   const grid = layout === "grid";
-  const cols = grid ? Math.max(1, Math.floor(width / 320)) : 1;
-  const rowH = Math.max(grid ? 120 : 84, Math.round(previewSize * 1.3) + 54);
+  const GAP = 12;
+  const cols = grid ? Math.max(1, Math.floor((width - 24 + GAP) / (260 + GAP))) : 1;
+  const rowH = grid ? Math.max(150, Math.round(previewSize * 1.25) + 100) + GAP : Math.max(64, Math.round(previewSize * 1.3) + 24);
 
   useEffect(() => {
     const el = scroller.current;
@@ -120,24 +159,25 @@ export function FontList() {
   }, []);
 
   const rows = Math.ceil(total / cols);
-  const v = useVirtualizer({ count: rows, getScrollElement: () => scroller.current, estimateSize: () => rowH, overscan: 6 });
+  const v = useVirtualizer({ count: rows, getScrollElement: () => scroller.current, estimateSize: () => rowH, overscan: 4, paddingStart: grid ? GAP : 0, paddingEnd: GAP });
+  useEffect(() => { v.measure(); }, [rowH, cols, v]);
 
-  // Carregamento progressivo: ao chegar perto do fim do que já foi carregado, busca a próxima página.
   const vis = v.getVirtualItems();
   const lastVisible = vis.length ? vis[vis.length - 1].index : 0;
   useEffect(() => {
     if ((lastVisible + 3) * cols >= items.length && q.hasNextPage && !q.isFetchingNextPage) q.fetchNextPage();
   }, [lastVisible, cols, items.length, q]);
 
-  // Navegação por teclado (↑/↓) entre os itens.
+  // ↑/↓ (lista) e ←/→/↑/↓ (grade) navegam entre os itens.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+      const step = { ArrowDown: cols, ArrowUp: -cols, ArrowRight: grid ? 1 : 0, ArrowLeft: grid ? -1 : 0 }[e.key];
+      if (!step) return;
       const t = e.target as HTMLElement;
-      if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName)) return;
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) || t.closest("[role=tablist],[role=radiogroup]")) return;
       e.preventDefault();
       const idx = items.findIndex((i) => i.key === selected);
-      const next = Math.min(items.length - 1, Math.max(0, idx + (e.key === "ArrowDown" ? cols : -cols)));
+      const next = Math.min(items.length - 1, Math.max(0, idx < 0 ? 0 : idx + step));
       if (items[next]) {
         set("selected", items[next].key);
         v.scrollToIndex(Math.floor(next / cols));
@@ -145,14 +185,14 @@ export function FontList() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, selected, cols, set, v]);
+  }, [items, selected, cols, grid, set, v]);
 
-  if (q.isError) return <div className="p-6 text-sm text-danger">Erro ao carregar o catálogo: {(q.error as Error).message}</div>;
+  if (q.isError) return <div className="p-6 text-[13px] text-red">Não foi possível carregar o catálogo: {(q.error as Error).message}</div>;
   if (!q.isLoading && total === 0)
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center text-muted-foreground">
-        <p className="font-medium text-foreground">Nenhuma família encontrada</p>
-        <p className="text-sm">Ajuste a busca ou os filtros. Se o catálogo estiver vazio, sincronize em “Provedores”.</p>
+      <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
+        <p className="text-[17px] font-semibold text-label-2">Nenhuma fonte</p>
+        <p className="max-w-xs text-[13px] text-label-3">Mude a busca ou os filtros. Catálogo vazio? Sincronize em Gerenciar provedores.</p>
       </div>
     );
 
@@ -164,13 +204,14 @@ export function FontList() {
             key={vr.key}
             style={{
               position: "absolute", top: 0, left: 0, width: "100%", height: vr.size, transform: `translateY(${vr.start}px)`,
-              ...(grid ? { display: "grid", gap: 12, padding: "6px 12px", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : {}),
+              ...(grid ? { display: "grid", gap: GAP, padding: `0 12px ${GAP}px`, gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : {}),
             }}
           >
             {Array.from({ length: cols }, (_, c) => {
-              const f = items[vr.index * cols + c];
-              if (vr.index * cols + c >= total) return null;
-              return f ? <Row key={f.key} f={f} grid={grid} /> : <div key={c} className="m-1 animate-pulse rounded bg-muted/60" aria-hidden />;
+              const i = vr.index * cols + c;
+              if (i >= total) return null;
+              const f = items[i];
+              return f ? <Card key={f.key} f={f} grid={grid} /> : <div key={c} className={cn("bg-fill-2", grid ? "rounded-[10px]" : "border-b border-separator")} aria-hidden />;
             })}
           </div>
         ))}

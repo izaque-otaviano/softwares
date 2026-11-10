@@ -1,64 +1,96 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Cores de sistema da Apple (HIG). Claro e escuro seguem os valores do macOS. */
 :root {
-  --background: oklch(0.985 0.002 270);
-  --foreground: oklch(0.22 0.02 270);
-  --card: oklch(1 0 0);
-  --muted: oklch(0.955 0.005 270);
-  --muted-foreground: oklch(0.5 0.02 270);
-  --border: oklch(0.91 0.006 270);
-  --primary: oklch(0.52 0.2 277);
-  --primary-foreground: oklch(0.99 0 0);
-  --accent: oklch(0.94 0.02 277);
-  --success: oklch(0.55 0.15 150);
-  --warning: oklch(0.7 0.15 75);
-  --danger: oklch(0.55 0.22 27);
-  --ring: oklch(0.52 0.2 277 / 0.5);
+  --window: #ffffff;
+  --sidebar: rgb(236 236 238 / 0.86);
+  --toolbar: rgb(255 255 255 / 0.82);
+  --label: rgb(0 0 0 / 0.85);
+  --label-2: rgb(60 60 67 / 0.62);
+  --label-3: rgb(60 60 67 / 0.36);
+  --separator: rgb(0 0 0 / 0.1);
+  --fill: rgb(120 120 128 / 0.12);
+  --fill-2: rgb(120 120 128 / 0.08);
+  --control: #ffffff;
+  --card: #ffffff;
+  --accent: #007aff;
+  --accent-contrast: #ffffff;
+  --green: #34c759;
+  --orange: #ff9500;
+  --red: #ff3b30;
+  --selection: rgb(0 0 0 / 0.07);
+  --shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.12), 0 0 0 0.5px rgb(0 0 0 / 0.12);
+  --shadow-popover: 0 10px 30px rgb(0 0 0 / 0.18), 0 0 0 0.5px rgb(0 0 0 / 0.14);
 }
 .dark {
-  --background: oklch(0.18 0.01 270);
-  --foreground: oklch(0.95 0.005 270);
-  --card: oklch(0.22 0.012 270);
-  --muted: oklch(0.26 0.012 270);
-  --muted-foreground: oklch(0.7 0.015 270);
-  --border: oklch(0.32 0.012 270);
-  --primary: oklch(0.7 0.16 277);
-  --primary-foreground: oklch(0.15 0.02 270);
-  --accent: oklch(0.3 0.04 277);
-  --success: oklch(0.72 0.16 150);
-  --warning: oklch(0.8 0.14 80);
-  --danger: oklch(0.7 0.19 25);
-  --ring: oklch(0.7 0.16 277 / 0.55);
+  --window: #1e1e1e;
+  --sidebar: rgb(40 40 42 / 0.86);
+  --toolbar: rgb(30 30 30 / 0.82);
+  --label: rgb(255 255 255 / 0.88);
+  --label-2: rgb(235 235 245 / 0.6);
+  --label-3: rgb(235 235 245 / 0.32);
+  --separator: rgb(255 255 255 / 0.1);
+  --fill: rgb(120 120 128 / 0.24);
+  --fill-2: rgb(120 120 128 / 0.16);
+  --control: rgb(255 255 255 / 0.1);
+  --card: #262626;
+  --accent: #0a84ff;
+  --green: #30d158;
+  --orange: #ff9f0a;
+  --red: #ff453a;
+  --selection: rgb(255 255 255 / 0.1);
+  --shadow-control: 0 0 0 0.5px rgb(255 255 255 / 0.1), 0 0.5px 1px rgb(0 0 0 / 0.3);
+  --shadow-popover: 0 10px 30px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(255 255 255 / 0.12);
 }
+/* No app macOS a janela é transparente e o Core Animation desenha o material "sidebar" atrás da barra lateral. */
+.vibrant { --sidebar: transparent; }
+.vibrant body { background: transparent; }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-window: var(--window);
+  --color-sidebar: var(--sidebar);
+  --color-toolbar: var(--toolbar);
+  --color-label: var(--label);
+  --color-label-2: var(--label-2);
+  --color-label-3: var(--label-3);
+  --color-separator: var(--separator);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
+  --color-control: var(--control);
   --color-card: var(--card);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
   --color-accent: var(--accent);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-accent-contrast: var(--accent-contrast);
+  --color-green: var(--green);
+  --color-orange: var(--orange);
+  --color-red: var(--red);
+  --color-selection: var(--selection);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --shadow-control: var(--shadow-control);
+  --shadow-popover: var(--shadow-popover);
 }
 
 html, body, #root { height: 100%; }
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--window);
+  color: var(--label);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: -0.003em;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
-* { border-color: var(--border); }
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+input, textarea, pre, code, [data-selectable] { user-select: text; -webkit-user-select: text; }
+* { border-color: var(--separator); }
+input[type="checkbox"], input[type="range"], input[type="radio"] { accent-color: var(--accent); }
+:focus { outline: none; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: 0; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--label-3); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+.tabular { font-variant-numeric: tabular-nums; }

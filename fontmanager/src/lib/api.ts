@@ -31,6 +31,7 @@ export const api = {
   setProviderEnabled: (id: string, enabled: boolean) => call<void>("set_provider_enabled", { id, enabled }),
   sync: (provider?: string) => call<{ providerId: string; report?: { inserted: number; updated: number; removed: number }; error?: string }[]>("sync_catalog", { provider }),
   activate: (key: string, options?: { variants?: VariantView[]; scope?: Scope }) => call<ActivationReport>("activate_font", { key, options }),
+  download: (key: string) => call<number>("download_font", { key }),
   deactivate: (key: string) => call<DeactivationReport>("deactivate_font", { key }),
   activateCollection: (id: number) => call<{ key: string; report?: ActivationReport; error?: string }[]>("activate_collection", { id }),
   deactivateCollection: (id: number) => call<DeactivationReport[]>("deactivate_collection", { id }),

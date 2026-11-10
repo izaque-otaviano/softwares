@@ -19,14 +19,14 @@ const DISPLAYS = ["swap", "auto", "block", "fallback", "optional"];
 function CodeBlock({ title, code }: { title: string; code: string }) {
   const [ok, setOk] = useState(false);
   return (
-    <div className="rounded-md border bg-card">
-      <div className="flex items-center justify-between border-b px-3 py-1.5">
-        <span className="text-xs font-medium">{title}</span>
-        <Button size="sm" variant="ghost" aria-label={`Copiar ${title}`} onClick={async () => { await navigator.clipboard.writeText(code); setOk(true); setTimeout(() => setOk(false), 1500); }}>
-          {ok ? <Check className="text-success" /> : <Copy />} {ok ? "Copiado" : "Copiar"}
+    <div className="overflow-hidden rounded-[10px] bg-fill-2 ring-[0.5px] ring-separator">
+      <div className="flex items-center justify-between border-b border-separator px-3 py-1">
+        <span className="text-[12px] font-medium text-label-2">{title}</span>
+        <Button size="sm" variant="plain" aria-label={`Copiar ${title}`} onClick={async () => { await navigator.clipboard.writeText(code); setOk(true); setTimeout(() => setOk(false), 1500); }}>
+          {ok ? <Check className="text-green" /> : <Copy />} {ok ? "Copiado" : "Copiar"}
         </Button>
       </div>
-      <pre className="max-h-64 overflow-auto p-3 text-xs leading-relaxed whitespace-pre-wrap break-all"><code>{code}</code></pre>
+      <pre className="max-h-64 overflow-auto p-3 font-[ui-monospace,SFMono-Regular,Menlo,Consolas,monospace] text-[11.5px] leading-relaxed whitespace-pre-wrap break-all"><code>{code}</code></pre>
     </div>
   );
 }
@@ -68,31 +68,31 @@ export function WebTab({ detail }: { detail: FamilyDetail }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-xs font-medium">Provedor / CDN
-          <Select className="w-full" value={cdn} onChange={(e) => setCdn(e.target.value as Cdn)}>
+        <label className="space-y-1 text-[12px] text-label-2">Provedor / CDN
+          <Select className="flex w-full" value={cdn} onChange={(e) => setCdn(e.target.value as Cdn)}>
             {available.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </Select>
         </label>
-        <label className="space-y-1 text-xs font-medium">font-display
-          <Select className="w-full" value={display} onChange={(e) => setDisplay(e.target.value)}>
+        <label className="space-y-1 text-[12px] text-label-2">font-display
+          <Select className="flex w-full" value={display} onChange={(e) => setDisplay(e.target.value)}>
             {DISPLAYS.map((d) => <option key={d}>{d}</option>)}
           </Select>
         </label>
       </div>
 
       <fieldset>
-        <legend className="mb-1 text-xs font-medium">Pesos disponíveis ({real.weights.length})</legend>
+        <legend className="mb-1.5 text-[12px] text-label-2">Pesos disponíveis ({real.weights.length})</legend>
         <div className="flex flex-wrap gap-1.5">
           {real.weights.map((w) => (
             <button key={w} aria-pressed={weights.includes(w)} onClick={() => toggle(weights, w, setWeights)}
-              className={cn("rounded-md border px-2 py-1 text-xs", weights.includes(w) ? "border-primary bg-primary/10 text-primary" : "bg-card hover:bg-muted")}>
-              {w} <span className="text-muted-foreground">{weightName(w)}</span>
+              className={cn("rounded-[6px] px-2 py-1 text-[12px] shadow-control", weights.includes(w) ? "bg-accent text-accent-contrast" : "bg-control hover:bg-fill-2")}>
+              {w} <span className="opacity-70">{weightName(w)}</span>
             </button>
           ))}
         </div>
       </fieldset>
 
-      <div className="flex flex-wrap gap-4 text-sm">
+      <div className="flex flex-wrap gap-4 text-[13px]">
         {(["normal", "italic"] as Style[]).map((s) => (
           <label key={s} className={cn("flex items-center gap-1.5", !real.styles.includes(s) && "opacity-40")}>
             <input type="checkbox" disabled={!real.styles.includes(s)} checked={styles.includes(s)} onChange={() => toggle(styles, s, setStyles)} />
@@ -107,28 +107,28 @@ export function WebTab({ detail }: { detail: FamilyDetail }) {
 
       {real.subsets.length > 0 && (
         <fieldset>
-          <legend className="mb-1 text-xs font-medium">Subsets {cdn === "fontsource" ? "" : "(o Google/Bunny aplicam unicode-range automaticamente)"}</legend>
+          <legend className="mb-1.5 text-[12px] text-label-2">Subsets {cdn === "fontsource" ? "" : "(o Google/Bunny aplicam unicode-range automaticamente)"}</legend>
           <div className="flex flex-wrap gap-1.5">
             {real.subsets.map((s) => (
               <button key={s} aria-pressed={subsets.includes(s)} onClick={() => toggle(subsets, s, setSubsets)}
-                className={cn("rounded-md border px-2 py-0.5 text-xs", subsets.includes(s) ? "border-primary bg-primary/10 text-primary" : "bg-card hover:bg-muted")}>{s}</button>
+                className={cn("rounded-[6px] px-2 py-0.5 text-[12px] shadow-control", subsets.includes(s) ? "bg-accent text-accent-contrast" : "bg-control hover:bg-fill-2")}>{s}</button>
             ))}
           </div>
         </fieldset>
       )}
 
-      {out.isError && <p role="alert" className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{(out.error as Error).message}</p>}
+      {out.isError && <p role="alert" className="rounded-[10px] bg-red/10 p-3 text-[13px] text-red">{(out.error as Error).message}</p>}
       {out.data && (
         <div className="space-y-3">
-          {out.data.notes.map((n) => <p key={n} className="text-xs text-muted-foreground">ℹ {n}</p>)}
-          {out.data.linkHtml && <CodeBlock title="1. Link HTML (CDN)" code={out.data.linkHtml} />}
-          {out.data.importCss && <CodeBlock title="2. CSS com @import" code={out.data.importCss} />}
-          <CodeBlock title="3. Regra font-family" code={out.data.fontFamilyRule} />
-          {out.data.fontFaceCss && <CodeBlock title="4. Regras @font-face" code={out.data.fontFaceCss} />}
+          {out.data.notes.map((n) => <p key={n} className="text-[11px] text-label-2">{n}</p>)}
+          {out.data.linkHtml && <CodeBlock title="Link HTML" code={out.data.linkHtml} />}
+          {out.data.importCss && <CodeBlock title="CSS com @import" code={out.data.importCss} />}
+          <CodeBlock title="Regra font-family" code={out.data.fontFamilyRule} />
+          {out.data.fontFaceCss && <CodeBlock title="Regras @font-face" code={out.data.fontFaceCss} />}
           <CodeBlock title="React" code={out.data.react} />
           <CodeBlock title="Next.js" code={out.data.nextjs} />
           {cdn === "self_hosted" && (
-            <Button variant="outline" onClick={async () => {
+            <Button variant="push" onClick={async () => {
               const dest = await pickFolder();
               if (!dest) { useToasts.getState().push({ tone: "info", text: "Escolha uma pasta no aplicativo desktop para exportar." }); return; }
               try {

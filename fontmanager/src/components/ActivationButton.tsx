@@ -1,61 +1,101 @@
-import { AlertTriangle, Check, Download, Loader2, Power, PowerOff } from "lucide-react";
+import { AlertCircle, ArrowDownToLine, Check, CheckCircle2, Loader2, Lock } from "lucide-react";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 import { useUi } from "@/store/ui";
 import { useFontActions } from "@/lib/actions";
+import { cn } from "@/lib/utils";
 import { phaseLabel } from "./phaseLabel";
 import type { FamilySummary } from "@/lib/types";
 
-export function ActivationButton({ f, compact = false }: { f: FamilySummary; compact?: boolean }) {
-  const phase = useUi((s) => s.phases[f.key]);
-  const { activate, deactivate } = useFontActions();
-  const busy = phase && ["resolving", "downloading", "registering"].includes(phase.phase);
-  const stop = (e: React.MouseEvent) => e.stopPropagation();
+const stop = (e: React.MouseEvent) => e.stopPropagation();
 
-  if (busy)
+/**
+ * A ação principal do app. Pílula preenchida na cor de destaque (o único elemento chamativo da interface).
+ * Estados reais: Ativar → Baixando…/Registrando… → Ativa (clicar desativa) | Erro → Tentar de novo.
+ */
+export function ActivateButton({ f, size = "sm", showPhase = false }: { f: FamilySummary; size?: "sm" | "default" | "lg"; showPhase?: boolean }) {
+  const phase = useUi((s) => s.phases[f.key]);
+  const op = useUi((s) => s.busyOp[f.key]);
+  const { activate, deactivate } = useFontActions();
+  const width = size === "lg" ? "min-w-[112px]" : size === "default" ? "min-w-[92px]" : "min-w-[68px]";
+
+  if (op === "activate" && phase)
     return (
-      <Button size="sm" variant="outline" disabled aria-label={phaseLabel(phase)} onClick={stop}>
-        <Loader2 className="animate-spin" /> {!compact && phaseLabel(phase)}
-        {compact && <span className="sr-only">{phaseLabel(phase)}</span>}
+      <Button variant="primary" size={size} disabled className={cn(width, "disabled:opacity-80")} onClick={stop} aria-live="polite">
+        <Loader2 className="animate-spin" /> {showPhase ? phaseLabel(phase) : phase.phase === "registering" ? "Registrando…" : "Ativando…"}
       </Button>
     );
 
   if (f.state === "system")
     return (
-      <Badge tone="neutral" title="Já instalada no sistema; este app não a modifica">
-        <Check className="size-3" /> No sistema
-      </Badge>
+      <span className="inline-flex items-center gap-1 text-[11px] text-label-2" title="Instalada no sistema por você ou pelo SO. Este app não a altera.">
+        <Lock className="size-3" /> No sistema
+      </span>
     );
 
   if (f.state === "active" || f.state === "partial")
     return (
-      <span className="flex items-center gap-2" onClick={stop}>
-        {phase?.phase === "waiting_app" && !compact && (
-          <span className="hidden text-xs text-warning xl:inline">Aguardando atualização do aplicativo</span>
-        )}
-        <Badge tone="success"><span className="size-1.5 rounded-full bg-success" /> {f.state === "partial" ? "Parcial" : "Ativa"}</Badge>
-        <Button size="sm" variant="outline" onClick={() => deactivate(f.key, f.name)} aria-label={`Desativar ${f.name}`}>
-          <PowerOff /> {!compact && "Desativar"}
-        </Button>
-      </span>
+      <Button
+        size={size}
+        onClick={(e) => { stop(e); deactivate(f.key, f.name); }}
+        aria-pressed
+        aria-label={`${f.name} ativa. Desativar`}
+        title="Clique para desativar"
+        className={cn(width, "group rounded-full bg-green/15 text-green shadow-none hover:bg-red/12 hover:text-red")}
+      >
+        <Check className="group-hover:hidden" /><span className="group-hover:hidden">{f.state === "partial" ? "Parcial" : "Ativa"}</span>
+        <span className="hidden group-hover:inline">Desativar</span>
+      </Button>
+    );
+
+  if (phase?.phase === "error" && !op)
+    return (
+      <Button variant="primary" size={size} className={cn(width, "bg-red")} title={phase.message} onClick={(e) => { stop(e); activate(f.key, f.name); }}>
+        <AlertCircle /> Tentar de novo
+      </Button>
     );
 
   return (
-    <span className="flex items-center gap-2" onClick={stop}>
-      {phase?.phase === "error" && (
-        <span className="flex items-center gap-1 text-xs text-danger" title={phase.message}>
-          <AlertTriangle className="size-3.5" /> {!compact && "Erro ao ativar"}
-        </span>
-      )}
-      <Button
-        size="sm"
-        disabled={!f.installable}
-        title={f.installable ? undefined : "Nenhum provedor oferece arquivo TTF/OTF autorizado para esta família"}
-        onClick={() => activate(f.key, f.name)}
-        aria-label={`Ativar ${f.name}`}
-      >
-        {f.cached ? <Power /> : <Download />} {!compact && "Ativar"}
-      </Button>
-    </span>
+    <Button
+      variant="primary"
+      size={size}
+      className={width}
+      disabled={!f.installable || !!op}
+      title={f.installable ? `Ativar ${f.name} no sistema` : "Nenhum provedor oferece arquivo TTF/OTF autorizado para esta família"}
+      onClick={(e) => { stop(e); activate(f.key, f.name); }}
+    >
+      Ativar
+    </Button>
+  );
+}
+
+/** Ação secundária, discreta: só baixa para uso offline, sem registrar no sistema. */
+export function DownloadButton({ f, size = "icon-sm" }: { f: FamilySummary; size?: "icon-sm" | "icon" }) {
+  const op = useUi((s) => s.busyOp[f.key]);
+  const phase = useUi((s) => s.phases[f.key]);
+  const { download } = useFontActions();
+  if (f.state === "system") return null;
+  if (op === "download")
+    return (
+      <span className="inline-flex size-6 items-center justify-center text-label-2" role="status" aria-label={phase ? phaseLabel(phase) : "Baixando…"} title={phase ? phaseLabel(phase) : "Baixando…"}>
+        <Loader2 className="size-[15px] animate-spin" />
+      </span>
+    );
+  if (f.cached)
+    return (
+      <span className="inline-flex size-6 items-center justify-center text-label-3" title="Baixada: disponível offline" aria-label="Baixada, disponível offline">
+        <CheckCircle2 className="size-[15px]" />
+      </span>
+    );
+  return (
+    <Button
+      variant="plain"
+      size={size}
+      disabled={!f.installable || !!op}
+      aria-label={`Baixar ${f.name} para uso offline`}
+      title="Baixar para uso offline (sem ativar)"
+      onClick={(e) => { stop(e); download(f.key, f.name); }}
+    >
+      <ArrowDownToLine />
+    </Button>
   );
 }

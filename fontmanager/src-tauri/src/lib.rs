@@ -87,6 +87,15 @@ async fn activate_font(app: AppHandle, fm: Fm<'_>, key: String, options: Option<
 }
 
 #[tauri::command]
+async fn download_font(app: AppHandle, fm: Fm<'_>, key: String) -> CmdResult<u32> {
+    let k = key.clone();
+    fm.download(&key, move |phase| {
+        let _ = app.emit("activation", PhaseEvent { key: &k, phase });
+    })
+    .await
+}
+
+#[tauri::command]
 async fn deactivate_font(fm: Fm<'_>, key: String) -> CmdResult<DeactivationReport> {
     fm.deactivate(&key, None).await
 }
@@ -288,6 +297,7 @@ pub fn run() {
             sync_catalog,
             activate_font,
             deactivate_font,
+            download_font,
             activate_collection,
             deactivate_collection,
             deactivate_all,

@@ -11,17 +11,17 @@ export function CharGrid({ fontStyle }: { fontStyle: React.CSSProperties }) {
   const [hover, setHover] = useState<number | null>(null);
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[11px] text-label-2">
         Mostra os caracteres como o navegador os desenha com esta fonte; glifos ausentes aparecem na fonte substituta. Clique para copiar.
       </p>
       {RANGES.map(([name, a, b]) => (
         <section key={name} aria-label={name}>
-          <h4 className="mb-1 text-xs font-medium text-muted-foreground">{name}{hover !== null && hover >= a && hover <= b && ` — U+${hover.toString(16).toUpperCase().padStart(4, "0")}`}</h4>
+          <h4 className="mb-1 text-[11px] font-semibold text-label-2">{name}{hover !== null && hover >= a && hover <= b && ` — U+${hover.toString(16).toUpperCase().padStart(4, "0")}`}</h4>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(38px,1fr))] gap-1">
             {Array.from({ length: b - a + 1 }, (_, i) => a + i).filter((c) => !(c >= 0x7f && c < 0xa0)).map((c) => (
               <button
                 key={c}
-                className="aspect-square rounded border bg-card text-lg hover:bg-accent"
+                className="aspect-square rounded-[6px] text-lg hover:bg-fill-2"
                 style={fontStyle}
                 aria-label={`Caractere ${String.fromCodePoint(c)} U+${c.toString(16).toUpperCase()}`}
                 onMouseEnter={() => setHover(c)}

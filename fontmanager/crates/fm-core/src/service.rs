@@ -410,6 +410,31 @@ impl FontManager {
         })
     }
 
+    /// Baixa e valida os arquivos para uso offline, SEM registrar no sistema.
+    pub async fn download(&self, family_key: &str, progress: impl Fn(Phase) + Send + Sync) -> Result<u32> {
+        let detail = self.db.family_detail(family_key)?;
+        progress(Phase::Resolving);
+        let prefer_vf = self.db.get_setting("prefer_variable")?.as_deref() == Some("true");
+        let r: Result<u32> = async {
+            let (provider, files) = self.plan_files(family_key, None, prefer_vf).await?;
+            let total = files.len() as u32;
+            for (i, f) in files.iter().enumerate() {
+                progress(Phase::Downloading { done: i as u32, total });
+                self.cache.ensure(&provider, family_key, &detail.summary.name, detail.summary.license.as_deref(), f).await?;
+            }
+            Ok(total)
+        }
+        .await;
+        match &r {
+            Ok(n) => self.db.log_op("download", Some(family_key), "ok", &format!("{n} arquivo(s) em cache")),
+            Err(e) => {
+                progress(Phase::Error { message: e.to_string() });
+                self.db.log_op("download", Some(family_key), "error", &e.to_string());
+            }
+        }
+        r
+    }
+
     pub async fn deactivate(&self, family_key: &str, owner: Option<String>) -> Result<DeactivationReport> {
         let _guard = self.op_lock.lock().await;
         let owner = owner.unwrap_or_else(|| format!("family:{family_key}"));
