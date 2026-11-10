@@ -77,8 +77,17 @@ jobs:
         run: |
           dmg=$(ls target/universal-apple-darwin/release/bundle/dmg/*.dmg)
           hdiutil verify "$dmg"
-          bin=$(ls target/universal-apple-darwin/release/bundle/macos/*.app/Contents/MacOS/* | head -1)
+          # Monta o DMG e confere o app que o usuário vai arrastar para Aplicativos.
+          mnt=$(mktemp -d)
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mnt" >/dev/null
+          ls "$mnt"
+          test -L "$mnt/Applications"            # atalho para arrastar e instalar
+          app=$(ls -d "$mnt"/*.app | head -1)
+          bin="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
           archs=$(lipo -archs "$bin"); echo "arquiteturas: $archs"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
+          codesign -dv "$app" 2>&1 | head -5 || true
+          hdiutil detach "$mnt" >/dev/null
           [[ $archs == *x86_64* && $archs == *arm64* ]]
           echo "### $(basename "$dmg") ($(du -h "$dmg" | cut -f1), universal)" >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
