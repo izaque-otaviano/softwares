@@ -16,6 +16,7 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "cdn.jsdelivr.net",
     "data.jsdelivr.com",
     "fonts.bunny.net",
+    "www.fontsquirrel.com",
 ];
 
 pub const MAX_FONT_BYTES: u64 = 30 * 1024 * 1024;
@@ -100,6 +101,13 @@ impl Http {
         let status = resp.status();
         if !status.is_success() {
             return Err(Error::Http(format!("HTTP {status}")));
+        }
+        // 202 sem conteúdo = o site pediu uma verificação de navegador (proteção anti-robôs).
+        // Não tentamos contornar: o app se identifica honestamente e informa o bloqueio.
+        if status == reqwest::StatusCode::ACCEPTED && resp.content_length().unwrap_or(0) == 0 {
+            return Err(Error::Unavailable(
+                "o site recusou o acesso automático deste app (HTTP 202 sem conteúdo, proteção anti-robôs)".into(),
+            ));
         }
         if let Some(len) = resp.content_length() {
             if len > max {

@@ -1,0 +1,46 @@
+[
+ {
+  "id": "479",
+  "family_name": "1942 report",
+  "is_monocase": "N",
+  "family_urlname": "1942-report",
+  "foundry_name": "Johan Holmdahl",
+  "foundry_urlname": "Johan-Holmdahl",
+  "font_filename": "1942.ttf",
+  "classification": "Typewriter",
+  "family_count": "1"
+ },
+ {
+  "id": "1025",
+  "family_name": "Open Sans",
+  "is_monocase": "N",
+  "family_urlname": "open-sans",
+  "foundry_name": "Ascender Fonts",
+  "foundry_urlname": "Ascender-Fonts",
+  "font_filename": "OpenSans-Regular.ttf",
+  "classification": "Sans Serif",
+  "family_count": "10"
+ },
+ {
+  "id": "1703",
+  "family_name": "Rye",
+  "is_monocase": "N",
+  "family_urlname": "rye",
+  "foundry_name": "Nicole Fally",
+  "foundry_urlname": "Nicole-Fally",
+  "font_filename": "Rye-Regular.ttf",
+  "classification": "Display",
+  "family_count": "1"
+ },
+ {
+  "id": "1018",
+  "family_name": "Six Caps",
+  "is_monocase": "N",
+  "family_urlname": "six-caps",
+  "foundry_name": "Vernon Adams",
+  "foundry_urlname": "Vernon-Adams",
+  "font_filename": "SixCaps.ttf",
+  "classification": "Display",
+  "family_count": "1"
+ }
+]

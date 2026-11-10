@@ -16,6 +16,9 @@ pub struct CacheFile {
     pub weight: u16,
     pub style: String,
     pub variable: bool,
+    /// Distingue arquivos de pacote com o mesmo peso/estilo (ex.: "Condensed Bold"). Vazio nos demais.
+    #[serde(default)]
+    pub variant_name: String,
     pub format: String,
     pub rel_path: String,
     pub sha256: String,
@@ -52,7 +55,7 @@ fn scope_str(s: Scope) -> &'static str {
     }
 }
 
-const CF_COLS: &str = "id,family_key,family_name,provider_id,weight,style,variable,format,rel_path,sha256,size,internal_family,internal_style,source_url,license";
+const CF_COLS: &str = "id,family_key,family_name,provider_id,weight,style,variable,format,rel_path,sha256,size,internal_family,internal_style,source_url,license,variant_name";
 
 fn cf_row(r: &rusqlite::Row) -> rusqlite::Result<CacheFile> {
     Ok(CacheFile {
@@ -71,6 +74,7 @@ fn cf_row(r: &rusqlite::Row) -> rusqlite::Result<CacheFile> {
         internal_style: r.get(12)?,
         source_url: r.get(13)?,
         license: r.get(14)?,
+        variant_name: r.get(15)?,
     })
 }
 
@@ -78,18 +82,18 @@ impl Db {
     pub fn insert_cache_file(&self, f: &CacheFile) -> Result<i64> {
         let c = self.lock();
         c.execute(
-            "INSERT INTO cache_files(family_key,family_name,provider_id,weight,style,variable,format,rel_path,sha256,size,internal_family,internal_style,source_url,license,downloaded_at)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
-             ON CONFLICT(family_key,provider_id,weight,style,variable) DO UPDATE SET
+            "INSERT INTO cache_files(family_key,family_name,provider_id,weight,style,variable,format,rel_path,sha256,size,internal_family,internal_style,source_url,license,downloaded_at,variant_name)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+             ON CONFLICT(family_key,provider_id,weight,style,variable,variant_name) DO UPDATE SET
                format=?7,rel_path=?8,sha256=?9,size=?10,internal_family=?11,internal_style=?12,source_url=?13,license=?14,downloaded_at=?15",
             params![
                 f.family_key, f.family_name, f.provider_id, f.weight, f.style, f.variable, f.format, f.rel_path, f.sha256,
-                f.size as i64, f.internal_family, f.internal_style, f.source_url, f.license, now()
+                f.size as i64, f.internal_family, f.internal_style, f.source_url, f.license, now(), f.variant_name
             ],
         )?;
         Ok(c.query_row(
-            "SELECT id FROM cache_files WHERE family_key=?1 AND provider_id=?2 AND weight=?3 AND style=?4 AND variable=?5",
-            params![f.family_key, f.provider_id, f.weight, f.style, f.variable],
+            "SELECT id FROM cache_files WHERE family_key=?1 AND provider_id=?2 AND weight=?3 AND style=?4 AND variable=?5 AND variant_name=?6",
+            params![f.family_key, f.provider_id, f.weight, f.style, f.variable, f.variant_name],
             |r| r.get(0),
         )?)
     }
@@ -98,7 +102,7 @@ impl Db {
         Ok(self
             .lock()
             .query_row(
-                &format!("SELECT {CF_COLS} FROM cache_files WHERE family_key=?1 AND provider_id=?2 AND weight=?3 AND style=?4 AND variable=?5"),
+                &format!("SELECT {CF_COLS} FROM cache_files WHERE family_key=?1 AND provider_id=?2 AND weight=?3 AND style=?4 AND variable=?5 AND variant_name=''"),
                 params![family_key, provider_id, weight, style, variable],
                 cf_row,
             )
@@ -110,6 +114,13 @@ impl Db {
             .query_row(&format!("SELECT {CF_COLS} FROM cache_files WHERE id=?1"), [id], cf_row)
             .optional()?
             .ok_or_else(|| Error::NotFound(format!("arquivo em cache {id}")))
+    }
+
+    pub fn cache_files_for_provider(&self, family_key: &str, provider_id: &str) -> Result<Vec<CacheFile>> {
+        let c = self.lock();
+        let mut s = c.prepare(&format!("SELECT {CF_COLS} FROM cache_files WHERE family_key=?1 AND provider_id=?2 ORDER BY weight,style"))?;
+        let v = s.query_map(params![family_key, provider_id], cf_row)?.collect::<std::result::Result<_, _>>()?;
+        Ok(v)
     }
 
     pub fn cache_files_for_family(&self, family_key: &str) -> Result<Vec<CacheFile>> {

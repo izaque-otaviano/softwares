@@ -19,6 +19,13 @@ Nenhum processo de terceiros é encerrado, reiniciado ou manipulado.
 * **Fontshare — não implementado.** Não há API pública documentada nem licença que autorize cache/instalação
   automatizados; usar endpoints internos do site seria scraping. A arquitetura está pronta (`providers/fontshare.rs`).
   Alternativa: baixar o ZIP no site e instalar o arquivo como fonte local.
+* **Font Squirrel — implementado, mas hoje bloqueado pelo próprio site.** A API pública (documentada em 2010)
+  funciona: lista, detalhes, MD5 e pacotes foram verificados ao vivo em 2026-11-10 com um cliente comum. Porém o
+  site responde `202` sem conteúdo a apps desconhecidos (proteção anti-robôs) — inclusive a este, que se identifica
+  como `FontManager/0.1`. **Não falsificamos o User-Agent para contornar isso.** Enquanto o Font Squirrel não liberar
+  o acesso, a sincronização falha com essa mensagem. As imagens de prévia podem ser bloqueadas pelo mesmo motivo;
+  nesse caso a interface pede para baixar a fonte.
+  A API não informa licenças: elas só são conhecidas ao baixar, e fora de OFL/Apache exigem confirmação.
 * **Bunny Fonts** só serve CSS/WOFF2 (não instala) e não é consultado para listagem.
 * **Google Fonts**: o catálogo oficial exige uma chave gratuita (Configurações). Sem ela, o catálogo vem do
   Fontsource. Os arquivos TTF continuam vindo da CSS2 API do Google (comportamento observado e testado ao vivo:

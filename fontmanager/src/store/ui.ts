@@ -22,6 +22,8 @@ interface UiState {
   compareOpen: boolean;
   theme: Theme;
   sidebarOpen: boolean;
+  /** Licença aguardando a confirmação do usuário antes de ativar. */
+  licensePrompt: { key: string; name: string; license: string; text: string } | null;
   /** Operação em andamento por família (para separar "baixar" de "ativar"). */
   busyOp: Record<string, "activate" | "download">;
   setBusy: (key: string, op: "activate" | "download" | null) => void;
@@ -53,6 +55,7 @@ export const useUi = create<UiState>((set) => ({
   compareOpen: false,
   theme: "system",
   sidebarOpen: true,
+  licensePrompt: null,
   busyOp: {},
   setBusy: (key, op) => set((s) => { const b = { ...s.busyOp }; if (op) b[key] = op; else delete b[key]; return { busyOp: b }; }),
   phases: {},

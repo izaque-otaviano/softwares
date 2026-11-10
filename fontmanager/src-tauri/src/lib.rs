@@ -28,8 +28,16 @@ fn query_catalog(fm: Fm, query: CatalogQuery) -> CmdResult<CatalogPage> {
 }
 
 #[tauri::command]
-fn family_detail(fm: Fm, key: String) -> CmdResult<FamilyDetail> {
+async fn family_detail(fm: Fm<'_>, key: String) -> CmdResult<FamilyDetail> {
+    // Provedores com detalhes sob demanda (Font Squirrel): busca uma vez; sem rede, segue com o que há.
+    let _ = fm.ensure_details(&key).await;
     fm.db.family_detail(&key)
+}
+
+/// URL da imagem de prévia publicada pelo provedor (para famílias sem CDN de fontes).
+#[tauri::command]
+async fn preview_image(fm: Fm<'_>, key: String) -> CmdResult<Option<String>> {
+    Ok(fm.ensure_details(&key).await?.and_then(|d| d.preview_image))
 }
 
 #[tauri::command]
@@ -291,6 +299,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             query_catalog,
             family_detail,
+            preview_image,
             categories,
             list_providers,
             set_provider_enabled,

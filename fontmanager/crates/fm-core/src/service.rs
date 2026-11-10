@@ -40,7 +40,7 @@ pub enum AppRecognition {
 pub struct ActivationReport {
     pub family_key: String,
     pub family_name: String,
-    /// "activated" | "already_in_system"
+    /// "activated" | "already_in_system" | "license_required"
     pub outcome: String,
     pub provider_used: Option<String>,
     pub files: u32,
@@ -54,6 +54,10 @@ pub struct ActivationReport {
     pub app_recognition: AppRecognition,
     pub scope: Scope,
     pub message: String,
+    /// Licença do pacote usado (quando o provedor a informa só no download).
+    pub license: Option<String>,
+    /// Texto integral da licença, para o usuário ler antes de confirmar.
+    pub license_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +87,23 @@ pub struct ActivateOptions {
     pub scope: Option<Scope>,
     /// Quem pede a ativação; padrão `family:<key>`. Coleções usam `collection:<id>`.
     pub owner: Option<String>,
+    /// O usuário leu e aceitou a licença exibida (necessário fora de OFL/Apache).
+    #[serde(default)]
+    pub accept_license: bool,
+}
+
+/// Como obter os arquivos instaláveis de uma família.
+enum Plan {
+    /// Arquivos soltos com URL (Google, Fontsource).
+    Files(String, Vec<RemoteFile>),
+    /// Pacote ZIP com os originais e a licença (Font Squirrel).
+    Package { provider: String, fam: FamilyRef, source_id: i64 },
+}
+
+struct Obtained {
+    provider: String,
+    files: Vec<CacheFile>,
+    source_id: i64,
 }
 
 pub struct FontManager {
@@ -195,18 +216,20 @@ impl FontManager {
         let out = self.generate_css(family_key, &r)?;
         let d = self.db.family_detail(family_key)?;
         let wanted: Vec<VariantView> = out.self_host_files.iter().map(|f| VariantView { weight: f.weight, style: f.style }).collect();
-        let (provider, files) = self.plan_files(family_key, Some(&wanted), req.variable).await?;
+        let plan = self.plan_files(family_key, Some(&wanted), req.variable).await?;
+        let got = self.obtain(family_key, &d.summary.name, d.summary.license.as_deref(), plan, &|_| {}).await?;
         let dir = dest.join("fonts");
         std::fs::create_dir_all(&dir)?;
         let mut written = Vec::new();
-        for f in files {
-            let cf = self.cache.ensure(&provider, family_key, &d.summary.name, d.summary.license.as_deref(), &f).await?;
-            let name = out
+        for cf in got.files {
+            let Some(name) = out
                 .self_host_files
                 .iter()
-                .find(|s| s.weight == f.weight && s.style == f.style && s.variable == f.variable)
+                .find(|s| s.weight == cf.weight && s.style.as_str() == cf.style && s.variable == cf.variable)
                 .map(|s| s.file_name.clone())
-                .ok_or_else(|| Error::Other("arquivo fora da seleção".into()))?;
+            else {
+                continue; // arquivo do pacote fora da seleção
+            };
             let target = dir.join(&name);
             std::fs::copy(self.cache.verify(&cf)?, &target)?;
             written.push(target);
@@ -220,7 +243,7 @@ impl FontManager {
     // ---- resolução de arquivos instaláveis --------------------------------------------------------
 
     /// Escolhe o provedor e os arquivos TTF/OTF para as variantes pedidas.
-    async fn plan_files(&self, family_key: &str, wanted: Option<&[VariantView]>, prefer_variable: bool) -> Result<(String, Vec<RemoteFile>)> {
+    async fn plan_files(&self, family_key: &str, wanted: Option<&[VariantView]>, prefer_variable: bool) -> Result<Plan> {
         let detail = self.db.family_detail(family_key)?;
         // O Google CSS2 "aceita" pesos/estilos inexistentes (sintetiza arquivos), então validamos
         // antes contra as variantes reais do catálogo.
@@ -242,8 +265,12 @@ impl FontManager {
                 cands.insert(0, ("google".into(), fam, sid));
             }
             if s.provider_id == "fontsource" {
-                let fam = FamilyRef { name: detail.summary.name.clone(), provider_family_id: s.provider_family_id.clone(), variants, variable: false };
+                let fam = FamilyRef { name: detail.summary.name.clone(), provider_family_id: s.provider_family_id.clone(), variants: variants.clone(), variable: false };
                 cands.push(("fontsource".into(), fam, sid));
+            }
+            if s.provider_id == "fontsquirrel" {
+                let fam = FamilyRef { name: detail.summary.name.clone(), provider_family_id: s.provider_family_id.clone(), variants, variable: false };
+                cands.push(("fontsquirrel".into(), fam, sid)); // por último: pacote + regra de licença
             }
         }
         let mut last_err: Option<Error> = None;
@@ -251,6 +278,9 @@ impl FontManager {
             let Some(p) = self.registry.get(&pid) else { continue };
             if !p.info().can_install_files {
                 continue;
+            }
+            if pid == "fontsquirrel" {
+                return Ok(Plan::Package { provider: pid, fam, source_id: sid });
             }
             match p.resolve_files(&self.http, &fam).await {
                 Ok(files) => {
@@ -268,12 +298,97 @@ impl FontManager {
                     if sid > 0 {
                         let _ = self.db.store_source_files(sid, &files);
                     }
-                    return Ok((pid, files));
+                    return Ok(Plan::Files(pid, files));
                 }
                 Err(e) => last_err = Some(e),
             }
         }
         Err(last_err.unwrap_or_else(|| Error::Unavailable("nenhum provedor oferece arquivos instaláveis desta família".into())))
+    }
+
+    /// Executa o plano: baixa (ou reaproveita do cache), valida e devolve os arquivos em cache.
+    async fn obtain(&self, key: &str, name: &str, license: Option<&str>, plan: Plan, progress: &(impl Fn(Phase) + Send + Sync)) -> Result<Obtained> {
+        match plan {
+            Plan::Files(provider, files) => {
+                let total = files.len() as u32;
+                let mut out = Vec::new();
+                for (i, f) in files.iter().enumerate() {
+                    progress(Phase::Downloading { done: i as u32, total });
+                    out.push(self.cache.ensure(&provider, key, name, license, f).await?);
+                }
+                progress(Phase::Downloading { done: total, total });
+                let source_id = self.db.source_id(&provider, key)?.unwrap_or(0);
+                Ok(Obtained { provider, files: out, source_id })
+            }
+            Plan::Package { provider, fam, source_id } => {
+                // Já baixado e íntegro? Usa o cache (funciona offline).
+                let cached = self.db.cache_files_for_provider(key, &provider)?;
+                if !cached.is_empty() && cached.iter().all(|c| self.cache.verify(c).is_ok()) {
+                    progress(Phase::Downloading { done: 1, total: 1 });
+                    return Ok(Obtained { provider, files: cached, source_id });
+                }
+                let p = self.registry.get(&provider).ok_or_else(|| Error::NotFound(provider.clone()))?;
+                progress(Phase::Downloading { done: 0, total: 1 });
+                let checksums = self.ensure_details(key).await.ok().flatten().map(|d| d.checksums).unwrap_or_default();
+                let pkg = p.fetch_package(&self.http, &fam).await?.ok_or_else(|| Error::Unavailable(format!("{provider} não entregou o pacote")))?;
+                let lic = pkg.license.as_ref().map(|l| crate::db::SourceLicense {
+                    license: crate::archive::license_id_from_file_name(&l.file_name),
+                    file_name: l.file_name.clone(),
+                    text: l.text.clone(),
+                });
+                let lic_id = lic.as_ref().map(|l| l.license.clone()).unwrap_or_else(|| NO_LICENSE.into());
+                // Valida TUDO antes de gravar qualquer coisa: MD5 publicado pelo provedor + estrutura.
+                for f in &pkg.files {
+                    if let Some(expected) = checksums.get(&f.file_name) {
+                        let got = hex::encode(<md5::Md5 as md5::Digest>::digest(&f.bytes));
+                        if &got != expected {
+                            return Err(Error::InvalidFont(format!("{}: MD5 não confere com o publicado pelo provedor", f.file_name)));
+                        }
+                    }
+                }
+                let mut out = Vec::new();
+                for f in &pkg.files {
+                    match self.cache.store_package_file(&provider, key, name, &lic_id, &f.file_name, &f.bytes, &pkg.url) {
+                        Ok(cf) => out.push(cf),
+                        Err(e) => tracing::warn!("{}: ignorado ({e})", f.file_name),
+                    }
+                }
+                if out.is_empty() {
+                    return Err(Error::InvalidFont("nenhum arquivo válido no pacote".into()));
+                }
+                if source_id > 0 {
+                    self.db.set_source_license(
+                        source_id,
+                        &lic.unwrap_or(crate::db::SourceLicense { license: NO_LICENSE.into(), file_name: String::new(), text: "O pacote baixado não contém arquivo de licença.".into() }),
+                    )?;
+                }
+                progress(Phase::Downloading { done: 1, total: 1 });
+                Ok(Obtained { provider, files: out, source_id })
+            }
+        }
+    }
+
+    /// Busca (uma vez) os detalhes sob demanda das origens que os oferecem: variantes reais,
+    /// imagem de prévia e checksums. Devolve os detalhes da primeira origem que os tem.
+    pub async fn ensure_details(&self, key: &str) -> Result<Option<crate::db::RemoteDetailsRow>> {
+        let detail = self.db.family_detail(key)?;
+        for s in &detail.sources {
+            if s.provider_id != "fontsquirrel" {
+                continue;
+            }
+            let Some(sid) = self.db.source_id(&s.provider_id, key)? else { continue };
+            if let Some(d) = self.db.remote_details(sid)? {
+                return Ok(Some(d));
+            }
+            let Some(p) = self.registry.get(&s.provider_id) else { continue };
+            let fam = FamilyRef { name: detail.summary.name.clone(), provider_family_id: s.provider_family_id.clone(), variants: vec![], variable: false };
+            if let Some(rd) = p.fetch_details(&self.http, &fam).await? {
+                let row = crate::db::RemoteDetailsRow { preview_image: rd.preview_image, checksums: rd.checksums };
+                self.db.set_remote_details(sid, &row, &rd.variants)?;
+                return Ok(Some(row));
+            }
+        }
+        Ok(None)
     }
 
     // ---- ativação --------------------------------------------------------------------------------
@@ -314,23 +429,50 @@ impl FontManager {
                 app_recognition: AppRecognition::NotVerifiable,
                 scope,
                 message: format!("{name} já está instalada no sistema; nada foi alterado."),
+                license: None,
+                license_text: None,
             });
         }
 
         // 2. Identifica os arquivos necessários.
         progress(Phase::Resolving);
         let prefer_vf = self.db.get_setting("prefer_variable")?.as_deref() == Some("true");
-        let (provider, files) = self.plan_files(key, opts.variants.as_deref(), prefer_vf).await?;
+        let plan = self.plan_files(key, opts.variants.as_deref(), prefer_vf).await?;
 
         // 3-4. Baixa (se não estiver em cache) e valida.
-        let total = files.len() as u32;
-        let mut cached: Vec<CacheFile> = Vec::new();
-        for (i, f) in files.iter().enumerate() {
-            progress(Phase::Downloading { done: i as u32, total });
-            let cf = self.cache.ensure(&provider, key, &name, detail.summary.license.as_deref(), f).await?;
-            cached.push(cf);
+        let Obtained { provider, files: cached, source_id } = self.obtain(key, &name, detail.summary.license.as_deref(), plan, progress).await?;
+
+        // 4b. Regra de licenças dos pacotes: só OFL/Apache ativam sem confirmação explícita.
+        let mut license: Option<(String, String)> = None;
+        if provider == "fontsquirrel" {
+            let lic = self.db.source_license(source_id)?;
+            let (id, text) = match &lic {
+                Some(l) => (l.license.clone(), l.text.clone()),
+                None => (NO_LICENSE.to_string(), "O pacote baixado não contém arquivo de licença.".to_string()),
+            };
+            if !crate::archive::license_auto_approved(&id) {
+                if opts.accept_license {
+                    self.db.accept_license(key, &provider, &id)?;
+                } else if !self.db.license_accepted(key, &provider, &id)? {
+                    return Ok(ActivationReport {
+                        family_key: key.into(),
+                        family_name: name.clone(),
+                        outcome: "license_required".into(),
+                        provider_used: Some(provider),
+                        files: cached.len() as u32,
+                        registered_in_os: false,
+                        notification: Notification::NotSent,
+                        visible_to_new_processes: None,
+                        app_recognition: AppRecognition::NotVerifiable,
+                        scope,
+                        message: format!("{name} usa a licença \"{id}\". Leia e confirme para ativar; nada foi registrado no sistema."),
+                        license: Some(id),
+                        license_text: Some(text),
+                    });
+                }
+            }
+            license = Some((id, text));
         }
-        progress(Phase::Downloading { done: total, total });
 
         // 5. Registra no SO. Em qualquer falha, desfaz o que esta operação registrou.
         progress(Phase::Registering);
@@ -407,6 +549,8 @@ impl FontManager {
             app_recognition: AppRecognition::NotVerifiable,
             scope,
             message,
+            license: license.as_ref().map(|l| l.0.clone()),
+            license_text: None,
         })
     }
 
@@ -416,13 +560,9 @@ impl FontManager {
         progress(Phase::Resolving);
         let prefer_vf = self.db.get_setting("prefer_variable")?.as_deref() == Some("true");
         let r: Result<u32> = async {
-            let (provider, files) = self.plan_files(family_key, None, prefer_vf).await?;
-            let total = files.len() as u32;
-            for (i, f) in files.iter().enumerate() {
-                progress(Phase::Downloading { done: i as u32, total });
-                self.cache.ensure(&provider, family_key, &detail.summary.name, detail.summary.license.as_deref(), f).await?;
-            }
-            Ok(total)
+            let plan = self.plan_files(family_key, None, prefer_vf).await?;
+            let got = self.obtain(family_key, &detail.summary.name, detail.summary.license.as_deref(), plan, &progress).await?;
+            Ok(got.files.len() as u32)
         }
         .await;
         match &r {
@@ -554,6 +694,9 @@ impl FontManager {
         self.backend.visible_to_new_processes(family)
     }
 }
+
+/// Rótulo quando o pacote não traz arquivo de licença (nunca é aprovado automaticamente).
+pub const NO_LICENSE: &str = "Sem arquivo de licença";
 
 fn display_name(cf: &CacheFile) -> String {
     let base = cf.internal_family.clone().unwrap_or_else(|| cf.family_name.clone());

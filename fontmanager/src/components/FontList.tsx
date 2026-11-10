@@ -8,6 +8,7 @@ import { useUi, DEFAULT_TEXT } from "@/store/ui";
 import type { CatalogQuery, FamilySummary } from "@/lib/types";
 import { ActivateButton, DownloadButton } from "./ActivationButton";
 import { useFontPreview } from "./useFontPreview";
+import { RemotePreview } from "./RemotePreview";
 
 const PAGE = 80;
 
@@ -73,6 +74,8 @@ function Card({ f, grid }: { f: FamilySummary; grid: boolean }) {
   // Na grade, o texto padrão vira o espécime curto clássico.
   const text = grid && previewText === DEFAULT_TEXT ? "AaBbGg" : previewText || f.name;
   const count = f.weights.length * (f.hasItalic ? 2 : 1);
+  // Sem CDN de fontes e ainda não baixada: mostra a imagem oficial do provedor.
+  const imagePreview = f.previewCdn === "fontsquirrel" && !f.cached;
 
   if (grid)
     return (
@@ -89,10 +92,10 @@ function Card({ f, grid }: { f: FamilySummary; grid: boolean }) {
         <div className="flex items-center gap-1.5 px-3 pt-2.5">
           <StateMark f={f} />
           <span className="min-w-0 flex-1 truncate text-[13px] text-label-2" title={f.name}>{f.name}</span>
-          <span className="tabular text-[12px] text-label-3" title={`${count} estilos`}>{count}</span>
+          {count > 0 && <span className="tabular text-[12px] text-label-3" title={`${count} estilos`}>{count}</span>}
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3" aria-hidden={!ready}>
-          <span className={cn("truncate leading-none transition-opacity duration-300", !ready && "text-label-3 opacity-40")} style={{ ...style, fontSize: previewSize }}>{text}</span>
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3" aria-hidden={!ready && !imagePreview}>
+          {imagePreview ? <RemotePreview f={f} height={previewSize} className="object-center" /> : <span className={cn("truncate leading-none transition-opacity duration-300", !ready && "text-label-3 opacity-40")} style={{ ...style, fontSize: previewSize }}>{text}</span>}
         </div>
         <div className="flex items-center justify-end px-2 pb-2">
           {f.variable && <span className="mr-auto pl-1 text-[11px] text-label-3">Variável</span>}
@@ -113,9 +116,13 @@ function Card({ f, grid }: { f: FamilySummary; grid: boolean }) {
         <div className="flex items-center gap-1.5"><StateMark f={f} /><span className="truncate text-[13px] font-medium" title={f.name}>{f.name}</span></div>
         <div className="mt-0.5 text-[11px] text-label-2">{count} {count === 1 ? "estilo" : "estilos"}{f.variable && ", variável"}</div>
       </div>
-      <div className={cn("min-w-0 flex-1 truncate leading-tight transition-opacity duration-300", !ready && "text-label-3 opacity-40")} style={{ ...style, fontSize: previewSize }} aria-hidden={!ready}>
-        {text}
-      </div>
+      {imagePreview ? (
+        <div className="min-w-0 flex-1"><RemotePreview f={f} height={previewSize} /></div>
+      ) : (
+        <div className={cn("min-w-0 flex-1 truncate leading-tight transition-opacity duration-300", !ready && "text-label-3 opacity-40")} style={{ ...style, fontSize: previewSize }} aria-hidden={!ready}>
+          {text}
+        </div>
+      )}
       <Actions f={f} />
     </div>
   );

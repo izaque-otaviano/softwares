@@ -113,6 +113,7 @@ impl FontCache {
             weight: f.weight,
             style: f.style.as_str().into(),
             variable: f.variable || info.variable,
+            variant_name: String::new(),
             format: info.format.as_str().into(),
             rel_path: rel,
             sha256: sha256_hex(bytes),
@@ -121,6 +122,50 @@ impl FontCache {
             internal_style: info.style,
             source_url: f.url.clone(),
             license: license.map(Into::into),
+        };
+        let id = self.db.insert_cache_file(&cf)?;
+        Ok(CacheFile { id, ..cf })
+    }
+
+    /// Valida e grava um arquivo vindo de um pacote. Peso, estilo e nome da variante vêm do
+    /// PRÓPRIO arquivo (tabelas OS/2 e name), não do que o provedor declara.
+    #[allow(clippy::too_many_arguments)]
+    pub fn store_package_file(&self, provider_id: &str, family_key: &str, family_name: &str, license: &str, file_name: &str, bytes: &[u8], source_url: &str) -> Result<CacheFile> {
+        let info = validate_font(bytes, MAX_FONT_BYTES)?;
+        let stem = file_name.rsplit_once('.').map(|(a, _)| a).unwrap_or(file_name);
+        let rel = format!("fonts/{}/{}/{}.{}", slug(provider_id), slug(family_key), slug(stem), info.format.as_str());
+        let path = self.abs_path(&rel)?;
+        let dir = path.parent().ok_or_else(|| Error::UnsafePath(rel.clone()))?;
+        std::fs::create_dir_all(dir)?;
+        let tmp = dir.join(format!(".tmp-{}-{}", std::process::id(), sha256_hex(rel.as_bytes()).get(..8).unwrap_or("0")));
+        {
+            use std::io::Write;
+            let mut fh = std::fs::File::create(&tmp)?;
+            fh.write_all(bytes)?;
+            fh.sync_all()?;
+        }
+        if let Err(e) = std::fs::rename(&tmp, &path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
+        let style = if info.italic { "italic" } else { "normal" };
+        let cf = CacheFile {
+            id: 0,
+            family_key: family_key.into(),
+            family_name: family_name.into(),
+            provider_id: provider_id.into(),
+            weight: info.weight,
+            style: style.into(),
+            variable: info.variable,
+            variant_name: info.style.clone().unwrap_or_else(|| stem.to_string()),
+            format: info.format.as_str().into(),
+            rel_path: rel,
+            sha256: sha256_hex(bytes),
+            size: bytes.len() as u64,
+            internal_family: info.family,
+            internal_style: info.style,
+            source_url: source_url.into(),
+            license: Some(license.into()),
         };
         let id = self.db.insert_cache_file(&cf)?;
         Ok(CacheFile { id, ..cf })

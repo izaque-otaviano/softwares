@@ -39,10 +39,10 @@ fn migracoes_sao_idempotentes_e_com_integridade_referencial() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("t.sqlite");
     let db = Db::open(&path).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 1);
+    assert_eq!(db.schema_version().unwrap(), 2);
     drop(db);
     let db = Db::open(&path).unwrap(); // reabrir não reaplica
-    assert_eq!(db.schema_version().unwrap(), 1);
+    assert_eq!(db.schema_version().unwrap(), 2);
     let fk: i64 = db.lock().query_row("PRAGMA foreign_keys", [], |r| r.get(0)).unwrap();
     assert_eq!(fk, 1);
     // FK: variante sem origem é rejeitada.
@@ -171,4 +171,32 @@ fn catalogo_remoto_separado_do_inventario_local() {
     assert_eq!(db.catalog_count().unwrap(), 0, "fonte local não entra no catálogo remoto");
     let (n, v) = db.local_families(Some("aria"), 0, 10).unwrap();
     assert_eq!((n, v[0].family.as_str()), (1, "Arial"));
+}
+
+#[test]
+fn migracao_de_v1_para_v2_preserva_cache_e_ativacoes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("v1.sqlite");
+    {
+        // Banco criado por uma versão antiga do app (só a migração 001), com uma fonte ativa.
+        let c = rusqlite::Connection::open(&path).unwrap();
+        c.execute_batch(include_str!("../migrations/001_init.sql")).unwrap();
+        c.execute_batch("PRAGMA user_version=1; PRAGMA foreign_keys=ON;").unwrap();
+        c.execute(
+            "INSERT INTO cache_files(id,family_key,family_name,provider_id,weight,style,variable,format,rel_path,sha256,size,source_url,downloaded_at)
+             VALUES(7,'inter','Inter','google',400,'normal',0,'ttf','fonts/google/inter/400-normal.ttf','abc',10,'https://x','t')",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO activations(cache_file_id,scope,display_name,registered_at,notification,backend) VALUES(7,'session','Inter Regular','t','Broadcast','x')", []).unwrap();
+        c.execute("INSERT INTO activation_refs(cache_file_id,owner) VALUES(7,'family:inter')", []).unwrap();
+    }
+    let db = Db::open(&path).unwrap();
+    assert_eq!(db.schema_version().unwrap(), 2);
+    let cf = db.cache_file(7).unwrap();
+    assert_eq!((cf.family_key.as_str(), cf.variant_name.as_str()), ("inter", ""));
+    assert!(db.activation(7).unwrap().is_some(), "ativação preservada");
+    assert_eq!(db.ref_count(7).unwrap(), 1);
+    // A FK RESTRICT continua valendo depois da recriação da tabela.
+    assert!(db.delete_cache_file(7).is_err(), "não pode apagar arquivo ativo");
 }

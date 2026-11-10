@@ -27,6 +27,13 @@ const store = {
   settings: { scope: "session", theme: "system" } as Record<string, string>,
 };
 
+// Duas famílias do Font Squirrel (imagens de prévia reais do provedor).
+const FSQ_IMG: Record<string, string> = { sixcaps: "https://www.fontsquirrel.com/fbimg/imgs/e7/88/d8c87cd314c2f79d9d8db10269b7/fsl-720-30-333333.png", "1942report": "https://www.fontsquirrel.com/fbimg/imgs/ae/37/33258257ccef2eee2b20c77ac79a/fsl-720-30-333333.png" };
+store.fams.splice(4, 0,
+  { key: "sixcaps", name: "Six Caps", category: "display", providers: ["fontsquirrel"], weights: [400], hasItalic: false, variable: false, license: null, favorite: false, state: "inactive", cached: false, installable: true, previewCdn: "fontsquirrel", previewId: "six-caps" },
+  { key: "1942report", name: "1942 report", category: "monospace", providers: ["fontsquirrel"], weights: [400], hasItalic: false, variable: false, license: null, favorite: false, state: "inactive", cached: false, installable: true, previewCdn: "fontsquirrel", previewId: "1942-report" },
+);
+
 // Estados de exemplo para visualizar a interface (não são ativações reais).
 store.fams[1].state = "active"; store.fams[1].cached = true;
 store.fams[2].cached = true;
@@ -49,6 +56,8 @@ export async function mockInvoke(cmd: string, a: Record<string, unknown> = {}): 
     }
     case "family_detail": {
       const s = store.fams.find((f) => f.key === a.key)!;
+      if (s.providers[0] === "fontsquirrel")
+        return { summary: s, collections: [], sources: [{ providerId: "fontsquirrel", providerFamilyId: s.previewId, origin: s.key === "sixcaps" ? "Vernon Adams" : "Johan Holmdahl", version: null, license: null, licenseUrl: `https://www.fontsquirrel.com/license/${s.previewId}`, lastModified: null, subsets: [], variable: false, axes: [], variants: [{ weight: 400, style: "normal" }] }] };
       return {
         summary: s, collections: [],
         sources: s.providers.map((p) => ({
@@ -58,12 +67,21 @@ export async function mockInvoke(cmd: string, a: Record<string, unknown> = {}): 
         })),
       };
     }
+    case "preview_image": return FSQ_IMG[a.key as string] ?? null;
+    case "activate_font": {
+      // Só para visualizar o diálogo de licença no navegador; nada é ativado de verdade.
+      if (a.key === "1942report" && !(a.options as { acceptLicense?: boolean } | undefined)?.acceptLicense)
+        return { familyKey: "1942report", familyName: "1942 report", outcome: "license_required", providerUsed: "fontsquirrel", files: 1, registeredInOs: false, notification: "not_sent", visibleToNewProcesses: null, appRecognition: "not_verifiable", scope: "session", message: "", license: "Freeware",
+          licenseText: "This font was found on the internet and did not come with a license. While we try to make sure that all the fonts on fontsquirrel.com are properly licensed for commercial use, there are many fonts that have either been abandoned by their authors or the authors distribute their fonts without an explicit license.\n\nIt is our opinion that if the unlicensed font is freely available for download from either the original source or from multiple free-font sites then we assume it to be safe to use the font commercially. This is no guarantee of such freedom.\n\nWe are not lawyers and don't pretend to be them on TV." };
+      throw new Error("Modo demonstração: ativar exige o aplicativo desktop.");
+    }
     case "categories": return ["display", "handwriting", "monospace", "sans-serif", "serif"];
     case "list_providers":
       return [
         { id: "fontsource", name: "Fontsource", hasCatalog: true, canInstallFiles: true, hasCdn: true, status: "ok", note: "Modo demonstração" },
         { id: "google", name: "Google Fonts", hasCatalog: true, canInstallFiles: true, hasCdn: true, status: "needs_config", note: null },
         { id: "bunny", name: "Bunny Fonts", hasCatalog: false, canInstallFiles: false, hasCdn: true, status: "ok", note: "Somente CDN" },
+        { id: "fontsquirrel", name: "Font Squirrel", hasCatalog: true, canInstallFiles: true, hasCdn: false, status: "ok", note: "Licenças variam por família e só são conhecidas ao baixar: OFL e Apache ativam direto; as demais pedem sua confirmação. Atenção: hoje o site bloqueia acesso automático de apps (proteção anti-robôs), então a sincronização pode falhar." },
         { id: "fontshare", name: "Fontshare", hasCatalog: false, canInstallFiles: false, hasCdn: false, status: "not_available", note: "Sem API pública documentada." },
       ];
     case "list_collections": return store.collections;

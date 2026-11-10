@@ -8,11 +8,16 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 mod local;
+mod packages;
 mod user;
 pub use local::{ActivationRow, CacheFile, LocalFamily};
+pub use packages::{RemoteDetailsRow, SourceLicense};
 pub use user::{Collection, LogEntry};
 
-const MIGRATIONS: &[(&str, &str)] = &[("001_init", include_str!("../../migrations/001_init.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("001_init", include_str!("../../migrations/001_init.sql")),
+    ("002_packages_licenses", include_str!("../../migrations/002_packages_licenses.sql")),
+];
 
 #[derive(Clone)]
 pub struct Db {
@@ -50,11 +55,18 @@ impl Db {
     fn migrate(&self) -> Result<()> {
         let mut c = self.lock();
         let current: usize = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        for (i, (_name, sql)) in MIGRATIONS.iter().enumerate().skip(current) {
+        for (i, (name, sql)) in MIGRATIONS.iter().enumerate().skip(current) {
+            // Migrações que recriam tabelas exigem FKs desligadas (fora da transação), como manda o SQLite.
+            c.execute_batch("PRAGMA foreign_keys=OFF")?;
             let tx = c.transaction()?;
             tx.execute_batch(sql)?;
+            let broken: Option<String> = tx.query_row("PRAGMA foreign_key_check", [], |r| r.get(0)).optional()?;
+            if let Some(t) = broken {
+                return Err(Error::Other(format!("migração {name}: integridade referencial quebrada em {t}")));
+            }
             tx.execute_batch(&format!("PRAGMA user_version = {}", i + 1))?;
             tx.commit()?;
+            c.execute_batch("PRAGMA foreign_keys=ON")?;
         }
         Ok(())
     }
@@ -407,7 +419,7 @@ fn resolve_family_id(tx: &rusqlite::Transaction, base_key: &str, f: &RemoteFamil
 
 fn write_source(tx: &rusqlite::Transaction, sid: i64, f: &RemoteFamily) -> Result<()> {
     tx.execute(
-        "UPDATE family_sources SET origin=?2,version=?3,license=?4,license_url=?5,last_modified=?6,subsets=?7,axes=?8,variable=?9
+        "UPDATE family_sources SET origin=?2,version=?3,license=COALESCE(?4,license),license_url=COALESCE(?5,license_url),last_modified=?6,subsets=?7,axes=?8,variable=?9
          WHERE id=?1",
         params![
             sid,
@@ -421,7 +433,10 @@ fn write_source(tx: &rusqlite::Transaction, sid: i64, f: &RemoteFamily) -> Resul
             f.variable
         ],
     )?;
-    tx.execute("DELETE FROM source_variants WHERE source_id=?1", [sid])?;
+    // Sem variantes na listagem (ex.: Font Squirrel) = manter as já obtidas sob demanda.
+    if !f.weights.is_empty() {
+        tx.execute("DELETE FROM source_variants WHERE source_id=?1", [sid])?;
+    }
     for w in &f.weights {
         for st in &f.styles {
             tx.execute(
@@ -480,10 +495,13 @@ fn summarize(c: &Connection, id: i64, key: String, name: String, category: Optio
     let favorite: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM favorites WHERE family_key=?1)", [&key], |r| r.get(0))?;
     // Prévia via CDN: prioriza espelho do Google, depois Fontsource, depois Bunny.
     let is_google = srcs.iter().any(|s| s.0 == "google" || s.1.as_deref() == Some("google"));
+    let has_package = srcs.iter().any(|s| s.0 == "fontsquirrel");
     let preview_cdn = if is_google {
         Some("google".to_string())
     } else if srcs.iter().any(|s| s.0 == "fontsource") {
         Some("fontsource".into())
+    } else if has_package {
+        Some("fontsquirrel".into())
     } else {
         None
     };
@@ -500,6 +518,7 @@ fn summarize(c: &Connection, id: i64, key: String, name: String, category: Optio
         state,
         cached: cached > 0,
         installable: is_google
+            || has_package
             || cached > 0
             || c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM source_files sf JOIN family_sources s ON s.id=sf.source_id WHERE s.family_id=?1 AND sf.format IN ('ttf','otf'))",
@@ -509,6 +528,7 @@ fn summarize(c: &Connection, id: i64, key: String, name: String, category: Optio
         preview_id: match preview_cdn.as_deref() {
             Some("google") => Some(name.clone()),
             Some("fontsource") => srcs.iter().find(|s| s.0 == "fontsource").map(|s| s.4.clone()),
+            Some("fontsquirrel") => srcs.iter().find(|s| s.0 == "fontsquirrel").map(|s| s.4.clone()),
             _ => None,
         },
         preview_cdn,

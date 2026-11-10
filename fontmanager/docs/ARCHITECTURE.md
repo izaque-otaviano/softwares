@@ -17,13 +17,24 @@ acrescentar um provedor: implemente o trait e registre-o em `Registry::new()`. O
 | Fontsource | `api.fontsource.org/v1/fonts` | jsDelivr | quando a API publica `ttf` para a variante | espelha o Google Fonts (`type: google`) |
 | Google Fonts | Developer API (chave gratuita, opcional) | `fonts.googleapis.com/css2` | CSS2 API sem User-Agent de navegador → URLs `.ttf` em `fonts.gstatic.com` | sem chave, o catálogo vem do Fontsource |
 | Bunny Fonts | — (catálogo compartilhado) | `fonts.bunny.net/css2` | não (só WOFF2) | só para famílias de origem Google |
+| Font Squirrel | `/api/fontlist/all` (1.036 famílias em 2026-11-10) | imagem PNG oficial (`familyinfo.listing_image`) | ZIP `/fonts/download/{id}` com os originais + licença; MD5 de cada arquivo conferido com o `familyinfo` | licença só conhecida ao baixar; ver regra abaixo |
 | Fontshare | — | — | — | **não implementado**, ver LIMITATIONS |
 
 **Deduplicação** (`dedup.rs`): mesma família = nome normalizado igual **e** licenças não conflitantes.
 Origem, versão, licença, subsets, eixos e variantes ficam em `family_sources`/`source_variants` por
 provedor. Licença conflitante gera uma família separada (`chave~provedor`).
 
-## Banco (`migrations/001_init.sql`)
+### Font Squirrel: pacotes e regra de licença
+O pacote é extraído em memória (`archive.rs`: limite de entradas e de bytes descompactados contra zip bomb,
+só o nome do arquivo é usado — sem path traversal). Cada arquivo tem o MD5 conferido contra o publicado na API
+**antes** de qualquer gravação; peso/estilo vêm das tabelas da própria fonte. A licença é identificada pelo
+arquivo `.txt` do pacote e gravada em `source_licenses`.
+**Regra:** OFL e Apache ativam direto. Qualquer outra (inclusive "Freeware", sem licença explícita, ou pacote
+sem licença) devolve `outcome = "license_required"` com o texto integral: os arquivos ficam baixados, mas
+**nada é registrado no SO** até o usuário aceitar. O aceite fica em `license_acceptances` e só vale para a
+mesma licença — se o pacote mudar de licença, a pergunta volta.
+
+## Banco (`migrations/001_init.sql`, `002_packages_licenses.sql`)
 Catálogo remoto (`families`, `family_sources`, `source_variants`, `source_files`) é separado do
 inventário local (`local_fonts`), do cache (`cache_files`), das ativações (`activations` +
 `activation_refs`), das preferências (`favorites`, `collections`, `settings`) e do `operation_log`.

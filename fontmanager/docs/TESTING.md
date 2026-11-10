@@ -6,7 +6,8 @@
 |---|---|---|---|
 | `fm-core` unit/integração (`cargo test -p fm-core`) | Linux/Win/mac | SQLite real (arquivo e memória), TTF real (Tiny5), HTTP real para um servidor local, validação/cache/dedup/CSS | provedores usam fixtures de formato documentado |
 | `tests/activation.rs` | Linux (fontconfig real); Win/mac usam o backend nativo do runner só nos testes com `Refusing`/provedor falso | fluxo completo catálogo → download → validação → registro → verificação em processo novo → desativação com contagem de referências; fonte pré-existente do usuário intocada | |
-| `tests/live.rs` (`-- --ignored`) | com internet | Google CSS2 + gstatic de verdade, TTF baixado e validado | Fontsource/Bunny (bloqueados no ambiente de desenvolvimento) |
+| `tests/fontsquirrel.rs` | Linux/Win/mac | lista, `familyinfo` e ZIP **reais capturados da API**, servidos por HTTP local: MD5, extração, regra de licença (OFL direto; Freeware pede aceite; aceite persiste), bloqueio por MD5 divergente, uso offline | o site real (ver `live.rs`) |
+| `tests/live.rs` (`-- --ignored`) | com internet | Google CSS2 + gstatic de verdade, TTF baixado e validado; Font Squirrel real | Fontsource/Bunny (bloqueados no ambiente de desenvolvimento). **O teste do Font Squirrel falha hoje** porque o site bloqueia clientes automatizados (202 anti-robôs) |
 | `fm-native/tests/os_integration.rs` (`FM_OS_TESTS=1`) | Linux, **Windows e macOS na CI** | registra/desregistra uma fonte real no SO e confirma em **processo separado**; Windows: chave HKCU | não envolve apps de terceiros |
 | Frontend (`npm test`) | Node | lógica pura (URLs, pesos, rótulos de estado) | não há teste de UI automatizado do app Tauri |
 

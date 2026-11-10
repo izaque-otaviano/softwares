@@ -14,6 +14,7 @@ import { CompareView } from "@/components/CompareView";
 import { ProvidersView } from "@/views/ProvidersView";
 import { SettingsView } from "@/views/SettingsView";
 import { LocalView } from "@/views/LocalView";
+import { LicenseDialog } from "@/components/LicenseDialog";
 import { cn } from "@/lib/utils";
 
 function applyTheme(t: Theme) {
@@ -130,6 +131,7 @@ export default function App() {
         </div>
       </main>
       <Toaster />
+      <LicenseDialog />
     </div>
   );
 }

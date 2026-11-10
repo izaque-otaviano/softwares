@@ -14,13 +14,17 @@ export function useFontActions() {
   const toast = useToasts.getState().push;
   return {
     refresh,
-    async activate(key: string, name: string) {
+    async activate(key: string, name: string, acceptLicense = false) {
       const { setPhase, setBusy } = useUi.getState();
       setBusy(key, "activate");
       setPhase(key, { phase: "resolving" });
       try {
-        const r = await api.activate(key);
-        if (r.outcome === "already_in_system") {
+        const r = await api.activate(key, acceptLicense ? { acceptLicense: true } : undefined);
+        if (r.outcome === "license_required") {
+          // Baixada, mas NÃO registrada: o usuário precisa ler e aceitar a licença.
+          setPhase(key, null);
+          useUi.getState().set("licensePrompt", { key, name, license: r.license ?? "desconhecida", text: r.licenseText ?? "" });
+        } else if (r.outcome === "already_in_system") {
           setPhase(key, null);
           toast({ tone: "info", text: r.message });
         } else {

@@ -15,6 +15,8 @@ import { CharGrid } from "./CharGrid";
 import { WebTab } from "./WebTab";
 import { CollectionsDialog } from "./CollectionsDialog";
 import { CATEGORY } from "./TopBar";
+import { RemotePreview } from "./RemotePreview";
+import { providerName } from "@/lib/utils";
 
 function VariantLine({ d, weight, italic, text, size }: { d: FamilyDetail; weight: number; italic: boolean; text: string; size: number }) {
   const { style, ready } = useFontPreview(d.summary, weight, italic);
@@ -80,7 +82,8 @@ export function DetailPanel() {
   const f = d.summary;
   const variants = [...new Map(d.sources.flatMap((s) => s.variants).map((v) => [`${v.weight}${v.style}`, v])).values()].sort((a, b) => a.weight - b.weight || a.style.localeCompare(b.style));
   const size = Math.min(previewSize, 56);
-  const meta = [f.category && (CATEGORY[f.category] ?? f.category), `${variants.length} ${variants.length === 1 ? "estilo" : "estilos"}`, f.license].filter(Boolean).join(", ");
+  const meta = [f.category && (CATEGORY[f.category] ?? f.category), variants.length > 0 && `${variants.length} ${variants.length === 1 ? "estilo" : "estilos"}`, f.license ?? (f.providers.includes("fontsquirrel") ? "licença conhecida ao baixar" : null)].filter(Boolean).join(", ");
+  const imagePreview = f.previewCdn === "fontsquirrel" && !f.cached;
 
   return (
     <aside className="flex h-full flex-col overflow-hidden bg-window" aria-label={`Detalhes de ${f.name}`}>
@@ -89,7 +92,7 @@ export function DetailPanel() {
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[20px] font-semibold leading-tight tracking-[-0.01em]" data-selectable>{f.name}</h2>
             <p className="mt-0.5 text-[12px] text-label-2">{meta}</p>
-            <p className="mt-0.5 text-[11px] text-label-3">De {f.providers.map((p) => (p === "google" ? "Google Fonts" : p === "fontsource" ? "Fontsource" : p)).join(" e ")}{f.variable ? ". Fonte variável" : ""}</p>
+            <p className="mt-0.5 text-[11px] text-label-3">De {f.providers.map(providerName).join(" e ")}{f.variable ? ". Fonte variável" : ""}</p>
           </div>
           <Button variant="plain" size="icon-sm" aria-label="Fechar detalhes" onClick={() => set("selected", null)}><X /></Button>
         </div>
@@ -116,9 +119,15 @@ export function DetailPanel() {
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-5 pb-8">
           <TabsContent value="preview">
-            {f.variable && <VariableTester d={d} text={previewText || f.name} size={size} />}
+            {imagePreview && (
+              <div className="mb-3 rounded-[10px] bg-fill-2 p-3 ring-[0.5px] ring-separator">
+                <RemotePreview f={f} height={34} />
+                <p className="mt-2 text-[11px] text-label-2">Amostra em imagem do Font Squirrel. Baixe a fonte para testar o seu texto.</p>
+              </div>
+            )}
+            {!imagePreview && f.variable && <VariableTester d={d} text={previewText || f.name} size={size} />}
             <div className="divide-y divide-separator">
-              {variants.map((v) => <VariantLine key={`${v.weight}${v.style}`} d={d} weight={v.weight} italic={v.style === "italic"} text={previewText || f.name} size={size} />)}
+              {!imagePreview && variants.map((v) => <VariantLine key={`${v.weight}${v.style}`} d={d} weight={v.weight} italic={v.style === "italic"} text={previewText || f.name} size={size} />)}
             </div>
           </TabsContent>
           <TabsContent value="chars"><CharGridFor d={d} /></TabsContent>
@@ -126,11 +135,11 @@ export function DetailPanel() {
           <TabsContent value="sources">
             <div className="space-y-4">
               {d.sources.map((s) => (
-                <Group key={s.providerId} title={s.providerId === "google" ? "Google Fonts" : s.providerId === "fontsource" ? "Fontsource" : s.providerId}>
+                <Group key={s.providerId} title={providerName(s.providerId)}>
                   <GroupRow title="Identificador"><span className="text-label-2" data-selectable>{s.providerFamilyId}</span></GroupRow>
                   <GroupRow title="Versão"><span className="text-label-2">{s.version ?? "Não informada"}</span></GroupRow>
-                  <GroupRow title="Licença" desc={s.licenseUrl ?? undefined}><span className="text-label-2">{s.license ?? "Não informada"}</span></GroupRow>
-                  {s.origin && <GroupRow title="Origem"><span className="text-label-2">{s.origin}</span></GroupRow>}
+                  <GroupRow title="Licença" desc={s.licenseUrl ?? undefined}><span className="text-label-2">{s.license ?? (s.providerId === "fontsquirrel" ? "Conhecida ao baixar" : "Não informada")}</span></GroupRow>
+                  {s.origin && <GroupRow title={s.providerId === "fontsquirrel" ? "Fundição" : "Origem"}><span className="text-label-2">{s.origin}</span></GroupRow>}
                   <GroupRow title="Atualizada"><span className="text-label-2">{s.lastModified ?? "—"}</span></GroupRow>
                   <GroupRow title="Subsets" desc={s.subsets.join(", ") || "—"} />
                   <GroupRow title="Variantes" desc={s.variants.map((v) => `${v.weight}${v.style === "italic" ? " itálico" : ""}`).join(", ") || "—"} />

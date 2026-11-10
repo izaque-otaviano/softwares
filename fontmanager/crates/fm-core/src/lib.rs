@@ -1,5 +1,6 @@
 //! Núcleo do Font Manager (sem dependência de Tauri, testável isoladamente).
 
+pub mod archive;
 pub mod cache;
 pub mod css;
 pub mod db;

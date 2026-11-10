@@ -10,6 +10,7 @@ use std::sync::Arc;
 pub mod bunny;
 pub mod fontshare;
 pub mod fontsource;
+pub mod fontsquirrel;
 pub mod google;
 
 #[derive(Debug, Clone, Default)]
@@ -36,6 +37,31 @@ pub trait FontProvider: Send + Sync {
 
     /// Resolve URLs de arquivos TTF/OTF/WOFF2 para as variantes pedidas.
     async fn resolve_files(&self, http: &Http, fam: &FamilyRef) -> Result<Vec<RemoteFile>>;
+
+    /// Detalhes sob demanda (variantes reais, imagem de prévia, checksums). Opcional.
+    async fn fetch_details(&self, _http: &Http, _fam: &FamilyRef) -> Result<Option<RemoteDetails>> {
+        Ok(None)
+    }
+
+    /// Provedores que distribuem um pacote (ZIP) em vez de arquivos soltos. Opcional.
+    async fn fetch_package(&self, _http: &Http, _fam: &FamilyRef) -> Result<Option<Package>> {
+        Ok(None)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RemoteDetails {
+    pub variants: Vec<VariantView>,
+    pub preview_image: Option<String>,
+    /// nome do arquivo → MD5 publicado pelo provedor.
+    pub checksums: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Package {
+    pub url: String,
+    pub files: Vec<crate::archive::PackagedFile>,
+    pub license: Option<crate::archive::LicenseFile>,
 }
 
 pub struct Registry {
@@ -49,6 +75,7 @@ impl Registry {
                 Arc::new(fontsource::Fontsource),
                 Arc::new(google::GoogleFonts),
                 Arc::new(bunny::BunnyFonts),
+                Arc::new(fontsquirrel::FontSquirrel::default()),
                 Arc::new(fontshare::Fontshare),
             ],
         }

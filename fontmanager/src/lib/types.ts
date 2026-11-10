@@ -16,7 +16,7 @@ export interface FamilySummary {
   state: ActivationState;
   cached: boolean;
   installable: boolean;
-  previewCdn: "google" | "fontsource" | null;
+  previewCdn: "google" | "fontsource" | "fontsquirrel" | null;
   previewId: string | null;
 }
 export interface Axis { tag: string; min: number; max: number; default: number }
@@ -52,10 +52,11 @@ export type Phase =
   | { phase: "error"; message: string };
 
 export interface ActivationReport {
-  familyKey: string; familyName: string; outcome: "activated" | "already_in_system";
+  familyKey: string; familyName: string; outcome: "activated" | "already_in_system" | "license_required";
   providerUsed: string | null; files: number; registeredInOs: boolean;
   notification: "broadcast" | "emitted_by_system" | "cache_refreshed" | "not_sent";
   visibleToNewProcesses: boolean | null; appRecognition: "not_verifiable"; scope: Scope; message: string;
+  license: string | null; licenseText: string | null;
 }
 export interface DeactivationReport {
   familyKey: string; unregistered: number; keptByOtherOwners: number; notification: string; warnings: string[];
