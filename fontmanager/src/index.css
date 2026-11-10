@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: oklch(0.985 0.002 270);
+  --foreground: oklch(0.22 0.02 270);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.955 0.005 270);
+  --muted-foreground: oklch(0.5 0.02 270);
+  --border: oklch(0.91 0.006 270);
+  --primary: oklch(0.52 0.2 277);
+  --primary-foreground: oklch(0.99 0 0);
+  --accent: oklch(0.94 0.02 277);
+  --success: oklch(0.55 0.15 150);
+  --warning: oklch(0.7 0.15 75);
+  --danger: oklch(0.55 0.22 27);
+  --ring: oklch(0.52 0.2 277 / 0.5);
+}
+.dark {
+  --background: oklch(0.18 0.01 270);
+  --foreground: oklch(0.95 0.005 270);
+  --card: oklch(0.22 0.012 270);
+  --muted: oklch(0.26 0.012 270);
+  --muted-foreground: oklch(0.7 0.015 270);
+  --border: oklch(0.32 0.012 270);
+  --primary: oklch(0.7 0.16 277);
+  --primary-foreground: oklch(0.15 0.02 270);
+  --accent: oklch(0.3 0.04 277);
+  --success: oklch(0.72 0.16 150);
+  --warning: oklch(0.8 0.14 80);
+  --danger: oklch(0.7 0.19 25);
+  --ring: oklch(0.7 0.16 277 / 0.55);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+* { border-color: var(--border); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }

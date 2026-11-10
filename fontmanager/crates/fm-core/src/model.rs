@@ -169,6 +169,8 @@ pub struct FamilySummary {
     pub installable: bool,
     /// Provedor que serve prévia via CDN: "google" | "fontsource" | "bunny" | null.
     pub preview_cdn: Option<String>,
+    /// Identificador a usar na CDN de prévia (nome da família no Google; id no Fontsource).
+    pub preview_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

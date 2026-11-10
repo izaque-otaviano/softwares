@@ -71,3 +71,10 @@ App Uploader (Python) e as ferramentas que geravam os instaladores dos apps acim
 
 - Código: [`uploader-convertize/`](uploader-convertize/)
 - Copiado de `izaqueotaviano/uploader-convertize`. Os workflows que estão dentro de `uploader-convertize/.github/` não rodam a partir desta pasta; para gerar o executável do Uploader, eles precisam ficar em `.github/workflows/` na raiz do repositório.
+
+## Font Manager
+
+Gerenciador de fontes para Mac e Windows (inspirado em gerenciadores como o FontBase): pesquisa Google Fonts/Fontsource, prévia sem instalar, ativação no sistema, gerador de CSS, favoritos e coleções, uso offline.
+
+- Código: [`fontmanager/`](fontmanager/) — leia [`fontmanager/docs/LIMITATIONS.md`](fontmanager/docs/LIMITATIONS.md)
+- CI e instaladores: workflow *Font Manager CI*

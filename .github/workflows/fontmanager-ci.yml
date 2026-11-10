@@ -1,0 +1,76 @@
+name: Font Manager CI
+# Compila e testa o Font Manager (fontmanager/) em Linux, Windows e macOS.
+#  - Linux: núcleo Rust (SQLite, provedores, CSS, cache, ativação via fontconfig) + frontend.
+#  - Windows / macOS: os mesmos testes + testes de integração REAIS da camada nativa
+#    (AddFontResourceExW / Core Text) e compilação completa do app Tauri.
+# Instaladores (.exe / .dmg): Actions > Font Manager CI > Run workflow (bundle = true).
+on:
+  push:
+    paths: ['fontmanager/**', '.github/workflows/fontmanager-ci.yml']
+  pull_request:
+    paths: ['fontmanager/**', '.github/workflows/fontmanager-ci.yml']
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: Gerar instaladores (.exe/.dmg) como artefatos
+        type: boolean
+        default: false
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: fontmanager
+jobs:
+  linux:
+    name: Linux (núcleo + frontend)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: fontmanager }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Testes Rust (fm-native + fm-core)
+        run: cargo test -p fm-native -p fm-core
+        env: { FM_OS_TESTS: '1' }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  desktop:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest }
+          - { name: macOS, os: macos-15 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: fontmanager }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Testes Rust (inclui integração real com o SO)
+        run: cargo test -p fm-native -p fm-core -- --test-threads=1 --nocapture
+        env: { FM_OS_TESTS: '1' }
+      - run: npm ci
+      - run: npm test
+      - name: Compilar o app (sem instalador)
+        if: ${{ !inputs.bundle }}
+        run: npm run tauri -- build --no-bundle
+      - name: Compilar com instaladores
+        if: ${{ inputs.bundle }}
+        run: npm run tauri -- build
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.bundle }}
+        with:
+          name: font-manager-${{ matrix.name }}
+          path: |
+            fontmanager/target/release/bundle/nsis/*.exe
+            fontmanager/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

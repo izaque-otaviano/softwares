@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Privilégios mínimos: comandos do app e seletor de pasta para exportar CSS/arquivos.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

@@ -49,6 +49,15 @@ impl FontBackend for LinuxBackend {
 
     fn register(&self, req: &RegisterRequest) -> Result<RegisterReport> {
         ensure_file(&req.path)?;
+        // Defesa em profundidade: só links para arquivos com assinatura de TTF/OTF/TTC.
+        let mut magic = [0u8; 4];
+        {
+            use std::io::Read;
+            std::fs::File::open(&req.path)?.read_exact(&mut magic).map_err(|_| NativeError::RegisterFailed("arquivo curto demais para ser uma fonte".into()))?;
+        }
+        if !matches!(&magic, [0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf") {
+            return Err(NativeError::RegisterFailed("o arquivo não tem assinatura de fonte TTF/OTF".into()));
+        }
         std::fs::create_dir_all(&self.dir)?;
         let link = self.link_for(req);
         if link.symlink_metadata().is_ok() {

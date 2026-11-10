@@ -441,9 +441,9 @@ fn write_source(tx: &rusqlite::Transaction, sid: i64, f: &RemoteFamily) -> Resul
 }
 
 fn summarize(c: &Connection, id: i64, key: String, name: String, category: Option<String>, variable: bool) -> Result<FamilySummary> {
-    let mut ps = c.prepare("SELECT provider_id,origin,license,variable FROM family_sources WHERE family_id=?1 ORDER BY provider_id")?;
-    let srcs: Vec<(String, Option<String>, Option<String>, bool)> =
-        ps.query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<std::result::Result<_, _>>()?;
+    let mut ps = c.prepare("SELECT provider_id,origin,license,variable,provider_family_id FROM family_sources WHERE family_id=?1 ORDER BY provider_id")?;
+    let srcs: Vec<(String, Option<String>, Option<String>, bool, String)> =
+        ps.query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<std::result::Result<_, _>>()?;
     let providers = srcs.iter().map(|s| s.0.clone()).collect::<Vec<_>>();
     let license = srcs.iter().find_map(|s| s.2.clone());
     let mut ws = c.prepare(
@@ -489,7 +489,7 @@ fn summarize(c: &Connection, id: i64, key: String, name: String, category: Optio
     };
     Ok(FamilySummary {
         key,
-        name,
+        name: name.clone(),
         category,
         providers,
         weights,
@@ -506,6 +506,11 @@ fn summarize(c: &Connection, id: i64, key: String, name: String, category: Optio
                 [id],
                 |r| r.get(0),
             )?,
+        preview_id: match preview_cdn.as_deref() {
+            Some("google") => Some(name.clone()),
+            Some("fontsource") => srcs.iter().find(|s| s.0 == "fontsource").map(|s| s.4.clone()),
+            _ => None,
+        },
         preview_cdn,
     })
 }
