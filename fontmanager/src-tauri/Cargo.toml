@@ -1,0 +1,22 @@
+[package]
+name = "fontmanager"
+version.workspace = true
+edition.workspace = true
+description = "Font Manager – gerenciador de fontes desktop"
+
+[lib]
+name = "fontmanager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+fm-core = { path = "../crates/fm-core" }
+fm-native = { path = "../crates/fm-native" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
