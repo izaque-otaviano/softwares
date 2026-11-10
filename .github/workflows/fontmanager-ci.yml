@@ -77,8 +77,9 @@ jobs:
         run: |
           dmg=$(ls target/universal-apple-darwin/release/bundle/dmg/*.dmg)
           hdiutil verify "$dmg"
-          app=target/universal-apple-darwin/release/bundle/macos/*.app
-          lipo -archs $app/Contents/MacOS/* | tee /dev/stderr | grep -q "x86_64 arm64"
+          bin=$(ls target/universal-apple-darwin/release/bundle/macos/*.app/Contents/MacOS/* | head -1)
+          archs=$(lipo -archs "$bin"); echo "arquiteturas: $archs"
+          [[ $archs == *x86_64* && $archs == *arm64* ]]
           echo "### $(basename "$dmg") ($(du -h "$dmg" | cut -f1), universal)" >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.bundle }}
