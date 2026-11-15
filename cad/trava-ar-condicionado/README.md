@@ -21,7 +21,8 @@ Um **perfil extrudado de parede fina**: uma lâmina de ~0,9 mm dobrada em serpen
 Ela sai do pé esquerdo, sobe, faz um grampo com ponta arredondada e desce com um ressalto em "S".
 Depois forma o U central, sobe pelo segundo grampo (mais alto) e desce até o pé direito.
 Os "cilindros" das fotos 02–05 são as pontas dos grampos vistas ao longo da extrusão.
-Cada gancho é oco (fenda passante ao longo de Z), e é isso que permite fechar elasticamente no encaixe.
+Cada gancho é oco em metade do comprimento e maciço na outra metade (seção 8). A parte oca permite
+fechar elasticamente no encaixe.
 
 Eixos do modelo: **X** atravessa os ganchos, **Y** é a saliência a partir da tampa
 (Y = 0 é o topo da base de colagem) e **Z** é a extrusão.
@@ -147,21 +148,16 @@ ambiente de geração. Nota técnica: o cálculo de volume padrão do OpenCascad
 para extrusões de B-spline. Por isso o volume relatado vem da malha (715,4 mm³), que confere com
 área da seção × 10 mm (716,3 mm³).
 
-## 8. Variante preenchida (ganchos maciços)
+## 8. Metade preenchida (como a original)
 
-`trava_ar_condicionado_v1_preenchida.step` / `.stl`, gerada com `Parametros(ganchos_preenchidos=True)`.
-O contorno externo é idêntico ao da versão oca, mas as fendas internas dos ganchos são fechadas.
-O canal entre os ganchos (onde entra a nervura) continua aberto. Prévias em
-`previa_isometrica_preenchida.png`, `previa_frontal_preenchida.png` e `renders_360_preenchida/`.
+Na peça original, os ganchos são **ocos em metade do comprimento e maciços na outra metade**.
+O modelo segue isso por padrão: `fracao_preenchida = 0.5`. De Z = 0 a 5 mm os ganchos são maciços;
+de Z = 5 a 10 mm são ocos, com a fenda aberta só desse lado. O canal entre os ganchos (onde entra
+a nervura) fica aberto em todo o comprimento.
 
-| | Oca (padrão) | Preenchida |
-|---|---|---|
-| Volume / massa PETG | 715 mm³ / 0,91 g | 1192 mm³ / 1,51 g |
-| Deformação para 0,5 mm de flecha na ponta | ~1,0 % | ~3,7 % (perto do escoamento do PETG, ~4–5 %) |
-| Rigidez relativa dos ganchos | 1× | ~25–55× |
-
-**Atenção:** a peça original encaixa porque os ganchos ocos fecham elasticamente. Maciços, eles
-praticamente não fletem: o encaixe passa a depender só de interferência, exige muito mais força e
-pode rachar a peça ou quebrar a aba da estrutura. Use a variante preenchida se a trava for apenas
-apoiada ou colada sem pressão. Se precisar de encaixe por pressão, use a oca, ou a preenchida com
-`folga_encaixe` de 0,2–0,4.
+- **Impressão:** a metade maciça vai na mesa (Z = 0) e a oca fica por cima. As fendas apenas
+  "começam" sobre uma superfície já impressa, sem ponte e sem suporte.
+- Volume de 953 mm³ (1,21 g de PETG). Seção maciça: 119,2 mm²; seção oca: 71,6 mm².
+- `fracao_preenchida`: 0 = toda oca, 1 = toda maciça; qualquer valor intermediário funciona.
+- **Rigidez:** a metade maciça enrijece bem os ganchos em relação à versão toda oca. Se o encaixe
+  ficar duro demais, reduza `fracao_preenchida` (por exemplo 0,3) ou use `folga_encaixe` = 0,1–0,3.

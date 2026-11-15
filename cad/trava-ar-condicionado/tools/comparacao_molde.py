@@ -19,7 +19,8 @@ from scipy.spatial import cKDTree
 c = T.linha_media(P)
 t2 = P.espessura_parede / 2
 solido = T.construir(P)
-secao = solido.section(P.largura_total / 2).faces().val()
+z_corte = P.largura_total * (1 + P.fracao_preenchida) / 2  # meio do trecho oco
+secao = solido.section(z_corte).faces().val()
 aneis = []
 for w in [secao.outerWire()] + list(secao.innerWires()):
     pts = []
@@ -61,7 +62,7 @@ cv2.polylines(roi, [uv(c)], False, (230, 0, 200), 1, cv2.LINE_AA)
 H = roi.shape[0]
 pad = np.full((120, roi.shape[1], 3), 255, np.uint8)
 items = [((0, 0, 230), "secao do solido exportado (z = %.0f mm), parede %.1f mm, base %.1f mm"
-          % (P.largura_total / 2, P.espessura_parede, P.espessura_base)),
+          % (z_corte, P.espessura_parede, P.espessura_base)),
          ((230, 0, 200), "linha media CAD"),
          ((0, 170, 0), "linha media do contato de tinta (molde)  -  desvio mediano %.2f mm, p90 %.2f mm"
           % (np.median(dev), np.percentile(dev, 90)))]

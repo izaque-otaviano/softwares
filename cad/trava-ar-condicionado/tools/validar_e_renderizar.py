@@ -28,12 +28,17 @@ R["step_solidos"] = len(sol)
 R["step_valido_BRepCheck"] = bool(BRepCheck_Analyzer(s.val().wrapped).IsValid())
 bb = s.val().BoundingBox()
 R["bbox_mm"] = {"X": round(bb.xlen, 3), "Y": round(bb.ylen, 3), "Z": round(bb.zlen, 3)}
-sec = s.section(P.largura_total / 2).faces().vals()
 from OCP.GProp import GProp_GProps
 from OCP.BRepGProp import BRepGProp
-g = GProp_GProps(); BRepGProp.SurfaceProperties_s(sec[0].wrapped, g, 1e-6)
-R["secao_meio_area_mm2"] = round(g.Mass(), 3)
-R["secao_meio_furos_passantes"] = len(sec[0].innerWires())
+zf = P.fracao_preenchida * P.largura_total
+for nome, z in (("trecho_macico", zf / 2), ("trecho_oco", (zf + P.largura_total) / 2)):
+    if not (0 < z < P.largura_total) or (nome == "trecho_macico" and zf <= 0) or (nome == "trecho_oco" and zf >= P.largura_total):
+        continue
+    sec = s.section(z).faces().vals()
+    g = GProp_GProps(); BRepGProp.SurfaceProperties_s(sec[0].wrapped, g, 1e-6)
+    R[f"secao_{nome}_z{z:.1f}_area_mm2"] = round(g.Mass(), 3)
+    R[f"secao_{nome}_z{z:.1f}_fendas"] = len(sec[0].innerWires())
+R["fracao_preenchida"] = P.fracao_preenchida
 
 # ---------------- malha ----------------
 tm = trimesh.load(str(stl))

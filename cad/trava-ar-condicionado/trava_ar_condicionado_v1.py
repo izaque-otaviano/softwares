@@ -51,7 +51,9 @@ class Parametros:
                                       # + fenda 1,8. NÃO comanda a geometria (ver README).
     espessura_base: float = 1.5       # base de colagem, abaixo de Y=0
     rebaixo_perfil: float = 0.0       # afunda o perfil na base (abaixa os ganchos sem mudar a base)
-    ganchos_preenchidos: bool = False # True = ganchos maciços (fecha as fendas internas). Bem mais rígido!
+    fracao_preenchida: float = 0.5    # parte do comprimento Z com ganchos maciços, como na original:
+                                      # 0 = toda oca, 0,5 = metade maciça (Z de 0 a 5) e metade oca, 1 = maciça.
+                                      # A metade maciça fica em Z=0 (lado da mesa): as fendas não precisam de ponte.
     unir_U_base: bool = True          # o fundo do U fica a ~0,35 mm da base no molde: une com nervura
     largura_nervura_U: float = 1.6    # largura (X) da nervura que apoia o fundo do U na base
 
@@ -358,13 +360,15 @@ def construir(P: Parametros | None = None) -> cq.Workplane:
                     pass
             else:
                 print(f"aviso: concordância em x={x:.2f} não aplicada")
-    if P.ganchos_preenchidos:
-        # A peça é um prisma: refaz o sólido só com o contorno externo da seção
-        # (as fendas internas dos ganchos são os contornos internos e somem).
+    if P.fracao_preenchida > 0:
+        # A peça é um prisma: o trecho maciço é o contorno externo da seção (sem as fendas
+        # internas dos ganchos) extrudado de Z=0 até a fração pedida, unido ao corpo oco.
         sec = corpo.section(P.largura_total / 2).faces().val()
         face = cq.Face.makeFromWires(sec.outerWire())
         face = face.translate(cq.Vector(0, 0, -face.Center().z))
-        corpo = cq.Workplane("XY").add(cq.Solid.extrudeLinear(face, cq.Vector(0, 0, P.largura_total)))
+        zf = min(P.fracao_preenchida, 1.0) * P.largura_total
+        macico = cq.Workplane("XY").add(cq.Solid.extrudeLinear(face, cq.Vector(0, 0, zf)))
+        corpo = macico if zf >= P.largura_total else corpo.union(macico, clean=True)
     return corpo
 
 
