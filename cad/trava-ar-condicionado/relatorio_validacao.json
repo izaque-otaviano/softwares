@@ -1,0 +1,44 @@
+{
+ "step_solidos": 1,
+ "step_valido_BRepCheck": true,
+ "bbox_mm": {
+  "X": 15.0,
+  "Y": 13.479,
+  "Z": 10.0
+ },
+ "secao_meio_area_mm2": 71.29,
+ "secao_meio_furos_passantes": 2,
+ "stl_triangulos": 23108,
+ "stl_fechada_watertight": true,
+ "stl_normais_consistentes": true,
+ "stl_corpos": 1,
+ "stl_volume_mm3": 712.89,
+ "stl_euler": -2,
+ "massa_PETG_g": 0.91,
+ "parede_espessura_min_max": [
+  1.0,
+  1.0
+ ],
+ "raio_min_linha_media": 0.901,
+ "raio_min_face_interna": 0.401,
+ "vao_canal_inferior_y4.5": 2.681,
+ "vao_bolsao_travamento_y7.5": 4.205,
+ "fenda_interna_gancho_esq_y2468": [
+  2.24,
+  2.41,
+  1.98,
+  1.59
+ ],
+ "fenda_interna_gancho_dir_y2468": [
+  3.09,
+  2.6,
+  2.31,
+  1.62
+ ],
+ "folga_min_entre_paredes_nao_adjacentes": ">0.8",
+ "folga_min_local": null,
+ "fundo_U_acima_da_base": 0.351,
+ "fundo_U_unido_por_nervura": true,
+ "deformacao_flexao_%_para_0.5mm_na_ponta": 0.98,
+ "deformacao_flexao_%_para_1.0mm_na_ponta": 1.95
+}
