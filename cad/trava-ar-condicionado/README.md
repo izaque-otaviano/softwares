@@ -55,20 +55,24 @@ Eixos do modelo: **X** atravessa os ganchos, **Y** é a saliência a partir da t
    **Conclusão: a inclinação de ~10° dos ganchos é real e foi mantida.** As linhas de tinta das
    duas bordas ficam a ~1,2 mm uma da outra, o que é coerente com uma parede de 1,0 mm mais o
    espalhamento da tinta. Os dois carimbos também sugerem o perfil ~2,7% mais largo em X
-   (+0,36 mm no total), dentro do que a peça abre ao ser pressionada; não foi aplicado.
+   (+0,36 mm no total).
    Ver `comparacao_carimbos_cartao.png`.
+7. **Correção aplicada (média dos 3 carimbos):** `inclinacao_global_graus = -1,4` e `escala_x = 1,018`.
+   É um meio-termo: o desvio mediano até a tinta passa de 0,074 → 0,108 mm no papel, 0,164 → 0,136 no
+   cartão A e 0,182 → 0,169 no cartão B (média 0,140 → 0,138). Para voltar ao perfil só do papel, use
+   `inclinacao_global_graus = 0` e `escala_x = 1.0`.
 
 ## 3. Dimensões: medidas × estimadas
 
-| Grandeza | Tabela (manual) | Molde (foto 08) | Usado no v1 | Origem |
+| Grandeza | Tabela (manual) | Molde (foto 08) | Usado no v1 (corrigido) | Origem |
 |---|---|---|---|---|
-| Extensão X da base (`altura_total`) | 15 | perfil 13,5 | **15,0** | medida |
+| Extensão X da base (`altura_total`) | 15 | perfil 13,5 (v1: 13,75) | **15,0** | medida |
 | Extrusão Z (`largura_total`) | 10 | — (foto 05: ~10) | **10,0** | medida |
 | Altura do gancho baixo (`profundidade`) | 10 | 10,5 | **10,5** | molde |
 | Altura do gancho alto | — | 12,0 | **12,0** | molde |
 | Diferença entre ganchos | — | 1,47 | **1,47** | molde |
-| Vão no canal inferior, y = 4,5 (`espacamento_hastes`) | 3 | 2,68 | **2,68** | molde |
-| Vão no bolsão de travamento, y = 7,5 (`abertura_travamento`) | 5 | 4,20 | **4,20** | molde |
+| Vão no canal inferior, y = 4,5 (`espacamento_hastes`) | 3 | 2,68 | **2,74** | molde × 1,018 |
+| Vão no bolsão de travamento, y = 7,5 (`abertura_travamento`) | 5 | 4,20 | **4,30** | molde × 1,018 |
 | Largura externa da ponta de cada gancho (`largura_haste`) | 3 | 3,8 / 3,9 | **3,8 / 3,9** | molde |
 | Espessura da parede | — | contato 0,83–0,96 | **1,0** | estimada |
 | Base de colagem | — | — | **1,5** | projeto |
@@ -140,5 +144,5 @@ python tools/ajuste_molde.py referencias/molde_linha_media_mm.npy ajuste.json
 
 Validação feita com OpenCascade (via CadQuery) e Trimesh. O FreeCAD não estava disponível no
 ambiente de geração. Nota técnica: o cálculo de volume padrão do OpenCascade dá valores errados
-para extrusões de B-spline. Por isso o volume relatado vem da malha (712,9 mm³), que confere com
-área da seção × 10 mm (712,9 mm³).
+para extrusões de B-spline. Por isso o volume relatado vem da malha (715,4 mm³), que confere com
+área da seção × 10 mm (716,3 mm³).

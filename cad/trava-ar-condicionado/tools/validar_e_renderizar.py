@@ -59,20 +59,21 @@ k = np.abs(d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]) / np.linalg.norm(d1, axis=
 rmin = 1 / k[5:-5].max()
 R["raio_min_linha_media"] = round(float(rmin), 3)
 R["raio_min_face_interna"] = round(float(rmin - t / 2), 3)
-# vãos livres entre os ganchos e fendas internas
-R["vao_canal_inferior_y%.1f" % P.y_canal] = round(T.vao_entre_ganchos(pa, P.y_canal, t), 3)
-R["vao_bolsao_travamento_y%.1f" % P.y_bolsao] = round(T.vao_entre_ganchos(pa, P.y_bolsao, t), 3)
-def fenda(perna_a, perna_b, ys):
-    return [round(float(np.interp(y, perna_b[:, 1], perna_b[:, 0]) - np.interp(y, perna_a[:, 1], perna_a[:, 0]) - t), 2) for y in ys]
-p = pa
-Ei_topo = p["E_ext_topo_x"] + 2 * p["E_ponta_semi_larg"]; De_topo = p["D_int_topo_x"] + 2 * p["D_ponta_semi_larg"]
-eo = T._perna(0, p["E_pe_x"], p["E_topo_y"], p["E_ext_topo_x"], p["E_ext_arco"], n=400)
-ei = T._perna(p["E_topo_y"], Ei_topo, p["U_inicio_y"], p["E_int_base_x"], p["E_int_arco"], p["E_ressalto"], p["E_ressalto_y"], p["E_ressalto_larg"], n=400)[::-1]
-di = T._perna(p["U_inicio_y"], p["D_int_base_x"], p["D_topo_y"], p["D_int_topo_x"], p["D_int_arco"], p["D_ressalto"], p["D_ressalto_y"], p["D_ressalto_larg"], n=400)
-do = T._perna(p["D_topo_y"], De_topo, 0, p["D_pe_x"], p["D_ext_arco"], n=400)[::-1]
-ys = [2, 4, 6, 8]
-R["fenda_interna_gancho_esq_y2468"] = fenda(eo, ei, ys)
-R["fenda_interna_gancho_dir_y2468"] = fenda(di, do, ys)
+# vãos livres e fendas medidos na GEOMETRIA FINAL (cruzamentos horizontais da linha média)
+def cruzamentos(y):
+    xs = []
+    for (x0, y0), (x1, y1) in zip(c[:-1], c[1:]):
+        if (y0 - y) * (y1 - y) <= 0 and y0 != y1:
+            xs.append(x0 + (y - y0) * (x1 - x0) / (y1 - y0))
+    return sorted(xs)
+for nome, y in (("canal_inferior", P.y_canal), ("bolsao_travamento", P.y_bolsao)):
+    xs = cruzamentos(y)
+    R[f"vao_{nome}_y{y:.1f}"] = round(xs[2] - xs[1] - t, 3) if len(xs) == 4 else f"cruzamentos={len(xs)}"
+for y in (2, 4, 6, 8):
+    xs = cruzamentos(y)
+    if len(xs) == 4:
+        R.setdefault("fenda_interna_gancho_esq_y2468", []).append(round(xs[1] - xs[0] - t, 2))
+        R.setdefault("fenda_interna_gancho_dir_y2468", []).append(round(xs[3] - xs[2] - t, 2))
 # folga mínima global entre partes NÃO adjacentes da parede (detecta "soldas" na impressão)
 L = LineString(c); segs = [LineString(c[i:i + 2]) for i in range(len(c) - 1)]
 arc = np.r_[0, np.cumsum(np.hypot(*np.diff(c, axis=0).T))]
@@ -88,7 +89,7 @@ yb = c[(c[:, 0] > c[:, 0].min() + 2.5) & (c[:, 0] < c[:, 0].max() - 2.5), 1].min
 R["fundo_U_acima_da_base"] = round(float(yb), 3)
 R["fundo_U_unido_por_nervura"] = P.unir_U_base
 # estimativa de deformação na flexão (viga engastada, perna externa)
-Lp = p["E_topo_y"]; eps = lambda delta: 1.5 * t * delta / Lp ** 2
+Lp = pa["E_topo_y"]; eps = lambda delta: 1.5 * t * delta / Lp ** 2
 R["deformacao_flexao_%_para_0.5mm_na_ponta"] = round(100 * eps(0.5), 2)
 R["deformacao_flexao_%_para_1.0mm_na_ponta"] = round(100 * eps(1.0), 2)
 json.dump(R, open(out / "relatorio_validacao.json", "w"), indent=1, ensure_ascii=False)

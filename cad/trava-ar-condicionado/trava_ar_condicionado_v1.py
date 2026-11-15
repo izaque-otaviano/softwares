@@ -59,7 +59,10 @@ class Parametros:
 
     # --- ajustes globais / tolerâncias ---
     diferenca_altura_ganchos: float | None = None  # gancho direito mais alto. Molde: 1,47
-    inclinacao_global_graus: float = 0.0  # cisalhamento do perfil (+ inclina as pontas para +X)
+    inclinacao_global_graus: float = -1.4 # cisalhamento do perfil (+ inclina as pontas para +X).
+                                      # -1,4 = média de 3 carimbos (papel 0; cartão A -2,9; B -1,4)
+    escala_x: float = 1.018           # largura do perfil em X. 1,018 = média dos 3 carimbos
+                                      # (papel 1,000; cartão A 1,026; B 1,027)
     folga_encaixe: float = 0.0        # >0 estreita cada gancho na ponta (pernas externas para dentro).
                                       # Use 0,1–0,3 se o encaixe ficar duro demais.
     raio_juncao_base: float = 0.45    # concordância pernas/base (cantos internos)
@@ -271,7 +274,10 @@ def linha_media(P: "Parametros") -> np.ndarray:
         pts[:, 1] *= sy
     # 6) rebaixo do perfil na base
     pts[:, 1] -= P.rebaixo_perfil
-    # 7) cisalhamento global
+    # 7) escala em X em torno do centro do perfil
+    xc = 0.5 * (pts[:, 0].min() + pts[:, 0].max())
+    pts[:, 0] = xc + (pts[:, 0] - xc) * P.escala_x
+    # 8) cisalhamento global
     k = math.tan(math.radians(P.inclinacao_global_graus))
     pts[:, 0] += k * np.clip(pts[:, 1], 0, None)
     c = _suavizar(_reamostrar(pts))
