@@ -146,3 +146,22 @@ Validação feita com OpenCascade (via CadQuery) e Trimesh. O FreeCAD não estav
 ambiente de geração. Nota técnica: o cálculo de volume padrão do OpenCascade dá valores errados
 para extrusões de B-spline. Por isso o volume relatado vem da malha (715,4 mm³), que confere com
 área da seção × 10 mm (716,3 mm³).
+
+## 8. Variante preenchida (ganchos maciços)
+
+`trava_ar_condicionado_v1_preenchida.step` / `.stl`, gerada com `Parametros(ganchos_preenchidos=True)`.
+O contorno externo é idêntico ao da versão oca, mas as fendas internas dos ganchos são fechadas.
+O canal entre os ganchos (onde entra a nervura) continua aberto. Prévias em
+`previa_isometrica_preenchida.png`, `previa_frontal_preenchida.png` e `renders_360_preenchida/`.
+
+| | Oca (padrão) | Preenchida |
+|---|---|---|
+| Volume / massa PETG | 715 mm³ / 0,91 g | 1192 mm³ / 1,51 g |
+| Deformação para 0,5 mm de flecha na ponta | ~1,0 % | ~3,7 % (perto do escoamento do PETG, ~4–5 %) |
+| Rigidez relativa dos ganchos | 1× | ~25–55× |
+
+**Atenção:** a peça original encaixa porque os ganchos ocos fecham elasticamente. Maciços, eles
+praticamente não fletem: o encaixe passa a depender só de interferência, exige muito mais força e
+pode rachar a peça ou quebrar a aba da estrutura. Use a variante preenchida se a trava for apenas
+apoiada ou colada sem pressão. Se precisar de encaixe por pressão, use a oca, ou a preenchida com
+`folga_encaixe` de 0,2–0,4.

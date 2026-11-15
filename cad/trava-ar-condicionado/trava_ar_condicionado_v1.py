@@ -51,6 +51,7 @@ class Parametros:
                                       # + fenda 1,8. NÃO comanda a geometria (ver README).
     espessura_base: float = 1.5       # base de colagem, abaixo de Y=0
     rebaixo_perfil: float = 0.0       # afunda o perfil na base (abaixa os ganchos sem mudar a base)
+    ganchos_preenchidos: bool = False # True = ganchos maciços (fecha as fendas internas). Bem mais rígido!
     unir_U_base: bool = True          # o fundo do U fica a ~0,35 mm da base no molde: une com nervura
     largura_nervura_U: float = 1.6    # largura (X) da nervura que apoia o fundo do U na base
 
@@ -357,6 +358,13 @@ def construir(P: Parametros | None = None) -> cq.Workplane:
                     pass
             else:
                 print(f"aviso: concordância em x={x:.2f} não aplicada")
+    if P.ganchos_preenchidos:
+        # A peça é um prisma: refaz o sólido só com o contorno externo da seção
+        # (as fendas internas dos ganchos são os contornos internos e somem).
+        sec = corpo.section(P.largura_total / 2).faces().val()
+        face = cq.Face.makeFromWires(sec.outerWire())
+        face = face.translate(cq.Vector(0, 0, -face.Center().z))
+        corpo = cq.Workplane("XY").add(cq.Solid.extrudeLinear(face, cq.Vector(0, 0, P.largura_total)))
     return corpo
 
 
