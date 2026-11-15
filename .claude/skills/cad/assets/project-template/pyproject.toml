@@ -1,0 +1,13 @@
+[project]
+name = "codex-cad-model"
+version = "0.1.0"
+description = "Code-first parametric CAD model"
+requires-python = ">=3.11,<3.13"
+dependencies = ["cadquery>=2.5,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

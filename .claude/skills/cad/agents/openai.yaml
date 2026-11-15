@@ -1,0 +1,4 @@
+interface:
+  display_name: "CAD"
+  short_description: "Design printer-aware parametric CAD models"
+  default_prompt: "Use $cad to create a printer-aware parametric CAD model with verified dimensions, fit, manufacturing constraints, and preview renders."

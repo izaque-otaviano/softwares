@@ -1,0 +1,6 @@
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - cadquery>=2.5,<3
+  - pytest>=8,<10
