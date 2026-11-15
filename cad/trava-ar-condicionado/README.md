@@ -47,6 +47,16 @@ Eixos do modelo: **X** atravessa os ganchos, **Y** é a saliência a partir da t
 5. **Conferência com o segundo carimbo (foto 10):** ele repete o gancho direito mais alto,
    a inclinação do dedo esquerdo, o "S" e o U junto à base. Então a assimetria é real,
    não deformação de um carimbo isolado.
+6. **Confirmação em superfície rígida (2 carimbos em cartão plástico, A e B):** réguas calibradas
+   (14,43 e 16,43 px/mm), base na borda do cartão. As faces da parede do v1 foram ajustadas às
+   linhas de tinta, com deslocamento, escala e uma inclinação extra livres:
+   o melhor ajuste pede só −2,9° (A) e −1,4° (B) além do modelo, e o desvio mediano com o ângulo
+   do v1 é 0,16 / 0,14 mm. Com os ganchos retos (+9,5°), o desvio dobra (0,30 / 0,32 mm).
+   **Conclusão: a inclinação de ~10° dos ganchos é real e foi mantida.** As linhas de tinta das
+   duas bordas ficam a ~1,2 mm uma da outra, o que é coerente com uma parede de 1,0 mm mais o
+   espalhamento da tinta. Os dois carimbos também sugerem o perfil ~2,7% mais largo em X
+   (+0,36 mm no total), dentro do que a peça abre ao ser pressionada; não foi aplicado.
+   Ver `comparacao_carimbos_cartao.png`.
 
 ## 3. Dimensões: medidas × estimadas
 
