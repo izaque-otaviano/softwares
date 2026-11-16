@@ -250,8 +250,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "toast":
             Toast.show("Copiado", subtitle: "Cópia salva em Mesa", duration: 60)
         default:
-            guard let path = ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"],
-                  let image = NSImage(contentsOfFile: path),
+            // "live": sobre a tela real (sem imagem de fundo simulada).
+            let path = ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"] ?? ""
+            let image = mode == "live" ? nil : NSImage(contentsOfFile: path)
+            guard mode == "live" || image != nil,
                   let screen = NSScreen.main,
                   let o = openOverlay(on: screen, demoImage: image) else { return }
             if mode == "start" { return }

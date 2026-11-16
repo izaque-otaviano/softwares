@@ -44,6 +44,12 @@ jobs:
             shoot $MODE
             kill $PID || true; sleep 1
           done
+          # Sobre a tela real: abre a imagem no Preview e captura por cima
+          open -a Preview "$PWD/scripts/sample.png"; sleep 5
+          RECORTE_DEMO=live "$APPBIN" & PID=$!
+          shoot live
+          kill $PID || true; sleep 1
+          osascript -e 'quit app "Preview"' || true; sleep 1
           # OCR com o Vision (caminho do macOS 10.15+)
           RECORTE_DEMO=ocr RECORTE_DEMO_IMAGE="$PWD/scripts/sample_text.png" "$APPBIN" & PID=$!
           sleep 10; screencapture -x screenshots/ocr.png || true
