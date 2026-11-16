@@ -1,7 +1,7 @@
 import Cocoa
 
 /// Painel lateral translúcido que mostra o texto reconhecido na área selecionada.
-final class TextPanelView: SolidEffectView {
+final class TextPanelView: SolidEffectView, NSTextViewDelegate {
     var onCopy: ((String) -> Void)?
     var onClose: (() -> Void)?
 
@@ -9,7 +9,9 @@ final class TextPanelView: SolidEffectView {
     private let scrollView: NSScrollView
     private let spinner = NSProgressIndicator()
     private let statusLabel = NSTextField(labelWithString: "Reconhecendo texto…")
-    private let copyButton = AccentButton(title: "Copiar texto", tip: "Copiar o texto e fechar", width: 136)
+    private let copyButton = AccentButton(title: "Copiar tudo", tip: "Copiar todo o texto e fechar", width: 124)
+    private let copySelectionButton = SecondaryButton(title: "Copiar seleção",
+                                                      tip: "Copiar só o trecho selecionado (⌘C)", width: 124)
 
     init() {
         scrollView = NSTextView.scrollableTextView()
@@ -33,7 +35,7 @@ final class TextPanelView: SolidEffectView {
         header.orientation = .horizontal
         header.alignment = .centerY
 
-        let subtitle = NSTextField(labelWithString: "Você pode editar o texto antes de copiar.")
+        let subtitle = NSTextField(labelWithString: "Edite se quiser. Selecione um trecho para copiar só ele.")
         subtitle.font = NSFont.systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
 
@@ -76,8 +78,17 @@ final class TextPanelView: SolidEffectView {
             self.onCopy?(self.textView.string)
         }
         copyButton.isHidden = true
+        copySelectionButton.onClick = { [weak self] in
+            guard let self = self else { return }
+            let range = self.textView.selectedRange()
+            guard range.length > 0 else { return }
+            self.onCopy?((self.textView.string as NSString).substring(with: range))
+        }
+        copySelectionButton.isEnabled = false
+        copySelectionButton.isHidden = true
+        textView.delegate = self
 
-        let footer = NSStackView(views: [NSView(), copyButton])
+        let footer = NSStackView(views: [NSView(), copySelectionButton, copyButton])
         footer.orientation = .horizontal
 
         let root = NSStackView(views: [header, subtitle, card, footer])
@@ -96,7 +107,9 @@ final class TextPanelView: SolidEffectView {
             header.widthAnchor.constraint(equalTo: root.widthAnchor),
             card.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -4),
             footer.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -4),
-            copyButton.widthAnchor.constraint(equalToConstant: 136),
+            copyButton.widthAnchor.constraint(equalToConstant: 124),
+            copySelectionButton.widthAnchor.constraint(equalToConstant: 124),
+            copySelectionButton.heightAnchor.constraint(equalToConstant: 30),
             copyButton.heightAnchor.constraint(equalToConstant: 30),
 
             scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: 2),
@@ -122,6 +135,7 @@ final class TextPanelView: SolidEffectView {
     func showLoading() {
         scrollView.isHidden = true
         copyButton.isHidden = true
+        copySelectionButton.isHidden = true
         spinner.isHidden = false
         spinner.startAnimation(nil)
         statusLabel.stringValue = "Reconhecendo texto…"
@@ -136,6 +150,8 @@ final class TextPanelView: SolidEffectView {
             statusLabel.isHidden = true
             scrollView.isHidden = false
             copyButton.isHidden = false
+            copySelectionButton.isHidden = false
+            copySelectionButton.isEnabled = false
             textView.string = text
             textView.setSelectedRange(NSRange(location: 0, length: 0))
             textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
@@ -147,5 +163,9 @@ final class TextPanelView: SolidEffectView {
             statusLabel.stringValue = message
             statusLabel.isHidden = false
         }
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        copySelectionButton.isEnabled = textView.selectedRange().length > 0
     }
 }

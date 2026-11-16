@@ -8,6 +8,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
     private let recorder = ShortcutRecorderView(frame: .zero)
+    private let textRecorder = ShortcutRecorderView(frame: .zero)
     private let warningLabel = NSTextField(labelWithString: "")
     private let folderLabel = NSTextField(labelWithString: "")
     private let saveCheckbox = NSButton(checkboxWithTitle: "Ao dar OK, salvar também uma cópia nesta pasta",
@@ -82,6 +83,19 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         recorder.onChange = { [weak self] s in self?.shortcutChanged(s) }
         recorder.onRecordingChange = { [weak self] r in self?.onRecordingChange?(r) }
 
+        textRecorder.defaultShortcut = Shortcut.standardText
+        textRecorder.shortcut = Settings.textShortcut
+        textRecorder.translatesAutoresizingMaskIntoConstraints = false
+        textRecorder.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        textRecorder.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        textRecorder.onChange = { [weak self] s in
+            Settings.textShortcut = s
+            self?.reportShortcutResult(self?.onShortcutChange?(s) ?? true)
+        }
+        textRecorder.onRecordingChange = { [weak self] r in self?.onRecordingChange?(r) }
+        let textHint = wrapping("Selecione uma área e o texto dela vai direto para o “copiar”. ⌫ volta ao padrão ⇧⌘1.",
+                                width: 250)
+
         let hint = wrapping("Clique no campo e pressione a nova combinação (use ⌘, ⌥ ou ⌃). "
                             + "Esc cancela, ⌫ volta ao padrão ⇧⌘2.", width: 250)
         warningLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
@@ -111,6 +125,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         let grid = NSGridView(views: [
             [label("Atalho de captura:"), recorder],
             [NSGridCell.emptyContentView, hintStack],
+            [label("Copiar texto da tela:"), textRecorder],
+            [NSGridCell.emptyContentView, textHint],
             [label("Salvar capturas em:"), folderRow],
             [NSGridCell.emptyContentView, saveCheckbox],
         ])
@@ -119,7 +135,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         grid.columnSpacing = 12
         grid.yPlacement = .center
         grid.column(at: 0).xPlacement = .trailing
-        grid.row(at: 2).topPadding = 10
+        grid.row(at: 2).topPadding = 8
+        grid.row(at: 4).topPadding = 10
 
         let card = CardView()
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -133,8 +150,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
         let footer = wrapping("Ao apertar o atalho, arraste para selecionar a área, marque e dê OK (ou Enter): "
                               + "a imagem vai para a área de transferência, pronta para colar com ⌘V. "
-                              + "Teclas: M mover · A seta · R retângulo · O círculo · H destacar · P caneta · T texto · "
-                              + "⇧ formas perfeitas · Esc cancela.", width: 452)
+                              + "Clique sem arrastar para capturar a janela sob o mouse; C copia a cor sob a lupa. "
+                              + "Teclas: M selecionar/mover (⌫ apaga) · A seta · R retângulo · O círculo · H destacar · "
+                              + "P caneta · T texto · N números · B pixelar · E extrair texto (⇧E copia direto) · "
+                              + "F fixar na tela · ⇧ formas perfeitas · Esc cancela.", width: 452)
 
         let root = NSStackView(views: [header, card, footer])
         root.orientation = .vertical
@@ -171,7 +190,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     private func shortcutChanged(_ shortcut: Shortcut) {
         Settings.shortcut = shortcut
-        let ok = onShortcutChange?(shortcut) ?? true
+        reportShortcutResult(onShortcutChange?(shortcut) ?? true)
+    }
+
+    private func reportShortcutResult(_ ok: Bool) {
         warningLabel.stringValue = ok ? "" : "Não foi possível usar este atalho: outro app já o utiliza."
         warningLabel.isHidden = ok
     }

@@ -1,7 +1,7 @@
 import Cocoa
 
 enum Tool: Int, CaseIterable {
-    case arrow, rectangle, ellipse, highlight, pen, text
+    case arrow, rectangle, ellipse, highlight, pen, text, number, pixelate
 
     var title: String {
         switch self {
@@ -11,6 +11,8 @@ enum Tool: Int, CaseIterable {
         case .highlight: return "Destacar área (H)"
         case .pen: return "Caneta (P)"
         case .text: return "Texto (T)"
+        case .number: return "Números em sequência (N)"
+        case .pixelate: return "Pixelar / esconder (B)"
         }
     }
 
@@ -22,6 +24,8 @@ enum Tool: Int, CaseIterable {
         case .highlight: return "h"
         case .pen: return "p"
         case .text: return "t"
+        case .number: return "n"
+        case .pixelate: return "b"
         }
     }
 
@@ -33,6 +37,8 @@ enum Tool: Int, CaseIterable {
         case .highlight: return Icons.highlight
         case .pen: return Icons.pen
         case .text: return Icons.text
+        case .number: return Icons.number
+        case .pixelate: return Icons.pixelate
         }
     }
 }
@@ -47,6 +53,11 @@ final class Annotation {
     var end: CGPoint
     var points: [CGPoint]
     var text: String = ""
+    /// Ferramenta "números": o número desta marcação.
+    var number: Int = 0
+    /// Ferramenta "pixelar": imagem pixelada da tela inteira e o retângulo onde ela é desenhada.
+    var pixelSource: NSImage?
+    var sourceFrame: NSRect = .zero
 
     init(tool: Tool, color: NSColor, width: CGFloat, start: CGPoint) {
         self.tool = tool
@@ -66,6 +77,7 @@ final class Annotation {
         switch tool {
         case .pen: return points.count > 2
         case .text: return !text.trimmingCharacters(in: .whitespaces).isEmpty
+        case .number: return number > 0
         default: return hypot(end.x - start.x, end.y - start.y) > 4
         }
     }
@@ -78,10 +90,75 @@ final class Annotation {
         return NSFont.systemFont(ofSize: Annotation.fontSize(forWidth: width), weight: .semibold)
     }
 
+    /// Diâmetro do círculo da ferramenta "números".
+    var badgeDiameter: CGFloat {
+        return 14 + width * 3
+    }
+
+    /// Retângulo ocupado pela marcação (para seleção e moldura).
+    var bounds: CGRect {
+        switch tool {
+        case .text:
+            let size = (text as NSString).size(withAttributes: [.font: font])
+            return CGRect(origin: start, size: size)
+        case .number:
+            let d = badgeDiameter
+            return CGRect(x: start.x - d / 2, y: start.y - d / 2, width: d, height: d)
+        case .pen:
+            let xs = points.map { $0.x }, ys = points.map { $0.y }
+            guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max() else { return .zero }
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        default:
+            return rect
+        }
+    }
+
+    /// O ponto `p` está sobre esta marcação?
+    func hitTest(_ p: CGPoint) -> Bool {
+        let tolerance = max(6, width / 2 + 4)
+        switch tool {
+        case .arrow:
+            return distance(from: p, toSegment: start, end) <= tolerance
+        case .pen:
+            for i in 1..<max(points.count, 1) where distance(from: p, toSegment: points[i - 1], points[i]) <= tolerance {
+                return true
+            }
+            return false
+        case .rectangle, .ellipse:
+            let outer = rect.insetBy(dx: -tolerance, dy: -tolerance)
+            let inner = rect.insetBy(dx: tolerance, dy: tolerance)
+            return outer.contains(p) && (inner.width <= 0 || inner.height <= 0 || !inner.contains(p))
+        default:
+            return bounds.insetBy(dx: -4, dy: -4).contains(p)
+        }
+    }
+
+    private func distance(from p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        guard len2 > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    func move(by dx: CGFloat, _ dy: CGFloat) {
+        start = CGPoint(x: start.x + dx, y: start.y + dy)
+        end = CGPoint(x: end.x + dx, y: end.y + dy)
+        points = points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
+    }
+
     func draw() {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
+
+        if tool == .pixelate {
+            guard let source = pixelSource else { return }
+            NSBezierPath(rect: rect).addClip()
+            NSGraphicsContext.current?.imageInterpolation = .none
+            source.draw(in: sourceFrame)
+            return
+        }
 
         // Sombra suave, no estilo da Marcação do macOS.
         if tool != .highlight {
@@ -132,6 +209,26 @@ final class Annotation {
         case .text:
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
             (text as NSString).draw(at: start, withAttributes: attrs)
+
+        case .number:
+            let r = bounds
+            color.setFill()
+            NSBezierPath(ovalIn: r).fill()
+            let ring = NSBezierPath(ovalIn: r.insetBy(dx: 1, dy: 1))
+            ring.lineWidth = 2
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            ring.stroke()
+            let light = color == NSColor.white || color == NSColor.systemYellow
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: badgeDiameter * 0.55, weight: .bold),
+                .foregroundColor: light ? NSColor.black : NSColor.white,
+            ]
+            let label = "\(number)" as NSString
+            let size = label.size(withAttributes: attrs)
+            label.draw(at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2), withAttributes: attrs)
+
+        case .pixelate:
+            break
         }
     }
 

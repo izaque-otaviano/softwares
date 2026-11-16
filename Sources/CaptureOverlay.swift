@@ -20,11 +20,21 @@ final class CaptureOverlay: NSObject {
     var onSaveAs: ((NSBitmapImageRep) -> Void)?
     /// Chamado ao copiar o texto reconhecido (OCR).
     var onTextCopied: ((String) -> Void)?
+    /// Cópia rápida de texto: resultado do OCR, sem painel.
+    var onQuickText: ((OCR.Outcome) -> Void)?
+    /// Conta-gotas: cor em HEX copiada.
+    var onColorCopied: ((String) -> Void)?
+    /// Fixar na tela: imagem final e onde ela estava (coordenadas globais).
+    var onPin: ((NSBitmapImageRep, NSRect) -> Void)?
     /// Sempre chamado quando a sobreposição fecha.
     var onFinish: (() -> Void)?
 
-    /// - Parameter demoImage: usado só nos prints automáticos (substitui a tela real).
-    init?(screen: NSScreen, demoImage: NSImage? = nil) {
+    /// - Parameters:
+    ///   - mode: `.textOnly` = seleciona a área e copia o texto direto (OCR rápido).
+    ///   - frozen: mostra a "foto" da tela em vez da tela ao vivo (captura com atraso).
+    ///   - demoImage: usado só nos prints automáticos (substitui a tela real).
+    init?(screen: NSScreen, mode: OverlayView.Mode = .normal, frozen: Bool = false, demoImage: NSImage? = nil) {
+        let windows = CaptureOverlay.windowRects(on: screen)
         guard let shot = CaptureOverlay.captureScreen(screen, demoImage: demoImage) else { return nil }
 
         window = OverlayWindow(contentRect: screen.frame, styleMask: [.borderless],
@@ -40,8 +50,9 @@ final class CaptureOverlay: NSObject {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.acceptsMouseMovedEvents = true
 
+        let backdrop = demoImage ?? (frozen ? NSImage(cgImage: shot, size: screen.frame.size) : nil)
         view = OverlayView(frame: NSRect(origin: .zero, size: screen.frame.size), screenshot: shot,
-                           backdrop: demoImage)
+                           backdrop: backdrop, mode: mode, windowRects: windows)
         window.contentView = view
         super.init()
 
@@ -57,6 +68,23 @@ final class CaptureOverlay: NSObject {
             self.finish()
             self.onTextCopied?(text)
         }
+        view.onQuickText = { [weak self] outcome in
+            guard let self = self else { return }
+            self.finish()
+            self.onQuickText?(outcome)
+        }
+        view.onColorCopied = { [weak self] hex in
+            guard let self = self else { return }
+            self.finish()
+            self.onColorCopied?(hex)
+        }
+        let screenOrigin = screen.frame.origin
+        view.onPin = { [weak self] in
+            guard let self = self, let sel = self.view.selection else { return }
+            let rep = self.view.render()
+            self.finish()
+            if let rep = rep { self.onPin?(rep, sel.offsetBy(dx: screenOrigin.x, dy: screenOrigin.y)) }
+        }
         view.onSaveAs = { [weak self] in
             guard let self = self else { return }
             let rep = self.view.render()
@@ -69,8 +97,7 @@ final class CaptureOverlay: NSObject {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(view)
-        view.mouse = window.mouseLocationOutsideOfEventStream
-        view.needsDisplay = true
+        view.updateHover(window.mouseLocationOutsideOfEventStream)
         window.invalidateCursorRects(for: view)
         NSCursor.crosshair.set()
     }
@@ -110,6 +137,29 @@ final class CaptureOverlay: NSObject {
         }
         // Plano B: o utilitário do próprio macOS.
         return captureWithTool(screen) ?? CGDisplayCreateImage(displayID)
+    }
+
+    /// Janelas visíveis (de trás para frente na lista = da frente para trás na tela),
+    /// em coordenadas da tela indicada. Usado para "clicar numa janela".
+    private static func windowRects(on screen: NSScreen) -> [NSRect] {
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let myPID = Int(ProcessInfo.processInfo.processIdentifier)
+        let local = NSRect(origin: .zero, size: screen.frame.size)
+        var rects: [NSRect] = []
+        for w in info {
+            guard (w[kCGWindowLayer as String] as? Int) == 0,
+                  (w[kCGWindowOwnerPID as String] as? Int) != myPID,
+                  let dict = w[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: dict as CFDictionary),
+                  r.width >= 40, r.height >= 40 else { continue }
+            if let alpha = w[kCGWindowAlpha as String] as? Double, alpha <= 0.01 { continue }
+            let global = NSRect(x: r.minX, y: primaryHeight - r.maxY, width: r.width, height: r.height)
+            let rect = global.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY).intersection(local)
+            if rect.width >= 40 && rect.height >= 40 { rects.append(rect) }
+        }
+        return rects
     }
 
     /// Captura a tela com /usr/sbin/screencapture (silencioso, sem som).
@@ -154,13 +204,44 @@ final class CaptureOverlay: NSObject {
 
 /// Tela congelada + seleção + marcações + barra de ferramentas.
 final class OverlayView: NSView, NSTextFieldDelegate {
+    enum Mode {
+        case normal
+        /// Copiar texto direto: seleciona a área, reconhece e copia.
+        case textOnly
+    }
+
     private enum Drag {
         case none
         case selecting(NSPoint)
         case moving(NSPoint)
+        case movingAnnotation(Annotation, NSPoint, NSPoint)
         case resizing(Int, Int, NSPoint, NSRect)
         case drawing
     }
+
+    let mode: Mode
+    private let windowRects: [NSRect]
+    /// Janela (ou tela inteira) sob o mouse antes de selecionar.
+    private var hoveredRect: NSRect?
+    private var selectedAnnotation: Annotation? { didSet { needsDisplay = true } }
+    private var isRecognizing = false
+    var onQuickText: ((OCR.Outcome) -> Void)?
+    var onColorCopied: ((String) -> Void)?
+    var onPin: (() -> Void)?
+
+    /// Versão pixelada da tela inteira (para a ferramenta "pixelar").
+    private lazy var pixelated: NSImage? = {
+        let block = max(1, 12 * pixelScale)
+        let w = max(1, Int(CGFloat(screenshot.width) / block))
+        let h = max(1, Int(CGFloat(screenshot.height) / block))
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .medium
+        ctx.draw(screenshot, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let small = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: small, size: bounds.size)
+    }()
 
     let screenshot: CGImage
     /// Só nos prints automáticos: imagem desenhada no lugar da tela real.
@@ -200,9 +281,12 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var colorButtons: [ColorButton] = []
     private var widthButtons: [WidthButton] = []
 
-    init(frame: NSRect, screenshot: CGImage, backdrop: NSImage? = nil) {
+    init(frame: NSRect, screenshot: CGImage, backdrop: NSImage? = nil,
+         mode: Mode = .normal, windowRects: [NSRect] = []) {
         self.screenshot = screenshot
         self.backdrop = backdrop
+        self.mode = mode
+        self.windowRects = windowRects
         self.pixelScale = CGFloat(screenshot.width) / max(frame.width, 1)
         super.init(frame: frame)
         buildPalette()
@@ -227,8 +311,15 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        mouse = convert(event.locationInWindow, from: nil)
-        if selection == nil { needsDisplay = true }
+        updateHover(convert(event.locationInWindow, from: nil))
+    }
+
+    func updateHover(_ p: NSPoint) {
+        mouse = p
+        if selection == nil {
+            hoveredRect = windowRects.first(where: { $0.contains(p) }) ?? bounds
+            needsDisplay = true
+        }
     }
 
     // MARK: Barra de ferramentas
@@ -243,7 +334,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
         var items: [NSView] = []
 
-        moveButton = IconButton(image: Icons.move, tip: "Mover a seleção (M)")
+        moveButton = IconButton(image: Icons.move, tip: "Selecionar e mover marcações ou a área (M) · ⌫ apaga")
         moveButton.onClick = { [weak self] in self?.selectMoveTool() }
         items.append(moveButton)
         for tool in Tool.allCases {
@@ -283,13 +374,15 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
         let save = IconButton(image: Icons.save, tip: "Salvar como… (⌘S)")
         save.onClick = { [weak self] in self?.onSaveAs?() }
+        let pin = IconButton(image: Icons.pin, tip: "Fixar na tela (F)")
+        pin.onClick = { [weak self] in self?.onPin?() }
         let copy = IconButton(image: Icons.copy, tip: "Copiar (⌘C)")
         copy.onClick = { [weak self] in self?.onConfirm?() }
         let cancel = IconButton(image: Icons.close, tip: "Cancelar (Esc)")
         cancel.onClick = { [weak self] in self?.onCancel?() }
         let ok = AccentButton(title: "OK", tip: "Copiar e salvar (Enter)")
         ok.onClick = { [weak self] in self?.onConfirm?() }
-        items.append(contentsOf: [save, copy, cancel, ok] as [NSView])
+        items.append(contentsOf: [save, pin, copy, cancel, ok] as [NSView])
 
         let stack = NSStackView(views: items)
         stack.orientation = .horizontal
@@ -339,6 +432,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func selectMoveTool() {
         commitText()
+        selectedAnnotation = nil
         isMoveTool = true
         moveButton.isSelected = true
         for b in toolButtons { b.isSelected = false }
@@ -347,6 +441,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func selectTool(_ t: Tool) {
         commitText()
+        selectedAnnotation = nil
         isMoveTool = false
         tool = t
         moveButton.isSelected = false
@@ -381,9 +476,21 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         }
 
         guard let sel = selection else {
+            if let h = hoveredRect, h != bounds {
+                // Destaca a janela sob o mouse (um clique a captura inteira).
+                NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
+                h.fill(using: .sourceOver)
+                let border = NSBezierPath(rect: h.insetBy(dx: 1.5, dy: 1.5))
+                border.lineWidth = 3
+                NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
+                border.stroke()
+            }
             drawCrosshair()
-            drawPill("Arraste para selecionar a área  ·  Esc para cancelar",
-                     at: NSPoint(x: bounds.midX, y: bounds.maxY - 60), centered: true)
+            let hint = mode == .textOnly
+                ? "Selecione a área com texto para copiar  ·  Esc para cancelar"
+                : "Arraste para selecionar  ·  Clique numa janela para capturá-la  ·  C copia a cor  ·  Esc cancela"
+            drawPill(hint, at: NSPoint(x: bounds.midX, y: bounds.maxY - 60), centered: true)
+            if let m = mouse { drawLoupe(at: m) }
             return
         }
 
@@ -403,6 +510,18 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         for a in annotations { a.draw() }
         current?.draw()
         NSGraphicsContext.restoreGraphicsState()
+
+        // Moldura da marcação selecionada
+        if let a = selectedAnnotation {
+            let frame = NSBezierPath(rect: a.bounds.insetBy(dx: -6, dy: -6))
+            frame.lineWidth = 1.5
+            frame.setLineDash([5, 3], count: 2, phase: 0)
+            NSColor.white.setStroke()
+            frame.stroke()
+            frame.setLineDash([5, 3], count: 2, phase: 5)
+            NSColor.controlAccentColor.setStroke()
+            frame.stroke()
+        }
 
         // Borda da seleção
         let border = NSBezierPath(rect: sel.insetBy(dx: -0.5, dy: -0.5))
@@ -438,7 +557,86 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             var p = NSPoint(x: sel.minX, y: sel.maxY + 8)
             if p.y + 26 > bounds.maxY { p.y = sel.maxY - 32 }
             drawPill("\(w) × \(h)", at: p, centered: false)
+            if let m = mouse { drawLoupe(at: m) }
         }
+
+        if isRecognizing {
+            drawPill("Reconhecendo texto…", at: NSPoint(x: sel.midX, y: sel.midY - 12), centered: true)
+        }
+    }
+
+    // MARK: Lupa e conta-gotas
+
+    /// Lupa com os pixels em volta do mouse, posição e cor.
+    private func drawLoupe(at m: NSPoint) {
+        let cells = 15
+        let zoom: CGFloat = 8
+        let size = CGFloat(cells) * zoom
+        let labelHeight: CGFloat = 26
+        var x = m.x + 24
+        var y = m.y - 24 - size - labelHeight
+        if x + size > bounds.maxX - 8 { x = m.x - 24 - size }
+        if y < bounds.minY + 8 { y = m.y + 24 }
+        let box = NSRect(x: x, y: y + labelHeight, width: size, height: size)
+
+        let px = (m.x * pixelScale).rounded(.down)
+        let py = ((bounds.height - m.y) * pixelScale).rounded(.down)
+        let half = CGFloat(cells / 2)
+        let crop = CGRect(x: px - half, y: py - half, width: CGFloat(cells), height: CGFloat(cells))
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
+        shadow.shadowBlurRadius = 8
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        shadow.set()
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: box, xRadius: 10, yRadius: 10).fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: box, xRadius: 10, yRadius: 10).addClip()
+        if let img = screenshot.cropping(to: crop) {
+            NSGraphicsContext.current?.imageInterpolation = .none
+            NSImage(cgImage: img, size: NSSize(width: img.width, height: img.height)).draw(in: box)
+        }
+        let center = NSRect(x: box.minX + half * zoom, y: box.minY + half * zoom, width: zoom, height: zoom)
+        let cross = NSBezierPath()
+        cross.move(to: NSPoint(x: box.minX, y: center.midY)); cross.line(to: NSPoint(x: center.minX, y: center.midY))
+        cross.move(to: NSPoint(x: center.maxX, y: center.midY)); cross.line(to: NSPoint(x: box.maxX, y: center.midY))
+        cross.move(to: NSPoint(x: center.midX, y: box.minY)); cross.line(to: NSPoint(x: center.midX, y: center.minY))
+        cross.move(to: NSPoint(x: center.midX, y: center.maxY)); cross.line(to: NSPoint(x: center.midX, y: box.maxY))
+        cross.lineWidth = 1
+        NSColor.controlAccentColor.withAlphaComponent(0.6).setStroke()
+        cross.stroke()
+        let cell = NSBezierPath(rect: center)
+        cell.lineWidth = 1.5
+        NSColor.white.setStroke()
+        cell.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let ring = NSBezierPath(roundedRect: box.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
+        ring.lineWidth = 1.5
+        NSColor(white: 1, alpha: 0.85).setStroke()
+        ring.stroke()
+
+        let hex = colorHex(at: m) ?? "—"
+        drawPill("\(Int(px)), \(Int(py))   \(hex)", at: NSPoint(x: box.minX, y: y), centered: false)
+    }
+
+    /// Cor (sRGB, em HEX) do pixel sob o ponto indicado.
+    private func colorHex(at m: NSPoint) -> String? {
+        let px = Int(m.x * pixelScale), py = Int((bounds.height - m.y) * pixelScale)
+        guard px >= 0, py >= 0, px < screenshot.width, py < screenshot.height,
+              let one = screenshot.cropping(to: CGRect(x: px, y: py, width: 1, height: 1)),
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        ctx.draw(one, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard let raw = ctx.data else { return nil }
+        let bytes = raw.bindMemory(to: UInt8.self, capacity: 4)
+        return String(format: "#%02X%02X%02X", bytes[0], bytes[1], bytes[2])
     }
 
     /// Linhas-guia que seguem o mouse antes de selecionar.
@@ -520,6 +718,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             drag = .selecting(p)
             return
         }
+        if isRecognizing { return }
         if let h = hitHandle(p, in: sel) {
             drag = .resizing(h.0, h.1, p, sel)
             palette.isHidden = true
@@ -527,7 +726,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         }
         if sel.contains(p) {
             if isMoveTool {
-                drag = .moving(p)
+                if let a = annotations.reversed().first(where: { $0.hitTest(p) }) {
+                    selectedAnnotation = a
+                    drag = .movingAnnotation(a, p, p)
+                } else {
+                    selectedAnnotation = nil
+                    drag = .moving(p)
+                }
                 NSCursor.closedHand.set()
                 return
             }
@@ -535,7 +740,18 @@ final class OverlayView: NSView, NSTextFieldDelegate {
                 beginText(at: p)
                 return
             }
-            current = Annotation(tool: tool, color: color, width: lineWidth, start: p)
+            if tool == .number {
+                let a = Annotation(tool: .number, color: color, width: lineWidth, start: p)
+                a.number = (annotations.filter { $0.tool == .number }.map { $0.number }.max() ?? 0) + 1
+                add(a)
+                return
+            }
+            let a = Annotation(tool: tool, color: color, width: lineWidth, start: p)
+            if tool == .pixelate {
+                a.pixelSource = pixelated
+                a.sourceFrame = bounds
+            }
+            current = a
             drag = .drawing
             return
         }
@@ -550,7 +766,12 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseDragged(with event: NSEvent) {
         let p = clamp(convert(event.locationInWindow, from: nil))
+        mouse = p
         switch drag {
+        case .movingAnnotation(let a, let start, let last):
+            a.move(by: p.x - last.x, p.y - last.y)
+            drag = .movingAnnotation(a, start, p)
+
         case .selecting(let s):
             selection = NSRect(x: min(s.x, p.x), y: min(s.y, p.y), width: abs(p.x - s.x), height: abs(p.y - s.y))
 
@@ -589,10 +810,18 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         switch drag {
         case .selecting:
             if let s = selection, s.width >= 5, s.height >= 5 {
-                layoutPalette()
+                selectionCompleted()
+            } else if let h = hoveredRect {
+                // Clique sem arrastar: captura a janela sob o mouse (ou a tela toda).
+                selection = h
+                selectionCompleted()
             } else {
                 selection = nil
             }
+        case .movingAnnotation(let a, let start, let last):
+            let dx = last.x - start.x, dy = last.y - start.y
+            if dx != 0 || dy != 0 { registerMove(a, dx, dy) }
+            NSCursor.openHand.set()
         case .drawing:
             if let c = current, c.isMeaningful { add(c) }
             current = nil
@@ -611,6 +840,24 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         drag = .none
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
+    }
+
+    private func selectionCompleted() {
+        hoveredRect = nil
+        if mode == .textOnly {
+            quickCopyText()
+        } else {
+            layoutPalette()
+        }
+    }
+
+    private func registerMove(_ a: Annotation, _ dx: CGFloat, _ dy: CGFloat) {
+        undoManager?.registerUndo(withTarget: self) { target in
+            a.move(by: -dx, -dy)
+            target.registerMove(a, -dx, -dy)
+            target.needsDisplay = true
+        }
+        undoManager?.setActionName("Mover")
     }
 
     private func shift(_ a: Annotation, _ dx: CGFloat, _ dy: CGFloat) {
@@ -648,13 +895,35 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             onCancel?()
             return
         }
-        if (code == kVK_Return || code == kVK_ANSI_KeypadEnter), selection != nil {
+        if isRecognizing { return }
+        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if selection == nil {
+            // Antes de selecionar: C copia a cor sob o mouse.
+            if mods.isEmpty, chars == "c", mode == .normal, let m = mouse, let hex = colorHex(at: m) {
+                onColorCopied?(hex)
+            }
+            return
+        }
+        if (code == kVK_Return || code == kVK_ANSI_KeypadEnter) {
             onConfirm?()
             return
         }
-        if mods.isEmpty, selection != nil, let chars = event.charactersIgnoringModifiers?.lowercased() {
+        if (code == kVK_Delete || code == kVK_ForwardDelete), let a = selectedAnnotation {
+            selectedAnnotation = nil
+            remove(a)
+            return
+        }
+        if mods == [.shift], chars == "e" {
+            quickCopyText()
+            return
+        }
+        if mods.isEmpty {
             if chars == "e" {
                 extractText()
+                return
+            }
+            if chars == "f" {
+                onPin?()
                 return
             }
             if chars == "m" || chars == "v" {
@@ -689,6 +958,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     func remove(_ a: Annotation) {
         guard let i = annotations.firstIndex(where: { $0 === a }) else { return }
         annotations.remove(at: i)
+        if selectedAnnotation === a { selectedAnnotation = nil }
         undoManager?.registerUndo(withTarget: self) { target in target.add(a) }
         undoManager?.setActionName("Marcação")
         needsDisplay = true
@@ -798,6 +1068,21 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// Reconhece o texto da área e copia direto, sem abrir o painel.
+    func quickCopyText() {
+        commitText()
+        guard let sel = selection?.integral.intersection(bounds), sel.width >= 4, sel.height >= 4,
+              let image = croppedScreenshot(sel) else { NSSound.beep(); return }
+        palette.isHidden = true
+        isRecognizing = true
+        needsDisplay = true
+        OCR.recognize(image) { [weak self] outcome in
+            guard let self = self else { return }
+            self.isRecognizing = false
+            self.onQuickText?(outcome)
+        }
+    }
+
     private func makeTextPanel() -> TextPanelView {
         let panel = TextPanelView()
         panel.onClose = { [weak self] in self?.closeTextPanel() }
@@ -841,12 +1126,33 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     // MARK: Demonstração (prints automáticos)
 
+    /// Demonstração: destaca a janela sob um ponto (lupa e "clique na janela").
+    func demoHover(at p: NSPoint) {
+        updateHover(p)
+    }
+
+    /// Demonstração: deixa uma marcação selecionada.
+    func demoSelect(_ a: Annotation) {
+        selectMoveTool()
+        selectedAnnotation = a
+    }
+
     func demo(selection sel: NSRect, annotations list: [Annotation], selecting: Bool, ocr: Bool = false) {
         selection = sel
         if selecting {
             drag = .selecting(sel.origin)
         } else {
-            for a in list { add(a) }
+            for a in list {
+                if a.tool == .pixelate {
+                    a.pixelSource = pixelated
+                    a.sourceFrame = bounds
+                }
+                add(a)
+            }
+            if mode == .textOnly {
+                quickCopyText()
+                return
+            }
             layoutPalette()
             if ocr { extractText() }
         }

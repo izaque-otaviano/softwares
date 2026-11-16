@@ -9,6 +9,8 @@ final class ShortcutRecorderView: NSView {
             setAccessibilityValue(shortcut.displayString)
         }
     }
+    /// Valor restaurado com ⌫.
+    var defaultShortcut = Shortcut.standard
     var onChange: ((Shortcut) -> Void)?
     var onRecordingChange: ((Bool) -> Void)?
 
@@ -77,7 +79,7 @@ final class ShortcutRecorderView: NSView {
                 return
             }
             if code == kVK_Delete || code == kVK_ForwardDelete {
-                shortcut = Shortcut.standard
+                shortcut = defaultShortcut
                 onChange?(shortcut)
                 isRecording = false
                 return

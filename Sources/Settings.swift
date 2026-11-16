@@ -7,6 +7,8 @@ enum Settings {
     private enum Key {
         static let keyCode = "shortcutKeyCode"
         static let modifiers = "shortcutModifiers"
+        static let textKeyCode = "textShortcutKeyCode"
+        static let textModifiers = "textShortcutModifiers"
         static let saveFolder = "saveFolder"
         static let saveOnDone = "saveOnDone"
         static let launchedBefore = "launchedBefore"
@@ -34,6 +36,20 @@ enum Settings {
         set {
             defaults.set(Int(newValue.keyCode), forKey: Key.keyCode)
             defaults.set(Int(newValue.modifiers.rawValue), forKey: Key.modifiers)
+        }
+    }
+
+    /// Atalho para "copiar texto da tela" (OCR direto). Padrão ⇧⌘1.
+    static var textShortcut: Shortcut {
+        get {
+            guard defaults.object(forKey: Key.textKeyCode) != nil else { return Shortcut.standardText }
+            let code = UInt32(defaults.integer(forKey: Key.textKeyCode))
+            let mods = NSEvent.ModifierFlags(rawValue: UInt(defaults.integer(forKey: Key.textModifiers)))
+            return Shortcut(keyCode: code, modifiers: mods)
+        }
+        set {
+            defaults.set(Int(newValue.keyCode), forKey: Key.textKeyCode)
+            defaults.set(Int(newValue.modifiers.rawValue), forKey: Key.textModifiers)
         }
     }
 

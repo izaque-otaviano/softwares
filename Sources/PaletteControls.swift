@@ -193,3 +193,38 @@ class SolidEffectView: NSVisualEffectView {
     override func mouseUp(with event: NSEvent) {}
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
 }
+
+/// Botão secundário com texto (fundo discreto). Pode ficar desativado.
+final class SecondaryButton: PaletteButton {
+    let title: String
+    var isEnabled = true { didSet { needsDisplay = true } }
+
+    init(title: String, tip: String, width: CGFloat) {
+        self.title = title
+        super.init(size: NSSize(width: width, height: 30), tip: tip)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override var showsSelectionBackground: Bool { return false }
+
+    override func mouseUp(with event: NSEvent) {
+        if isEnabled { super.mouseUp(with: event) }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let alpha: CGFloat = isEnabled ? 1 : 0.4
+        let bg = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 7, yRadius: 7)
+        NSColor.labelColor.withAlphaComponent(0.14 * alpha).setFill()
+        bg.fill()
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor.labelColor.withAlphaComponent(alpha),
+        ]
+        let size = (title as NSString).size(withAttributes: attrs)
+        (title as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+                                 withAttributes: attrs)
+    }
+}

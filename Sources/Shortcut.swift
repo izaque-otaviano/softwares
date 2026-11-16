@@ -10,6 +10,8 @@ struct Shortcut: Equatable {
 
     /// Padrão: ⇧⌘2 (não conflita com ⇧⌘3/4/5 do sistema).
     static let standard = Shortcut(keyCode: UInt32(kVK_ANSI_2), modifiers: [.command, .shift])
+    /// Padrão para copiar texto da tela: ⇧⌘1.
+    static let standardText = Shortcut(keyCode: UInt32(kVK_ANSI_1), modifiers: [.command, .shift])
 
     init(keyCode: UInt32, modifiers: NSEvent.ModifierFlags) {
         self.keyCode = keyCode

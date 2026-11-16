@@ -158,6 +158,41 @@ enum Icons {
         Icons.stroke(t, 1.4)
     }
 
+    /// Números em sequência: círculo com "1".
+    static let number = make { rect in
+        Icons.stroke(NSBezierPath(ovalIn: NSRect(x: 3, y: 3, width: 14, height: 14)), 1.5)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+            .foregroundColor: NSColor.black,
+        ]
+        let s = "1" as NSString
+        let size = s.size(withAttributes: attrs)
+        s.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attrs)
+    }
+
+    /// Pixelar: grade de quadradinhos alternados.
+    static let pixelate = make { _ in
+        let cell: CGFloat = 4
+        for row in 0..<4 {
+            for col in 0..<4 {
+                let r = NSRect(x: 2 + CGFloat(col) * cell, y: 2 + CGFloat(row) * cell, width: cell, height: cell)
+                NSColor.black.withAlphaComponent((row + col) % 2 == 0 ? 1 : 0.35).setFill()
+                r.fill()
+            }
+        }
+    }
+
+    /// Fixar na tela: alfinete.
+    static let pin = make { _ in
+        let head = NSBezierPath()
+        head.move(to: NSPoint(x: 7, y: 17)); head.line(to: NSPoint(x: 13, y: 17))
+        head.move(to: NSPoint(x: 8, y: 17)); head.line(to: NSPoint(x: 8, y: 11))
+        head.move(to: NSPoint(x: 12, y: 17)); head.line(to: NSPoint(x: 12, y: 11))
+        head.move(to: NSPoint(x: 5.5, y: 10.5)); head.line(to: NSPoint(x: 14.5, y: 10.5))
+        head.move(to: NSPoint(x: 10, y: 10.5)); head.line(to: NSPoint(x: 10, y: 3))
+        Icons.stroke(head, 1.5)
+    }
+
     /// Ícone da barra de menus: um "visor" com uma pequena seta.
     static let menuBar = make(size: 18) { _ in
         let c = NSBezierPath()

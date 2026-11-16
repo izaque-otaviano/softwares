@@ -39,7 +39,7 @@ jobs:
             sleep 6
             screencapture -x "screenshots/$1.png" || true
           }
-          for MODE in start select overlay toast prefs; do
+          for MODE in start select overlay tools pin toast prefs; do
             RECORTE_DEMO=$MODE RECORTE_DEMO_IMAGE="$PWD/scripts/sample.png" "$APPBIN" & PID=$!
             shoot $MODE
             kill $PID || true; sleep 1
@@ -49,10 +49,19 @@ jobs:
           RECORTE_DEMO=live "$APPBIN" & PID=$!
           shoot live
           kill $PID || true; sleep 1
+          RECORTE_DEMO=pick "$APPBIN" & PID=$!
+          shoot pick
+          kill $PID || true; sleep 1
           osascript -e 'quit app "Preview"' || true; sleep 1
           # OCR com o Vision (caminho do macOS 10.15+)
           RECORTE_DEMO=ocr RECORTE_DEMO_IMAGE="$PWD/scripts/sample_text.png" "$APPBIN" & PID=$!
           sleep 10; screencapture -x screenshots/ocr.png || true
+          kill $PID || true; sleep 1
+          # Copiar texto direto (sem painel): confere o que foi para a área de transferência
+          echo -n "" | pbcopy
+          RECORTE_DEMO=quicktext RECORTE_FORCE_TESSERACT=1 RECORTE_DEMO_IMAGE="$PWD/scripts/sample_text.png" arch -x86_64 "$APPBIN" & PID=$!
+          sleep 20
+          echo "=== Área de transferência após copiar texto direto ==="; pbpaste; echo; echo "==="
           kill $PID || true; sleep 1
           # OCR com o Tesseract, binário Intel (caminho do macOS 10.14)
           RECORTE_DEMO=ocr RECORTE_FORCE_TESSERACT=1 RECORTE_DEMO_IMAGE="$PWD/scripts/sample_text.png" arch -x86_64 "$APPBIN" & PID=$!
