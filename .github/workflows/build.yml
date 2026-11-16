@@ -20,6 +20,29 @@ jobs:
         run: |
           lipo build/Recorte.app/Contents/MacOS/Recorte -thin x86_64 -output /tmp/recorte-x86
           otool -l /tmp/recorte-x86 | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX"
+      - name: Prints automáticos do app
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: |
+          set -x
+          mkdir -p screenshots
+          APPBIN=build/Recorte.app/Contents/MacOS/Recorte
+          shoot() {
+            sleep 6
+            screencapture -x "screenshots/$1.png" || true
+          }
+          RECORTE_DEMO=editor RECORTE_DEMO_IMAGE="$PWD/scripts/sample.png" "$APPBIN" & PID=$!
+          shoot editor; kill $PID || true; sleep 1
+          RECORTE_DEMO=prefs "$APPBIN" & PID=$!
+          shoot prefs; kill $PID || true
+          ls -la screenshots
+      - name: Salvar prints na branch
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git add screenshots
+          git commit -m "Prints automáticos [skip ci]" || exit 0
+          git push
       - uses: actions/upload-artifact@v4
         with:
           name: Recorte-dmg

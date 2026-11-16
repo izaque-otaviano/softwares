@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyManager.shared.installHandler()
         applyShortcut()
 
+        if let demo = ProcessInfo.processInfo.environment["RECORTE_DEMO"] {
+            runDemo(demo)
+            return
+        }
+
         if !Settings.launchedBefore {
             Settings.launchedBefore = true
             showPreferences(nil)
@@ -198,6 +203,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.editors.removeAll(where: { $0 === e })
             DispatchQueue.main.async { self?.updateActivationPolicy() }
         }
+        editors.append(editor)
+        NSApp.setActivationPolicy(.regular)
+        editor.show()
+    }
+
+    // MARK: Demonstração (usada só para gerar prints automáticos no CI)
+
+    private func runDemo(_ mode: String) {
+        Settings.launchedBefore = true
+        if mode == "prefs" {
+            showPreferences(nil)
+            return
+        }
+        guard let path = ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"],
+              let image = NSImage(contentsOfFile: path) else { return }
+        if let rep = image.representations.first {
+            image.size = NSSize(width: CGFloat(rep.pixelsWide) / 2, height: CGFloat(rep.pixelsHigh) / 2)
+        }
+        let editor = EditorWindowController(image: image)
+        let c = editor.canvas
+        func make(_ tool: Tool, _ color: NSColor, _ w: CGFloat, _ a: CGPoint, _ b: CGPoint) -> Annotation {
+            let x = Annotation(tool: tool, color: color, width: w, start: a)
+            x.end = b
+            return x
+        }
+        c.add(make(.highlight, .systemYellow, 4, CGPoint(x: 536, y: 340), CGPoint(x: 776, y: 435)))
+        c.add(make(.ellipse, .systemRed, 4, CGPoint(x: 26, y: 350), CGPoint(x: 214, y: 408)))
+        c.add(make(.rectangle, .systemBlue, 4, CGPoint(x: 30, y: 282), CGPoint(x: 185, y: 313)))
+        c.add(make(.arrow, .systemRed, 4, CGPoint(x: 590, y: 215), CGPoint(x: 700, y: 262)))
+        let t = Annotation(tool: .text, color: .systemRed, width: 4, start: CGPoint(x: 330, y: 196))
+        t.text = "Recorde em dezembro!"
+        c.add(t)
         editors.append(editor)
         NSApp.setActivationPolicy(.regular)
         editor.show()
