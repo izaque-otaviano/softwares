@@ -142,6 +142,22 @@ enum Icons {
         Icons.stroke(p, 2.2)
     }
 
+    /// Extrair texto: cantos de "scanner" com linhas de texto.
+    static let ocr = make { _ in
+        let c = NSBezierPath()
+        let l: CGFloat = 4
+        c.move(to: NSPoint(x: 2.5, y: 2.5 + l)); c.line(to: NSPoint(x: 2.5, y: 2.5)); c.line(to: NSPoint(x: 2.5 + l, y: 2.5))
+        c.move(to: NSPoint(x: 17.5 - l, y: 2.5)); c.line(to: NSPoint(x: 17.5, y: 2.5)); c.line(to: NSPoint(x: 17.5, y: 2.5 + l))
+        c.move(to: NSPoint(x: 17.5, y: 17.5 - l)); c.line(to: NSPoint(x: 17.5, y: 17.5)); c.line(to: NSPoint(x: 17.5 - l, y: 17.5))
+        c.move(to: NSPoint(x: 2.5 + l, y: 17.5)); c.line(to: NSPoint(x: 2.5, y: 17.5)); c.line(to: NSPoint(x: 2.5, y: 17.5 - l))
+        Icons.stroke(c, 1.4)
+        let t = NSBezierPath()
+        t.move(to: NSPoint(x: 6, y: 13)); t.line(to: NSPoint(x: 14, y: 13))
+        t.move(to: NSPoint(x: 6, y: 10)); t.line(to: NSPoint(x: 14, y: 10))
+        t.move(to: NSPoint(x: 6, y: 7)); t.line(to: NSPoint(x: 11, y: 7))
+        Icons.stroke(t, 1.4)
+    }
+
     /// Ícone da barra de menus: um "visor" com uma pequena seta.
     static let menuBar = make(size: 18) { _ in
         let c = NSBezierPath()

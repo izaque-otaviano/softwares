@@ -23,7 +23,7 @@ for ARCH in $ARCHS; do
   esac
   echo "▸ Compilando para ${ARCH}…"
   if xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
-      -framework Cocoa -framework Carbon \
+      -framework Cocoa -framework Carbon -framework Vision \
       Sources/*.swift -o "$BUILD/$APP-$ARCH"; then
     BINARIES+=("$BUILD/$APP-$ARCH")
   elif [ "$ARCH" = "arm64" ]; then
@@ -39,6 +39,15 @@ rm -f "${BINARIES[@]}"
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
 cp Resources/AppIcon.icns "$BUNDLE/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$BUNDLE/Contents/PkgInfo"
+
+# OCR para macOS 10.14 (opcional: gerado por scripts/build_tesseract.sh)
+if [ -x vendor/tesseract/bin/tesseract ]; then
+  echo "▸ Incluindo Tesseract (OCR)…"
+  cp -R vendor/tesseract "$BUNDLE/Contents/Resources/tesseract"
+  codesign --force --sign - "$BUNDLE/Contents/Resources/tesseract/bin/tesseract"
+else
+  echo "  (Tesseract não encontrado: no macOS 10.14 o OCR ficará indisponível)"
+fi
 
 echo "▸ Assinando (ad-hoc)…"
 codesign --force --deep --sign - "$BUNDLE"

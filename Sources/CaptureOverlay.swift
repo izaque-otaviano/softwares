@@ -17,6 +17,8 @@ final class CaptureOverlay: NSObject {
     var onConfirm: ((NSBitmapImageRep) -> Void)?
     /// Chamado ao escolher "Salvar como…".
     var onSaveAs: ((NSBitmapImageRep) -> Void)?
+    /// Chamado ao copiar o texto reconhecido (OCR).
+    var onTextCopied: ((String) -> Void)?
     /// Sempre chamado quando a sobreposição fecha.
     var onFinish: (() -> Void)?
 
@@ -45,6 +47,11 @@ final class CaptureOverlay: NSObject {
             let rep = self.view.render()
             self.finish()
             if let rep = rep { self.onConfirm?(rep) }
+        }
+        view.onTextCopied = { [weak self] text in
+            guard let self = self else { return }
+            self.finish()
+            self.onTextCopied?(text)
         }
         view.onSaveAs = { [weak self] in
             guard let self = self else { return }
@@ -134,7 +141,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var color: NSColor = .systemRed
     private var lineWidth: CGFloat = 4
 
-    private let palette = NSVisualEffectView()
+    private let palette = SolidEffectView()
+    private var textPanel: TextPanelView?
+    var onTextCopied: ((String) -> Void)?
     private var moveButton: IconButton!
     private var toolButtons: [IconButton] = []
     private var colorButtons: [ColorButton] = []
@@ -180,6 +189,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             toolButtons.append(b)
             items.append(b)
         }
+        let ocr = IconButton(image: Icons.ocr, tip: "Extrair texto da área (E)")
+        ocr.onClick = { [weak self] in self?.extractText() }
+        items.append(ocr)
         items.append(makeSeparator())
 
         for (i, entry) in OverlayView.colors.enumerated() {
@@ -400,6 +412,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             addCursorRect(NSRect(x: p.x - 7, y: p.y - 7, width: 14, height: 14), cursor: cursor)
         }
         if !palette.isHidden { addCursorRect(palette.frame, cursor: .arrow) }
+        if let panel = textPanel { addCursorRect(panel.frame, cursor: .arrow) }
     }
 
     // MARK: Mouse
@@ -540,6 +553,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let code = Int(event.keyCode)
         let mods = event.modifierFlags.intersection(Shortcut.relevantModifiers)
         if code == kVK_Escape {
+            if textPanel != nil {
+                closeTextPanel()
+                return
+            }
             onCancel?()
             return
         }
@@ -548,6 +565,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             return
         }
         if mods.isEmpty, selection != nil, let chars = event.charactersIgnoringModifiers?.lowercased() {
+            if chars == "e" {
+                extractText()
+                return
+            }
             if chars == "m" || chars == "v" {
                 selectMoveTool()
                 return
@@ -639,12 +660,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     /// Recorta a área selecionada (resolução Retina) com as marcações aplicadas.
     func render() -> NSBitmapImageRep? {
         commitText()
-        guard let sel = selection?.integral.intersection(bounds), sel.width >= 1, sel.height >= 1 else { return nil }
-        let pixelRect = CGRect(x: sel.minX * pixelScale,
-                               y: (bounds.height - sel.maxY) * pixelScale,
-                               width: sel.width * pixelScale,
-                               height: sel.height * pixelScale).integral
-        guard let cropped = screenshot.cropping(to: pixelRect),
+        guard let sel = selection?.integral.intersection(bounds), sel.width >= 1, sel.height >= 1,
+              let cropped = croppedScreenshot(sel),
               let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
                                          pixelsWide: cropped.width,
                                          pixelsHigh: cropped.height,
@@ -666,15 +683,70 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         return rep
     }
 
+    private func croppedScreenshot(_ sel: NSRect) -> CGImage? {
+        let pixelRect = CGRect(x: sel.minX * pixelScale,
+                               y: (bounds.height - sel.maxY) * pixelScale,
+                               width: sel.width * pixelScale,
+                               height: sel.height * pixelScale).integral
+        return screenshot.cropping(to: pixelRect)
+    }
+
+    // MARK: Extrair texto (OCR)
+
+    func extractText() {
+        commitText()
+        guard let sel = selection?.integral.intersection(bounds), sel.width >= 4, sel.height >= 4,
+              let image = croppedScreenshot(sel) else { NSSound.beep(); return }
+
+        let panel = textPanel ?? makeTextPanel()
+        layoutTextPanel(panel)
+        panel.showLoading()
+        OCR.recognize(image) { [weak self, weak panel] outcome in
+            guard let self = self, let panel = panel, panel === self.textPanel else { return }
+            panel.show(outcome)
+            if ProcessInfo.processInfo.environment["RECORTE_DEMO"] != nil, case .text(let t) = outcome {
+                print("OCR resultado:\n\(t)")
+            }
+        }
+    }
+
+    private func makeTextPanel() -> TextPanelView {
+        let panel = TextPanelView()
+        panel.onClose = { [weak self] in self?.closeTextPanel() }
+        panel.onCopy = { [weak self] text in self?.onTextCopied?(text) }
+        addSubview(panel)
+        textPanel = panel
+        return panel
+    }
+
+    private func closeTextPanel() {
+        textPanel?.removeFromSuperview()
+        textPanel = nil
+        window?.makeFirstResponder(self)
+        window?.invalidateCursorRects(for: self)
+    }
+
+    /// Painel na lateral oposta à seleção, ocupando a altura da tela.
+    private func layoutTextPanel(_ panel: TextPanelView) {
+        let width: CGFloat = min(380, bounds.width * 0.4)
+        let margin: CGFloat = 16
+        let onRight = (selection?.midX ?? 0) < bounds.midX
+        let x = onRight ? bounds.maxX - width - margin : bounds.minX + margin
+        let height = min(bounds.height - margin * 2, 720)
+        panel.frame = NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: width, height: height)
+        window?.invalidateCursorRects(for: self)
+    }
+
     // MARK: Demonstração (prints automáticos)
 
-    func demo(selection sel: NSRect, annotations list: [Annotation], selecting: Bool) {
+    func demo(selection sel: NSRect, annotations list: [Annotation], selecting: Bool, ocr: Bool = false) {
         selection = sel
         if selecting {
             drag = .selecting(sel.origin)
         } else {
             for a in list { add(a) }
             layoutPalette()
+            if ocr { extractText() }
         }
         needsDisplay = true
     }

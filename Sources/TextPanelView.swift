@@ -1,0 +1,151 @@
+import Cocoa
+
+/// Painel lateral translúcido que mostra o texto reconhecido na área selecionada.
+final class TextPanelView: SolidEffectView {
+    var onCopy: ((String) -> Void)?
+    var onClose: (() -> Void)?
+
+    private let textView: NSTextView
+    private let scrollView: NSScrollView
+    private let spinner = NSProgressIndicator()
+    private let statusLabel = NSTextField(labelWithString: "Reconhecendo texto…")
+    private let copyButton = AccentButton(title: "Copiar texto", tip: "Copiar o texto e fechar", width: 136)
+
+    init() {
+        scrollView = NSTextView.scrollableTextView()
+        textView = scrollView.documentView as! NSTextView
+        super.init(frame: .zero)
+
+        material = .hudWindow
+        blendingMode = .withinWindow
+        state = .active
+        appearance = NSAppearance(named: .darkAqua)
+        maskImage = Icons.roundedMask(radius: 14)
+
+        let title = NSTextField(labelWithString: "Texto reconhecido")
+        title.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+        title.textColor = .labelColor
+
+        let close = IconButton(image: Icons.close, tip: "Fechar painel")
+        close.onClick = { [weak self] in self?.onClose?() }
+
+        let header = NSStackView(views: [title, NSView(), close])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+
+        let subtitle = NSTextField(labelWithString: "Você pode editar o texto antes de copiar.")
+        subtitle.font = NSFont.systemFont(ofSize: 11)
+        subtitle.textColor = .secondaryLabelColor
+
+        textView.isEditable = true
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.textContainerInset = NSSize(width: 6, height: 8)
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.isHidden = true
+
+        let card = CardView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(scrollView)
+
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.font = NSFont.systemFont(ofSize: 13)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.alignment = .center
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.maximumNumberOfLines = 0
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(spinner)
+        card.addSubview(statusLabel)
+
+        copyButton.onClick = { [weak self] in
+            guard let self = self else { return }
+            self.onCopy?(self.textView.string)
+        }
+        copyButton.isHidden = true
+
+        let footer = NSStackView(views: [NSView(), copyButton])
+        footer.orientation = .horizontal
+
+        let root = NSStackView(views: [header, subtitle, card, footer])
+        root.orientation = .vertical
+        root.alignment = .leading
+        root.spacing = 10
+        root.translatesAutoresizingMaskIntoConstraints = false
+        root.setCustomSpacing(4, after: header)
+        addSubview(root)
+
+        NSLayoutConstraint.activate([
+            root.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            root.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
+            root.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            root.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            header.widthAnchor.constraint(equalTo: root.widthAnchor),
+            card.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -4),
+            footer.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -4),
+            copyButton.widthAnchor.constraint(equalToConstant: 136),
+            copyButton.heightAnchor.constraint(equalToConstant: 30),
+
+            scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: 2),
+            scrollView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -2),
+            scrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 2),
+            scrollView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -2),
+
+            spinner.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: card.centerYAnchor, constant: -14),
+            statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 10),
+            statusLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            statusLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+        ])
+        card.setContentHuggingPriority(.defaultLow, for: .vertical)
+        card.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        spinner.startAnimation(nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    func showLoading() {
+        scrollView.isHidden = true
+        copyButton.isHidden = true
+        spinner.isHidden = false
+        spinner.startAnimation(nil)
+        statusLabel.stringValue = "Reconhecendo texto…"
+        statusLabel.isHidden = false
+    }
+
+    func show(_ outcome: OCR.Outcome) {
+        spinner.stopAnimation(nil)
+        spinner.isHidden = true
+        switch outcome {
+        case .text(let text) where !text.isEmpty:
+            statusLabel.isHidden = true
+            scrollView.isHidden = false
+            copyButton.isHidden = false
+            textView.string = text
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            window?.makeFirstResponder(textView)
+        case .text:
+            statusLabel.stringValue = "Nenhum texto encontrado nesta área."
+            statusLabel.isHidden = false
+        case .failure(let message):
+            statusLabel.stringValue = message
+            statusLabel.isHidden = false
+        }
+    }
+}

@@ -185,6 +185,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         o.onFinish = { [weak self] in self?.overlay = nil }
         o.onConfirm = { [weak self] rep in self?.deliver(rep) }
         o.onSaveAs = { [weak self] rep in self?.saveAs(rep) }
+        o.onTextCopied = { text in
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+            NSSound(named: NSSound.Name("Pop"))?.play()
+            Toast.show("Texto copiado", subtitle: "Pronto para colar (⌘V)")
+        }
         overlay = o
         o.show()
         return o
@@ -250,6 +257,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let f = screen.frame
             // Seleção em volta do "painel" de exemplo (coordenadas relativas à tela).
             let sel = NSRect(x: f.width * 0.08, y: f.height * 0.2, width: f.width * 0.6, height: f.height * 0.55)
+            if mode == "ocr" {
+                // Área sobre o bloco de texto da imagem de exemplo.
+                let textSel = NSRect(x: f.width * 0.07, y: f.height * 0.3, width: f.width * 0.62, height: f.height * 0.54)
+                o.view.demo(selection: textSel, annotations: [], selecting: false, ocr: true)
+                return
+            }
             if mode == "select" {
                 o.view.demo(selection: sel, annotations: [], selecting: true)
                 return

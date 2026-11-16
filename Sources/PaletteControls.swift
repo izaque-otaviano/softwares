@@ -159,9 +159,9 @@ func makeSeparator(height: CGFloat = 20) -> NSView {
 final class AccentButton: PaletteButton {
     let title: String
 
-    init(title: String, tip: String) {
+    init(title: String, tip: String, width: CGFloat = 58) {
         self.title = title
-        super.init(size: NSSize(width: 58, height: 30), tip: tip)
+        super.init(size: NSSize(width: width, height: 30), tip: tip)
     }
 
     required init?(coder: NSCoder) {
@@ -183,4 +183,13 @@ final class AccentButton: PaletteButton {
         let size = (title as NSString).size(withAttributes: attrs)
         (title as NSString).draw(at: NSPoint(x: check.maxX + 3, y: bounds.midY - size.height / 2), withAttributes: attrs)
     }
+}
+
+/// NSVisualEffectView que "engole" cliques no fundo, para que não passem
+/// para a tela de seleção que está atrás.
+final class SolidEffectView: NSVisualEffectView {
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
 }

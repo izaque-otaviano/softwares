@@ -14,6 +14,15 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Cache do Tesseract
+        uses: actions/cache@v4
+        with:
+          path: vendor/tesseract
+          key: tesseract-4.1.3-lept-1.82.0-x86_64-1014-v1
+      - name: Compilar Tesseract (OCR para macOS 10.14)
+        run: ./scripts/build_tesseract.sh
+      - name: Rosetta (para testar a parte Intel)
+        run: softwareupdate --install-rosetta --agree-to-license || true
       - name: Compilar e gerar DMG
         run: ./build.sh
       - name: Conferir versão mínima do binário Intel
@@ -35,6 +44,14 @@ jobs:
             shoot $MODE
             kill $PID || true; sleep 1
           done
+          # OCR com o Vision (caminho do macOS 10.15+)
+          RECORTE_DEMO=ocr RECORTE_DEMO_IMAGE="$PWD/scripts/sample_text.png" "$APPBIN" & PID=$!
+          sleep 10; screencapture -x screenshots/ocr.png || true
+          kill $PID || true; sleep 1
+          # OCR com o Tesseract, binário Intel (caminho do macOS 10.14)
+          RECORTE_DEMO=ocr RECORTE_FORCE_TESSERACT=1 RECORTE_DEMO_IMAGE="$PWD/scripts/sample_text.png" arch -x86_64 "$APPBIN" & PID=$!
+          sleep 25; screencapture -x screenshots/ocr-tesseract.png || true
+          kill $PID || true
           ls -la screenshots
       - name: Salvar prints na branch
         if: "!startsWith(github.ref, 'refs/tags/v')"
