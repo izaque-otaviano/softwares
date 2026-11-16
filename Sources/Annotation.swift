@@ -121,8 +121,8 @@ final class Annotation {
             path.move(to: first)
             for p in points.dropFirst() { path.line(to: p) }
             path.lineWidth = width
-            path.lineCapStyle = .roundLineCapStyle
-            path.lineJoinStyle = .roundLineJoinStyle
+            path.lineCapStyle = roundLineCap
+            path.lineJoinStyle = roundLineJoin
             color.setStroke()
             path.stroke()
 
@@ -154,7 +154,7 @@ final class Annotation {
         shaft.move(to: start)
         shaft.line(to: shaftEnd)
         shaft.lineWidth = width
-        shaft.lineCapStyle = .roundLineCapStyle
+        shaft.lineCapStyle = roundLineCap
         shaft.stroke()
 
         let left = CGPoint(x: back.x + cos(angle + .pi / 2) * headHalfWidth,
@@ -166,9 +166,14 @@ final class Annotation {
         head.line(to: left)
         head.line(to: right)
         head.close()
-        head.lineJoinStyle = .roundLineJoinStyle
+        head.lineJoinStyle = roundLineJoin
         head.lineWidth = max(1, width * 0.4)
         head.fill()
         head.stroke()
     }
 }
+
+// Os nomes destas constantes mudaram entre SDKs (.roundLineCapStyle → .round);
+// usar o valor bruto compila em qualquer versão do Xcode.
+let roundLineCap = NSBezierPath.LineCapStyle(rawValue: 1)!
+let roundLineJoin = NSBezierPath.LineJoinStyle(rawValue: 1)!

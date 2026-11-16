@@ -15,8 +15,8 @@ enum Icons {
 
     private static func stroke(_ path: NSBezierPath, _ width: CGFloat = 1.6) {
         path.lineWidth = width
-        path.lineCapStyle = .roundLineCapStyle
-        path.lineJoinStyle = .roundLineJoinStyle
+        path.lineCapStyle = roundLineCap
+        path.lineJoinStyle = roundLineJoin
         path.stroke()
     }
 
