@@ -98,6 +98,50 @@ enum Icons {
         Icons.curvedArrow()
     }
 
+    /// Mover/ajustar a seleção: quatro setas.
+    static let move = make { _ in
+        let p = NSBezierPath()
+        let c: CGFloat = 10, r: CGFloat = 7, h: CGFloat = 2.5
+        p.move(to: NSPoint(x: c - r, y: c)); p.line(to: NSPoint(x: c + r, y: c))
+        p.move(to: NSPoint(x: c, y: c - r)); p.line(to: NSPoint(x: c, y: c + r))
+        // pontas
+        p.move(to: NSPoint(x: c - r + h, y: c + h)); p.line(to: NSPoint(x: c - r, y: c)); p.line(to: NSPoint(x: c - r + h, y: c - h))
+        p.move(to: NSPoint(x: c + r - h, y: c + h)); p.line(to: NSPoint(x: c + r, y: c)); p.line(to: NSPoint(x: c + r - h, y: c - h))
+        p.move(to: NSPoint(x: c - h, y: c + r - h)); p.line(to: NSPoint(x: c, y: c + r)); p.line(to: NSPoint(x: c + h, y: c + r - h))
+        p.move(to: NSPoint(x: c - h, y: c - r + h)); p.line(to: NSPoint(x: c, y: c - r)); p.line(to: NSPoint(x: c + h, y: c - r + h))
+        Icons.stroke(p, 1.5)
+    }
+
+    /// Salvar como arquivo: seta para baixo entrando numa bandeja.
+    static let save = make { _ in
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: 10, y: 16.5)); p.line(to: NSPoint(x: 10, y: 7))
+        p.move(to: NSPoint(x: 6.5, y: 10.5)); p.line(to: NSPoint(x: 10, y: 7)); p.line(to: NSPoint(x: 13.5, y: 10.5))
+        p.move(to: NSPoint(x: 3.5, y: 8)); p.line(to: NSPoint(x: 3.5, y: 3.5)); p.line(to: NSPoint(x: 16.5, y: 3.5)); p.line(to: NSPoint(x: 16.5, y: 8))
+        Icons.stroke(p)
+    }
+
+    /// Copiar: dois quadrados sobrepostos.
+    static let copy = make { _ in
+        Icons.stroke(NSBezierPath(roundedRect: NSRect(x: 7, y: 3.5, width: 9.5, height: 9.5), xRadius: 2, yRadius: 2))
+        let back = NSBezierPath()
+        back.move(to: NSPoint(x: 4.5, y: 9.5)); back.line(to: NSPoint(x: 4.5, y: 16.5)); back.line(to: NSPoint(x: 12, y: 16.5)); back.line(to: NSPoint(x: 12, y: 15.5))
+        Icons.stroke(back)
+    }
+
+    static let close = make { _ in
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: 5.5, y: 5.5)); p.line(to: NSPoint(x: 14.5, y: 14.5))
+        p.move(to: NSPoint(x: 14.5, y: 5.5)); p.line(to: NSPoint(x: 5.5, y: 14.5))
+        Icons.stroke(p, 1.8)
+    }
+
+    static let check = make { _ in
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: 4.5, y: 10.5)); p.line(to: NSPoint(x: 8.5, y: 6)); p.line(to: NSPoint(x: 15.5, y: 14.5))
+        Icons.stroke(p, 2.2)
+    }
+
     /// Ícone da barra de menus: um "visor" com uma pequena seta.
     static let menuBar = make(size: 18) { _ in
         let c = NSBezierPath()

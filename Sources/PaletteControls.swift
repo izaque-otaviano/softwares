@@ -154,3 +154,33 @@ func makeSeparator(height: CGFloat = 20) -> NSView {
     box.heightAnchor.constraint(equalToConstant: height).isActive = true
     return box
 }
+
+/// Botão principal (OK): preenchido com a cor de destaque do sistema.
+final class AccentButton: PaletteButton {
+    let title: String
+
+    init(title: String, tip: String) {
+        self.title = title
+        super.init(size: NSSize(width: 58, height: 30), tip: tip)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override var showsSelectionBackground: Bool { return false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let bg = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 7, yRadius: 7)
+        NSColor.controlAccentColor.setFill()
+        bg.fill()
+        let check = NSRect(x: 7, y: bounds.midY - 8, width: 16, height: 16)
+        Icons.drawTinted(Icons.check, in: check, color: .white)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.white,
+        ]
+        let size = (title as NSString).size(withAttributes: attrs)
+        (title as NSString).draw(at: NSPoint(x: check.maxX + 3, y: bounds.midY - size.height / 2), withAttributes: attrs)
+    }
+}

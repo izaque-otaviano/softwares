@@ -10,7 +10,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let recorder = ShortcutRecorderView(frame: .zero)
     private let warningLabel = NSTextField(labelWithString: "")
     private let folderLabel = NSTextField(labelWithString: "")
-    private let saveCheckbox = NSButton(checkboxWithTitle: "Ao concluir, salvar também nesta pasta",
+    private let saveCheckbox = NSButton(checkboxWithTitle: "Ao dar OK, salvar também uma cópia nesta pasta",
                                         target: nil, action: nil)
 
     convenience init() {
@@ -131,8 +131,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             grid.leadingAnchor.constraint(greaterThanOrEqualTo: card.leadingAnchor, constant: 16),
         ])
 
-        let footer = wrapping("No editor: A seta · R retângulo · O círculo · H destacar · P caneta · T texto. "
-                              + "Segure ⇧ para linhas retas e formas perfeitas.", width: 452)
+        let footer = wrapping("Ao apertar o atalho, arraste para selecionar a área, marque e dê OK (ou Enter): "
+                              + "a imagem vai para a área de transferência, pronta para colar com ⌘V. "
+                              + "Teclas: M mover · A seta · R retângulo · O círculo · H destacar · P caneta · T texto · "
+                              + "⇧ formas perfeitas · Esc cancela.", width: 452)
 
         let root = NSStackView(views: [header, card, footer])
         root.orientation = .vertical

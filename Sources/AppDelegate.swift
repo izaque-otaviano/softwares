@@ -4,8 +4,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var captureMenuItem: NSMenuItem?
     private var preferences: PreferencesWindowController?
-    private var editors: [EditorWindowController] = []
-    private var isCapturing = false
+    private var overlay: CaptureOverlay?
 
     // MARK: Ciclo de vida
 
@@ -55,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Mostra o ícone no Dock enquanto houver janelas abertas, como um app normal.
     private func updateActivationPolicy() {
-        let hasWindows = !editors.isEmpty || (preferences?.window?.isVisible ?? false)
+        let hasWindows = preferences?.window?.isVisible ?? false
         NSApp.setActivationPolicy(hasWindows ? .regular : .accessory)
     }
 
@@ -105,10 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "Arquivo")
-        let newCapture = NSMenuItem(title: "Nova Captura", action: #selector(startCapture(_:)), keyEquivalent: "n")
-        newCapture.target = self
-        fileMenu.addItem(newCapture)
-        fileMenu.addItem(NSMenuItem(title: "Salvar…", action: #selector(EditorWindow.saveImage(_:)), keyEquivalent: "s"))
+        fileMenu.addItem(NSMenuItem(title: "Salvar…", action: #selector(OverlayView.saveImage(_:)), keyEquivalent: "s"))
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(NSMenuItem(title: "Fechar", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         fileItem.submenu = fileMenu
@@ -166,77 +162,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences?.show()
     }
 
-    /// Usa o `screencapture` do próprio macOS para a seleção interativa da área
-    /// (mesma experiência do ⇧⌘4: arraste para selecionar, Espaço para janela,
-    /// Esc para cancelar) e depois abre o editor de marcações.
+    /// Congela a tela onde está o mouse e abre a seleção de área.
     @objc func startCapture(_ sender: Any?) {
-        guard !isCapturing else { return }
-        isCapturing = true
-
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("recorte-\(UUID().uuidString).png")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-i", "-t", "png", url.path]
-        process.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.isCapturing = false
-                self?.captureFinished(at: url)
-            }
-        }
-        do {
-            try process.run()
-        } catch {
-            isCapturing = false
-            let alert = NSAlert(error: error)
-            alert.runModal()
+        guard overlay == nil else { return }
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+        else { return }
+        // Pequena espera para o menu da barra (se usado) sumir antes da "foto".
+        let delay: TimeInterval = sender is NSMenuItem ? 0.25 : 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.openOverlay(on: screen, demoImage: nil)
         }
     }
 
-    private func captureFinished(at url: URL) {
-        defer { try? FileManager.default.removeItem(at: url) }
-        guard let data = try? Data(contentsOf: url), let image = NSImage(data: data) else {
-            return // usuário cancelou (Esc)
+    @discardableResult
+    private func openOverlay(on screen: NSScreen, demoImage: NSImage?) -> CaptureOverlay? {
+        guard overlay == nil else { return nil }
+        guard let o = CaptureOverlay(screen: screen, demoImage: demoImage) else {
+            NSSound.beep()
+            return nil
         }
-        let editor = EditorWindowController(image: image)
-        editor.onClose = { [weak self] e in
-            self?.editors.removeAll(where: { $0 === e })
-            DispatchQueue.main.async { self?.updateActivationPolicy() }
+        o.onFinish = { [weak self] in self?.overlay = nil }
+        o.onConfirm = { [weak self] rep in self?.deliver(rep) }
+        o.onSaveAs = { [weak self] rep in self?.saveAs(rep) }
+        overlay = o
+        o.show()
+        return o
+    }
+
+    /// Copia para a área de transferência e salva uma cópia na pasta escolhida.
+    private func deliver(_ rep: NSBitmapImageRep) {
+        guard let png = rep.representation(using: .png, properties: [:]) else { NSSound.beep(); return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(png, forType: .png)
+        if let tiff = rep.tiffRepresentation { pb.setData(tiff, forType: .tiff) }
+
+        var subtitle = "Pronto para colar (⌘V)"
+        if Settings.saveOnDone {
+            let folder = Settings.saveFolder
+            let url = folder.appendingPathComponent(Settings.newFileName())
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: nil)
+                try png.write(to: url)
+                subtitle = "Cópia salva em \(FileManager.default.displayName(atPath: folder.path))"
+            } catch {
+                subtitle = "Não foi possível salvar na pasta escolhida"
+            }
         }
-        editors.append(editor)
-        NSApp.setActivationPolicy(.regular)
-        editor.show()
+        NSSound(named: NSSound.Name("Pop"))?.play()
+        Toast.show("Copiado", subtitle: subtitle)
+    }
+
+    private func saveAs(_ rep: NSBitmapImageRep) {
+        guard let png = rep.representation(using: .png, properties: [:]) else { NSSound.beep(); return }
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.allowedFileTypes = ["png"]
+        panel.canCreateDirectories = true
+        panel.directoryURL = Settings.saveFolder
+        panel.nameFieldStringValue = Settings.newFileName()
+        panel.level = .modalPanel
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try png.write(to: url)
+                Toast.show("Salvo", subtitle: url.lastPathComponent)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
     }
 
     // MARK: Demonstração (usada só para gerar prints automáticos no CI)
 
     private func runDemo(_ mode: String) {
         Settings.launchedBefore = true
-        if mode == "prefs" {
+        switch mode {
+        case "prefs":
             showPreferences(nil)
-            return
+        case "toast":
+            Toast.show("Copiado", subtitle: "Cópia salva em Mesa", duration: 60)
+        default:
+            guard let path = ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"],
+                  let image = NSImage(contentsOfFile: path),
+                  let screen = NSScreen.main,
+                  let o = openOverlay(on: screen, demoImage: image) else { return }
+            let f = screen.frame
+            // Seleção em volta do "painel" de exemplo (coordenadas relativas à tela).
+            let sel = NSRect(x: f.width * 0.08, y: f.height * 0.2, width: f.width * 0.6, height: f.height * 0.55)
+            if mode == "select" {
+                o.view.demo(selection: sel, annotations: [], selecting: true)
+                return
+            }
+            func make(_ tool: Tool, _ color: NSColor, _ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> Annotation {
+                let a = Annotation(tool: tool, color: color, width: 4,
+                                   start: CGPoint(x: sel.minX + sel.width * x0, y: sel.minY + sel.height * y0))
+                a.end = CGPoint(x: sel.minX + sel.width * x1, y: sel.minY + sel.height * y1)
+                return a
+            }
+            let text = Annotation(tool: .text, color: .systemRed, width: 4,
+                                  start: CGPoint(x: sel.minX + sel.width * 0.3, y: sel.minY + sel.height * 0.62))
+            text.text = "Olhe aqui!"
+            o.view.demo(selection: sel, annotations: [
+                make(.ellipse, .systemRed, 0.05, 0.55, 0.4, 0.8),
+                make(.highlight, .systemYellow, 0.55, 0.2, 0.95, 0.45),
+                make(.arrow, .systemRed, 0.5, 0.65, 0.65, 0.5),
+                text,
+            ], selecting: false)
         }
-        guard let path = ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"],
-              let image = NSImage(contentsOfFile: path) else { return }
-        if let rep = image.representations.first {
-            image.size = NSSize(width: CGFloat(rep.pixelsWide) / 2, height: CGFloat(rep.pixelsHigh) / 2)
-        }
-        let editor = EditorWindowController(image: image)
-        let c = editor.canvas
-        func make(_ tool: Tool, _ color: NSColor, _ w: CGFloat, _ a: CGPoint, _ b: CGPoint) -> Annotation {
-            let x = Annotation(tool: tool, color: color, width: w, start: a)
-            x.end = b
-            return x
-        }
-        c.add(make(.highlight, .systemYellow, 4, CGPoint(x: 536, y: 340), CGPoint(x: 776, y: 435)))
-        c.add(make(.ellipse, .systemRed, 4, CGPoint(x: 26, y: 350), CGPoint(x: 214, y: 408)))
-        c.add(make(.rectangle, .systemBlue, 4, CGPoint(x: 30, y: 282), CGPoint(x: 185, y: 313)))
-        c.add(make(.arrow, .systemRed, 4, CGPoint(x: 590, y: 215), CGPoint(x: 700, y: 262)))
-        let t = Annotation(tool: .text, color: .systemRed, width: 4, start: CGPoint(x: 330, y: 196))
-        t.text = "Recorde em dezembro!"
-        c.add(t)
-        editors.append(editor)
-        NSApp.setActivationPolicy(.regular)
-        editor.show()
     }
 }
