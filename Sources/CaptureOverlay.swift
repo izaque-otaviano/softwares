@@ -114,7 +114,16 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     var onConfirm: (() -> Void)?
     var onSaveAs: (() -> Void)?
 
-    private(set) var selection: NSRect?
+    private(set) var selection: NSRect? {
+        didSet {
+            // Coordenadas inteiras evitam "costuras" claras no escurecimento.
+            if let s = selection {
+                let r = NSRect(x: s.minX.rounded(), y: s.minY.rounded(),
+                               width: s.width.rounded(), height: s.height.rounded())
+                if r != s { selection = r }
+            }
+        }
+    }
     private var annotations: [Annotation] = []
     private var current: Annotation?
     private var textField: NSTextField?
