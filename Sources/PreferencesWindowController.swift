@@ -11,7 +11,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let textRecorder = ShortcutRecorderView(frame: .zero)
     private let warningLabel = NSTextField(labelWithString: "")
     private let folderLabel = NSTextField(labelWithString: "")
-    private let saveCheckbox = NSButton(checkboxWithTitle: "Ao dar OK, salvar também uma cópia nesta pasta",
+    private let saveCheckbox = NSButton(checkboxWithTitle: "Salvar uma cópia aqui ao dar OK",
                                         target: nil, action: nil)
 
     convenience init() {
