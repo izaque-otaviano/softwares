@@ -17,7 +17,7 @@ fi
 WORK="$PWD/build-deps"
 PREFIX="$WORK/prefix"
 rm -rf "$WORK"
-mkdir -p "$WORK"
+mkdir -p "$WORK" "$WORK/empty"
 cd "$WORK"
 
 curl -fsSL -o lept.tar.gz "https://github.com/DanBloomberg/leptonica/releases/download/$LEPT_VERSION/leptonica-$LEPT_VERSION.tar.gz"
@@ -40,7 +40,8 @@ echo "▸ Leptonica $LEPT_VERSION"
 cmake -S "leptonica-$LEPT_VERSION" -B lept-build "${COMMON[@]}" \
   -DSW_BUILD=OFF -DBUILD_PROG=OFF \
   -DENABLE_ZLIB=OFF -DENABLE_PNG=OFF -DENABLE_GIF=OFF -DENABLE_JPEG=OFF \
-  -DENABLE_TIFF=OFF -DENABLE_WEBP=OFF -DENABLE_OPENJPEG=OFF
+  -DENABLE_TIFF=OFF -DENABLE_WEBP=OFF -DENABLE_OPENJPEG=OFF \
+  -DWEBPMUX_INCLUDE_DIR="$WORK/empty" -DWEBP_INCLUDE_DIR="$WORK/empty"
 cmake --build lept-build -j 4
 cmake --install lept-build
 
