@@ -739,8 +739,21 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let onRight = (selection?.midX ?? 0) < bounds.midX
         let x = onRight ? bounds.maxX - width - margin : bounds.minX + margin
         let height = min(bounds.height - margin * 2, 720)
-        panel.frame = NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: width, height: height)
+        var frame = NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: width, height: height)
+        panel.frame = frame
         layoutPalette()
+        // Em telas pequenas a barra pode não caber ao lado do painel: o painel encolhe.
+        let bar = palette.frame
+        if !palette.isHidden && bar.intersects(frame) {
+            if bar.midY < bounds.midY {
+                frame.size.height = frame.maxY - (bar.maxY + 10)
+                frame.origin.y = bar.maxY + 10
+            } else {
+                frame.size.height = (bar.minY - 10) - frame.minY
+            }
+            if frame.height >= 200 { panel.frame = frame }
+        }
+        window?.invalidateCursorRects(for: self)
     }
 
     // MARK: Demonstração (prints automáticos)
