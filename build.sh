@@ -21,7 +21,7 @@ for ARCH in $ARCHS; do
     arm64)  TARGET="arm64-apple-macos11.0" ;;
     *) echo "Arquitetura desconhecida: $ARCH"; exit 1 ;;
   esac
-  echo "▸ Compilando para $ARCH…"
+  echo "▸ Compilando para ${ARCH}…"
   if xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
       -framework Cocoa -framework Carbon \
       Sources/*.swift -o "$BUILD/$APP-$ARCH"; then
