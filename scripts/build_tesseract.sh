@@ -18,6 +18,9 @@ WORK="$PWD/build-deps"
 PREFIX="$WORK/prefix"
 rm -rf "$WORK"
 mkdir -p "$WORK" "$WORK/empty"
+# Não deixar o CMake achar bibliotecas do Homebrew (elas são arm64 e o app não as levaria).
+export PKG_CONFIG_LIBDIR="$WORK/empty"
+export PKG_CONFIG_PATH=""
 cd "$WORK"
 
 curl -fsSL -o lept.tar.gz "https://github.com/DanBloomberg/leptonica/releases/download/$LEPT_VERSION/leptonica-$LEPT_VERSION.tar.gz"
