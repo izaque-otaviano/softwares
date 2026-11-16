@@ -1,0 +1,156 @@
+import Cocoa
+
+/// Botão leve usado na paleta flutuante (realce ao passar o mouse e estado selecionado).
+class PaletteButton: NSView {
+    var isSelected = false { didSet { needsDisplay = true } }
+    var onClick: (() -> Void)?
+    private var isHovering = false { didSet { needsDisplay = true } }
+    private var isPressed = false { didSet { needsDisplay = true } }
+    private let fixedSize: NSSize
+
+    init(size: NSSize, tip: String) {
+        fixedSize = size
+        super.init(frame: NSRect(origin: .zero, size: size))
+        toolTip = tip
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(tip)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override var intrinsicContentSize: NSSize { return fixedSize }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovering = true }
+    override func mouseExited(with event: NSEvent) { isHovering = false }
+    override func mouseDown(with event: NSEvent) { isPressed = true }
+    override func mouseUp(with event: NSEvent) {
+        isPressed = false
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let bg = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
+        if isSelected && showsSelectionBackground {
+            NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
+            bg.fill()
+        } else if isPressed {
+            NSColor.labelColor.withAlphaComponent(0.16).setFill()
+            bg.fill()
+        } else if isHovering {
+            NSColor.labelColor.withAlphaComponent(0.08).setFill()
+            bg.fill()
+        }
+        drawContent()
+    }
+
+    var showsSelectionBackground: Bool { return true }
+    func drawContent() {}
+}
+
+final class IconButton: PaletteButton {
+    let image: NSImage
+
+    init(image: NSImage, tip: String) {
+        self.image = image
+        super.init(size: NSSize(width: 32, height: 30), tip: tip)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func drawContent() {
+        let r = NSRect(x: bounds.midX - 10, y: bounds.midY - 10, width: 20, height: 20)
+        Icons.drawTinted(image, in: r, color: isSelected ? .controlAccentColor : .labelColor)
+    }
+}
+
+final class ColorButton: PaletteButton {
+    let color: NSColor
+
+    init(color: NSColor, tip: String) {
+        self.color = color
+        super.init(size: NSSize(width: 24, height: 30), tip: tip)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override var showsSelectionBackground: Bool { return false }
+
+    override func drawContent() {
+        let d: CGFloat = 16
+        let dot = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        if isSelected {
+            let ring = NSBezierPath(ovalIn: dot.insetBy(dx: -3, dy: -3))
+            ring.lineWidth = 2
+            NSColor.labelColor.withAlphaComponent(0.85).setStroke()
+            ring.stroke()
+        }
+        color.setFill()
+        let path = NSBezierPath(ovalIn: dot)
+        path.fill()
+        NSColor.black.withAlphaComponent(0.18).setStroke()
+        path.lineWidth = 0.5
+        path.stroke()
+    }
+}
+
+final class WidthButton: PaletteButton {
+    let width: CGFloat
+
+    init(width: CGFloat, tip: String) {
+        self.width = width
+        super.init(size: NSSize(width: 28, height: 30), tip: tip)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func drawContent() {
+        let d = 3 + width * 1.2
+        let dot = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        (isSelected ? NSColor.controlAccentColor : NSColor.labelColor).setFill()
+        NSBezierPath(ovalIn: dot).fill()
+    }
+}
+
+/// Fundo arredondado e sutil para agrupar opções (estilo "cartão" das Preferências).
+final class CardView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        (dark ? NSColor(white: 1, alpha: 0.06) : NSColor(white: 1, alpha: 0.6)).setFill()
+        path.fill()
+        (dark ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.1)).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+func makeSeparator(height: CGFloat = 20) -> NSView {
+    let box = NSBox(frame: NSRect(x: 0, y: 0, width: 1, height: height))
+    box.boxType = .separator
+    box.translatesAutoresizingMaskIntoConstraints = false
+    box.widthAnchor.constraint(equalToConstant: 1).isActive = true
+    box.heightAnchor.constraint(equalToConstant: height).isActive = true
+    return box
+}
