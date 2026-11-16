@@ -45,7 +45,8 @@ cmake -S "leptonica-$LEPT_VERSION" -B lept-build "${COMMON[@]}" \
 cmake --build lept-build -j 4
 cmake --install lept-build
 # A config exportada da Leptonica 1.82 cita webp mesmo desativado; removemos.
-find "$PREFIX" -name '*.cmake' -exec sed -i '' -E 's/;?webpmux//g; s/;?webp//g' {} +
+find "$PREFIX" -name '*.cmake' -exec sed -i '' -E 's#;?/opt/homebrew[^;"]*##g; s#;?/usr/local/[^;"]*##g; s/;?webpmux//g; s/;?webp//g' {} +
+grep -rn "INTERFACE_INCLUDE_DIRECTORIES\|INTERFACE_LINK_LIBRARIES" "$PREFIX/lib/cmake" || true
 
 LEPT_DIR="$(dirname "$(find "$PREFIX" -name 'LeptonicaConfig.cmake' | head -1)")"
 echo "Leptonica_DIR=$LEPT_DIR"
