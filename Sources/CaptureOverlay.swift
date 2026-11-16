@@ -1,5 +1,6 @@
 import Cocoa
 import Carbon
+import ImageIO
 
 /// Janela sem bordas que cobre a tela inteira durante a captura.
 final class OverlayWindow: NSWindow {
@@ -30,14 +31,17 @@ final class CaptureOverlay: NSObject {
                                backing: .buffered, defer: false)
         window.setFrame(screen.frame, display: false)
         window.level = .screenSaver
-        window.backgroundColor = .black
-        window.isOpaque = true
+        // Janela transparente: a tela real continua visível por baixo.
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.ignoresMouseEvents = false
         window.hasShadow = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.acceptsMouseMovedEvents = true
 
-        view = OverlayView(frame: NSRect(origin: .zero, size: screen.frame.size), screenshot: shot)
+        view = OverlayView(frame: NSRect(origin: .zero, size: screen.frame.size), screenshot: shot,
+                           backdrop: demoImage)
         window.contentView = view
         super.init()
 
@@ -65,6 +69,8 @@ final class CaptureOverlay: NSObject {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(view)
+        view.mouse = window.mouseLocationOutsideOfEventStream
+        view.needsDisplay = true
         window.invalidateCursorRects(for: view)
         NSCursor.crosshair.set()
     }
@@ -99,7 +105,50 @@ final class CaptureOverlay: NSObject {
         }
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         let displayID = (screen.deviceDescription[key] as? NSNumber)?.uint32Value ?? CGMainDisplayID()
-        return CGDisplayCreateImage(displayID)
+        if let image = CGDisplayCreateImage(displayID), !isBlack(image) {
+            return image
+        }
+        // Plano B: o utilitário do próprio macOS.
+        return captureWithTool(screen) ?? CGDisplayCreateImage(displayID)
+    }
+
+    /// Captura a tela com /usr/sbin/screencapture (silencioso, sem som).
+    private static func captureWithTool(_ screen: NSScreen) -> CGImage? {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let f = screen.frame
+        let rect = "\(Int(f.minX)),\(Int(primaryHeight - f.maxY)),\(Int(f.width)),\(Int(f.height))"
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("recorte-tela-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-t", "png", "-R", rect, url.path]
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        process.waitUntilExit()
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// Verifica se a imagem saiu toda preta (falha silenciosa de captura).
+    private static func isBlack(_ image: CGImage) -> Bool {
+        let side = 16
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+        ctx.interpolationQuality = .medium
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        guard let data = ctx.data else { return false }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * side)
+        for row in 0..<side {
+            for col in 0..<side where pixels[row * ctx.bytesPerRow + col] > 10 {
+                return false
+            }
+        }
+        return true
     }
 }
 
@@ -114,7 +163,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     }
 
     let screenshot: CGImage
-    private let background: NSImage
+    /// Só nos prints automáticos: imagem desenhada no lugar da tela real.
+    private let backdrop: NSImage?
+    var mouse: NSPoint?
     private let pixelScale: CGFloat
 
     var onCancel: (() -> Void)?
@@ -149,9 +200,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var colorButtons: [ColorButton] = []
     private var widthButtons: [WidthButton] = []
 
-    init(frame: NSRect, screenshot: CGImage) {
+    init(frame: NSRect, screenshot: CGImage, backdrop: NSImage? = nil) {
         self.screenshot = screenshot
-        self.background = NSImage(cgImage: screenshot, size: frame.size)
+        self.backdrop = backdrop
         self.pixelScale = CGFloat(screenshot.width) / max(frame.width, 1)
         super.init(frame: frame)
         buildPalette()
@@ -166,13 +217,25 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     override var acceptsFirstResponder: Bool { return true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
-    override var isOpaque: Bool { return true }
+    override var isOpaque: Bool { return false }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        mouse = convert(event.locationInWindow, from: nil)
+        if selection == nil { needsDisplay = true }
+    }
 
     // MARK: Barra de ferramentas
 
     private func buildPalette() {
         palette.material = .hudWindow
-        palette.blendingMode = .withinWindow
+        palette.blendingMode = .behindWindow
         palette.state = .active
         palette.appearance = NSAppearance(named: .darkAqua)
         palette.maskImage = Icons.roundedMask(radius: 12)
@@ -310,17 +373,22 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     // MARK: Desenho
 
     override func draw(_ dirtyRect: NSRect) {
-        NSGraphicsContext.current?.imageInterpolation = .high
-        background.draw(in: bounds)
+        // Quase transparente: a tela real aparece, mas os cliques ficam com o app.
+        NSColor(white: 0, alpha: 0.01).setFill()
+        bounds.fill(using: .copy)
+        if let backdrop = backdrop {
+            backdrop.draw(in: bounds)
+        }
 
         guard let sel = selection else {
+            drawCrosshair()
             drawPill("Arraste para selecionar a área  ·  Esc para cancelar",
                      at: NSPoint(x: bounds.midX, y: bounds.maxY - 60), centered: true)
             return
         }
 
         // Escurece levemente tudo fora da seleção.
-        NSColor(white: 0, alpha: 0.45).setFill()
+        NSColor(white: 0, alpha: 0.3).setFill()
         let b = bounds
         let outside = [
             NSRect(x: b.minX, y: sel.maxY, width: b.width, height: b.maxY - sel.maxY),
@@ -371,6 +439,21 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             if p.y + 26 > bounds.maxY { p.y = sel.maxY - 32 }
             drawPill("\(w) × \(h)", at: p, centered: false)
         }
+    }
+
+    /// Linhas-guia que seguem o mouse antes de selecionar.
+    private func drawCrosshair() {
+        guard let m = mouse else { return }
+        let x = m.x.rounded() + 0.5, y = m.y.rounded() + 0.5
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: bounds.minX, y: y)); path.line(to: NSPoint(x: bounds.maxX, y: y))
+        path.move(to: NSPoint(x: x, y: bounds.minY)); path.line(to: NSPoint(x: x, y: bounds.maxY))
+        path.lineWidth = 3
+        NSColor(white: 0, alpha: 0.25).setStroke()
+        path.stroke()
+        path.lineWidth = 1
+        NSColor(white: 1, alpha: 0.85).setStroke()
+        path.stroke()
     }
 
     private func drawPill(_ text: String, at point: NSPoint, centered: Bool) {

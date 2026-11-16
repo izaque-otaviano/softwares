@@ -17,7 +17,7 @@ final class TextPanelView: SolidEffectView {
         super.init(frame: .zero)
 
         material = .hudWindow
-        blendingMode = .withinWindow
+        blendingMode = .behindWindow
         state = .active
         appearance = NSAppearance(named: .darkAqua)
         maskImage = Icons.roundedMask(radius: 14)

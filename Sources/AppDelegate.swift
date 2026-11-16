@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let image = NSImage(contentsOfFile: path),
                   let screen = NSScreen.main,
                   let o = openOverlay(on: screen, demoImage: image) else { return }
+            if mode == "start" { return }
             let f = screen.frame
             // Seleção em volta do "painel" de exemplo (coordenadas relativas à tela).
             let sel = NSRect(x: f.width * 0.08, y: f.height * 0.2, width: f.width * 0.6, height: f.height * 0.55)
