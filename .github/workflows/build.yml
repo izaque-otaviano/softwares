@@ -2,7 +2,7 @@ name: Build DMG
 
 on:
   push:
-    branches: [main]
+    branches: [recorte]
     tags: ["v*"]
   workflow_dispatch:
 
