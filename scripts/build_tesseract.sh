@@ -44,13 +44,15 @@ cmake -S "leptonica-$LEPT_VERSION" -B lept-build "${COMMON[@]}" \
   -DWEBPMUX_INCLUDE_DIR="$WORK/empty" -DWEBP_INCLUDE_DIR="$WORK/empty"
 cmake --build lept-build -j 4
 cmake --install lept-build
+# A config exportada da Leptonica 1.82 cita webp mesmo desativado; removemos.
+find "$PREFIX" -name '*.cmake' -exec sed -i '' -E 's/;?webpmux//g; s/;?webp//g' {} +
 
 LEPT_DIR="$(dirname "$(find "$PREFIX" -name 'LeptonicaConfig.cmake' | head -1)")"
 echo "Leptonica_DIR=$LEPT_DIR"
 
 echo "▸ Tesseract $TESS_VERSION"
 cmake -S "tesseract-$TESS_VERSION" -B tess-build "${COMMON[@]}" \
-  -DSW_BUILD=OFF -DOPENMP_BUILD=OFF -DBUILD_TRAINING_TOOLS=OFF -DBUILD_TESTS=OFF \
+  -DSW_BUILD=OFF -DSTATIC=ON -DOPENMP_BUILD=OFF -DBUILD_TRAINING_TOOLS=OFF -DBUILD_TESTS=OFF \
   -DAUTO_OPTIMIZE=OFF -DGRAPHICS_DISABLED=ON \
   -DLeptonica_DIR="$LEPT_DIR"
 cmake --build tess-build -j 4 --target tesseract
