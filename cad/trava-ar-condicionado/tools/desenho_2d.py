@@ -15,7 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import trava_ar_condicionado_v1 as T
 
 saida = sys.argv[1]
-P = T.Parametros()
+# argv[3] (opcional): JSON com parâmetros; argv[4] (opcional): título da versão
+import json
+kw = json.load(open(sys.argv[3])) if len(sys.argv) > 3 else {}
+TITULO = sys.argv[4] if len(sys.argv) > 4 else "TRAVA DE AR-CONDICIONADO v1 - PETG"
+P = T.Parametros(**kw)
+YB0 = 0.0 if P.base_embutida else -P.espessura_base   # face de colagem (encosta na tampa)
+YB1 = P.espessura_base if P.base_embutida else 0.0    # topo da base
 solido = T.construir(P)
 L = P.largura_total
 zf = P.fracao_preenchida * L
@@ -87,20 +93,19 @@ def cruzamentos_material(y):
 for r in oco:
     pl(r, C)
 # linha de centro da base
-ln((xmin - 1, -P.espessura_base / 2), (xmax + 1, -P.espessura_base / 2), {"layer": "CENTRO"})
+ln((xmin - 1, (YB0 + YB1) / 2), (xmax + 1, (YB0 + YB1) / 2), {"layer": "CENTRO"})
 # cotas gerais
-cota((xmin, -P.espessura_base), (xmax, -P.espessura_base), (0, -P.espessura_base - 1.6))
-cota((xmin, -P.espessura_base), (xmin, 0), (xmin - 1.2, 0), ang=90)
-# alturas dos ganchos (a partir do topo da base) e total
+cota((xmin, YB0), (xmax, YB0), (0, YB0 - 1.6))
+cota((xmin, YB0), (xmin, YB1), (xmin - 1.2, 0), ang=90)
+# alturas dos ganchos a partir da face de colagem (tampa) e altura total
 mid = 0.5 * (xmin + xmax)
 esq = ext[ext[:, 0] < mid]; dir_ = ext[ext[:, 0] >= mid]
 pE = esq[esq[:, 1].argmax()]; pD = dir_[dir_[:, 1].argmax()]
-cota((xmin, 0), (pE[0], pE[1]), (xmin - 2.4, 0), ang=90)
-cota((xmax, -P.espessura_base), (pD[0], pD[1]), (xmax + 1.4, 0), ang=90)
-cota((xmax, 0), (pD[0], pD[1]), (xmax + 2.8, 0), ang=90)
-# posição das pontas em X (a partir da borda esquerda da base)
-cota((xmin, -P.espessura_base), (pE[0], pE[1]), (0, ymax + 1.0))
-cota((xmin, -P.espessura_base), (pD[0], pD[1]), (0, ymax + 2.0))
+cota((xmin, YB0), (pE[0], pE[1]), (xmin - 2.4, 0), ang=90)
+cota((xmax, YB0), (pD[0], pD[1]), (xmax + 1.4, 0), ang=90)
+# posição das pontas em X (a partir da borda esquerda)
+cota((xmin, YB0), (pE[0], pE[1]), (0, ymax + 1.0))
+cota((xmin, YB0), (pD[0], pD[1]), (0, ymax + 2.0))
 # vãos entre ganchos: canal inferior e bolsão de travamento
 for y, rot in ((P.y_canal, "canal"), (P.y_bolsao, "bolsao")):
     seg = cruzamentos_material(y)
@@ -149,14 +154,14 @@ texto("VISTA FRONTAL (lado oco, Z = 10)", (xmin, ymax + 3.4), 0.7)
 
 # ================================================================ VISTA LATERAL (de +X)
 ox = xmax + 9.0
-Y0, Y1 = -P.espessura_base, ymax
+Y0, Y1 = YB0, ymax
 # contorno externo: retângulo Z x Y
 pl([(0, Y0), (L, Y0), (L, Y1), (0, Y1)], C, (ox, 0))
-ln((0, 0), (L, 0), C, (ox, 0))                        # topo da base
+ln((0, YB1), (L, YB1), C, (ox, 0))                    # topo da base
 # fendas (ocultas) só no trecho oco: de z = zf a L, de y=0 até o topo de cada fenda
 for r in oco[1:]:
     yt = r[:, 1].max()
-    pl([(zf, 0), (L, 0), (L, yt), (zf, yt)], H, (ox, 0))
+    pl([(zf, YB1), (L, YB1), (L, yt), (zf, yt)], H, (ox, 0))
 cota((0, Y0), (L, Y0), (0, Y0 - 1.6), off=(ox, 0))
 cota((0, Y1), (zf, Y1), (0, Y1 + 1.0), txt="<> (maciço)", off=(ox, 0))
 cota((zf, Y1), (L, Y1), (0, Y1 + 1.0), txt="<> (oco)", off=(ox, 0))
@@ -164,7 +169,7 @@ cota((L, Y0), (L, Y1), (L + 1.4, 0), ang=90, off=(ox, 0))
 texto("VISTA LATERAL (de +X)", (ox, Y1 + 3.4), 0.7)
 
 # ================================================================ VISTA SUPERIOR (de +Y)
-oy = -P.espessura_base - 7.0 - L
+oy = YB0 - 7.0 - L
 # base
 pl([(xmin, 0), (xmax, 0), (xmax, L), (xmin, L)], C, (0, oy))
 # silhuetas dos ganchos (linhas ao longo de Z nas extremidades e nas pontas)
@@ -188,9 +193,9 @@ texto("VISTA SUPERIOR (de +Y)", (xmin, oy + L + 1.6), 0.7)
 # ================================================================ LEGENDA
 lx, ly = ox, oy + L - 0.5
 for i, s in enumerate([
-        "TRAVA DE AR-CONDICIONADO v1 - PETG",
+        TITULO,
         "Unidade: mm   Escala 1:1",
-        f"Parede: {P.espessura_parede:.1f} mm   Base: {P.espessura_base:.1f} mm".replace(".", ","),
+        (f"Parede: {P.espessura_parede:.1f} mm   Base: {P.espessura_base:.1f} mm" + (" (embutida, nao aumenta a altura)" if P.base_embutida else "")).replace(".", ","),
         f"Ganchos maciços de Z=0 a {zf:.0f} e ocos de Z={zf:.0f} a {L:.0f}",
         "Imprimir com a face Z=0 (lado maciço) na mesa",
         "Curvas aproximadas por segmentos retos (erro < 0,005 mm)",

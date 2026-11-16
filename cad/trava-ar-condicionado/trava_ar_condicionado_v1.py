@@ -50,6 +50,8 @@ class Parametros:
     largura_haste: float = 3.0        # [3] referência apenas. Molde: ~3,8 mm externos na ponta, parede 1,0
                                       # + fenda 1,8. NÃO comanda a geometria (ver README).
     espessura_base: float = 1.5       # base de colagem, abaixo de Y=0
+    base_embutida: bool = False       # True = base DENTRO da altura do perfil (Y de 0 a espessura_base),
+                                      # sem aumentar a altura; largura da base = largura do perfil.
     rebaixo_perfil: float = 0.0       # afunda o perfil na base (abaixa os ganchos sem mudar a base)
     fracao_preenchida: float = 0.5    # parte do comprimento Z com ganchos maciços, como na original:
                                       # 0 = toda oca, 0,5 = metade maciça (Z de 0 a 5) e metade oca, 1 = maciça.
@@ -323,12 +325,20 @@ def construir(P: Parametros | None = None) -> cq.Workplane:
     # base de colagem centrada sob o perfil
     xmin, xmax = c[:, 0].min() - t2, c[:, 0].max() + t2
     xc = 0.5 * (xmin + xmax)
-    L = max(P.altura_total, xmax - xmin + 0.6)
-    base = (cq.Workplane("XY").center(xc, -P.espessura_base / 2)
+    if P.base_embutida:
+        L = xmax - xmin                       # base rente ao perfil: não aumenta a largura
+        y_base = P.espessura_base             # topo da base (a base vai de Y=0 a espessura_base)
+    else:
+        L = max(P.altura_total, xmax - xmin + 0.6)
+        y_base = 0.0
+    base = (cq.Workplane("XY").center(xc, y_base - P.espessura_base / 2)
             .rect(L, P.espessura_base).extrude(P.largura_total))
     if P.raio_cantos_base > 0:
         base = base.edges("|Z").fillet(min(P.raio_cantos_base, P.espessura_base / 2 - 0.05))
     corpo = base.union(parede, clean=True)
+    if P.base_embutida:  # corta os pés que desceriam abaixo da face de colagem (Y < 0)
+        corte = cq.Workplane("XY").center(xc, 50).rect(L + 20, 100).extrude(P.largura_total)
+        corpo = corpo.intersect(corte)
     # nervura sob o fundo do U (evita fenda < 0,4 mm, impossível de imprimir)
     if P.unir_U_base:
         # ponto mais baixo do U = mínimo de y entre as pernas internas
@@ -343,13 +353,13 @@ def construir(P: Parametros | None = None) -> cq.Workplane:
     if P.raio_juncao_base > 0:
         xa, xb = xc - L / 2 + P.raio_cantos_base + 0.2, xc + L / 2 - P.raio_cantos_base - 0.2
         xs = sorted(e.Center().x for e in corpo.edges().vals()
-                    if abs(e.Center().y) < 0.02 and abs(e.Length() - P.largura_total) < 1e-3
+                    if abs(e.Center().y - y_base) < 0.02 and abs(e.Length() - P.largura_total) < 1e-3
                     and xa < e.Center().x < xb)
         # uma aresta por vez (a topologia muda a cada fillet); raio reduzido onde não cabe
         for x in xs:
             for r in (P.raio_juncao_base, 0.75 * P.raio_juncao_base, 0.5 * P.raio_juncao_base):
                 cand = [e for e in corpo.edges().vals()
-                        if abs(e.Center().y) < 0.02 and abs(e.Center().x - x) < 0.05
+                        if abs(e.Center().y - y_base) < 0.02 and abs(e.Center().x - x) < 0.05
                         and abs(e.Length() - P.largura_total) < 1e-3]
                 try:
                     novo = corpo.newObject(cand[:1]).fillet(r)

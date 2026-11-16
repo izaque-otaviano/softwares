@@ -1,0 +1,11 @@
+{
+ "espessura_parede": 2.0,
+ "base_embutida": true,
+ "espessura_base": 1.0,
+ "altura_total": 15.5,
+ "raio_min_interno": 0.3,
+ "escala_x": 0.9166,
+ "profundidade": 10.5154,
+ "espacamento_hastes": 3.451,
+ "abertura_travamento": 5.0971
+}
