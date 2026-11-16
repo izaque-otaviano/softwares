@@ -51,7 +51,7 @@ echo "Leptonica_DIR=$LEPT_DIR"
 echo "▸ Tesseract $TESS_VERSION"
 cmake -S "tesseract-$TESS_VERSION" -B tess-build "${COMMON[@]}" \
   -DSW_BUILD=OFF -DOPENMP_BUILD=OFF -DBUILD_TRAINING_TOOLS=OFF -DBUILD_TESTS=OFF \
-  -DAUTO_OPTIMIZE=OFF -DGRAPHICS_DISABLED=ON -DDISABLED_LEGACY_ENGINE=ON \
+  -DAUTO_OPTIMIZE=OFF -DGRAPHICS_DISABLED=ON \
   -DLeptonica_DIR="$LEPT_DIR"
 cmake --build tess-build -j 4 --target tesseract
 BIN="$(find tess-build -type f -name tesseract -perm -u+x | head -1)"
