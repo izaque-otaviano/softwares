@@ -1,0 +1,15 @@
+TRAVA DE AR-CONDICIONADO v1 - ARQUIVOS CAD (unidade: milimetros)
+
+trava_ar_condicionado_v1.step   -> PRINCIPAL. Solido editavel. Abre no Fusion 360, SolidWorks,
+                                   Onshape, Inventor, FreeCAD, Solid Edge, Creo, CATIA, Rhino.
+trava_ar_condicionado_v1.igs    -> mesmo solido em IGES (para programas antigos).
+trava_ar_condicionado_v1.brep   -> formato nativo do OpenCascade / FreeCAD.
+trava_ar_condicionado_v1.3mf    -> para fatiadores (Bambu Studio, PrusaSlicer, OrcaSlicer, Cura).
+trava_ar_condicionado_v1.stl    -> malha para impressao 3D.
+perfil_lado_oco.dxf             -> desenho 2D do perfil no trecho oco (AutoCAD, LibreCAD, etc.).
+perfil_lado_macico.dxf          -> desenho 2D do perfil no trecho macico.
+trava_ar_condicionado_v1.py     -> modelo parametrico CadQuery (altera medidas e regenera tudo).
+
+Eixos: X atravessa os ganchos (15 mm), Y = altura a partir da tampa (13,5 mm com a base),
+Z = comprimento (10 mm). Ganchos macicos de Z=0 a 5 e ocos de Z=5 a 10.
+Imprimir com a face Z=0 (lado macico) na mesa, sem suportes. PETG.
