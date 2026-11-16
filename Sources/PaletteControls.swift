@@ -187,7 +187,7 @@ final class AccentButton: PaletteButton {
 
 /// NSVisualEffectView que "engole" cliques no fundo, para que não passem
 /// para a tela de seleção que está atrás.
-final class SolidEffectView: NSVisualEffectView {
+class SolidEffectView: NSVisualEffectView {
     override func mouseDown(with event: NSEvent) {}
     override func mouseDragged(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {}
