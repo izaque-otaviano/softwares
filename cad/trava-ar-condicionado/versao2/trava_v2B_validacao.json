@@ -1,0 +1,48 @@
+{
+ "step_solidos": 1,
+ "step_valido": true,
+ "bbox_mm": [
+  15.52,
+  12.01,
+  10.0
+ ],
+ "y_min_face_colagem": -0.0,
+ "stl_fechada": true,
+ "stl_corpos": 1,
+ "volume_mm3": 860.2,
+ "massa_PETG_g": 1.09,
+ "fendas_secao_macico": 0,
+ "fendas_secao_oco": 2,
+ "vao_canal_y4.5": 2.99,
+ "vao_bolsao_y7.5": 4.51,
+ "fendas_livres_y2_4_6_8": [
+  [
+   2.75,
+   3.82
+  ],
+  [
+   2.83,
+   3.23
+  ],
+  [
+   2.24,
+   2.88
+  ],
+  [
+   2.13,
+   2.11
+  ]
+ ],
+ "raio_min_face_interna": 0.4,
+ "parametros": {
+  "espessura_parede": 1.0,
+  "base_embutida": true,
+  "espessura_base": 1.0,
+  "altura_total": 15.5,
+  "raio_min_interno": 0.4,
+  "escala_x": 1.1813,
+  "profundidade": 10.52,
+  "espacamento_hastes": 2.4032,
+  "abertura_travamento": 3.67
+ }
+}
