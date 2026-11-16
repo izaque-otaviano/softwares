@@ -259,8 +259,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             return
         }
         let size = palette.fittingSize
+        // Área livre (sem o painel de texto, se estiver aberto).
+        var minX = bounds.minX + 8, maxX = bounds.maxX - 8
+        if let panel = textPanel {
+            if panel.frame.midX > bounds.midX { maxX = panel.frame.minX - 8 } else { minX = panel.frame.maxX + 8 }
+        }
         var x = sel.midX - size.width / 2
-        x = min(max(x, bounds.minX + 8), bounds.maxX - size.width - 8)
+        x = max(min(x, maxX - size.width), minX)
         var y = sel.minY - size.height - 10
         if y < bounds.minY + 8 { y = sel.maxY + 10 }
         if y + size.height > bounds.maxY - 8 { y = sel.minY + 10 }
@@ -722,6 +727,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private func closeTextPanel() {
         textPanel?.removeFromSuperview()
         textPanel = nil
+        layoutPalette()
         window?.makeFirstResponder(self)
         window?.invalidateCursorRects(for: self)
     }
@@ -734,7 +740,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let x = onRight ? bounds.maxX - width - margin : bounds.minX + margin
         let height = min(bounds.height - margin * 2, 720)
         panel.frame = NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: width, height: height)
-        window?.invalidateCursorRects(for: self)
+        layoutPalette()
     }
 
     // MARK: Demonstração (prints automáticos)
