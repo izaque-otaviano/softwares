@@ -314,8 +314,8 @@ final class Muxer {
             kCMTextFormatDescriptionExtension_DefaultTextBox as String: [
                 kCMTextFormatDescriptionRect_Top as String: 0,
                 kCMTextFormatDescriptionRect_Left as String: 0,
-                kCMTextFormatDescriptionRect_Bottom as String: 0,
-                kCMTextFormatDescriptionRect_Right as String: 0,
+                kCMTextFormatDescriptionRect_Bottom as String: 60,
+                kCMTextFormatDescriptionRect_Right as String: 400,
             ],
             kCMTextFormatDescriptionExtension_DefaultStyle as String: [
                 kCMTextFormatDescriptionStyle_StartChar as String: 0,

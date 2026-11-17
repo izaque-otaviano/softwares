@@ -127,8 +127,13 @@ enum AudioLevel {
               let asbdPointer = CMAudioFormatDescriptionGetStreamBasicDescription(format) else { return 0 }
         let asbd = asbdPointer.pointee
         var blockBuffer: CMBlockBuffer?
-        // Espaço para até 16 canais separados (não intercalados), sem depender da consulta de tamanho.
-        let sizeNeeded = MemoryLayout<AudioBufferList>.size + 16 * MemoryLayout<AudioBuffer>.size
+        var sizeNeeded = 0
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, bufferListSizeNeededOut: &sizeNeeded,
+                                                                bufferListOut: nil, bufferListSize: 0,
+                                                                blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
+                                                                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                                                                blockBufferOut: nil)
+        guard sizeNeeded > 0 else { return 0 }
         let raw = UnsafeMutableRawPointer.allocate(byteCount: sizeNeeded, alignment: 16)
         defer { raw.deallocate() }
         let list = raw.bindMemory(to: AudioBufferList.self, capacity: 1)

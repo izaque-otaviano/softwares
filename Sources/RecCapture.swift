@@ -221,8 +221,18 @@ final class CaptureSources: NSObject {
         delegate?.captureSources(self, didOutputVideo: pixelBuffer, at: hostTime)
     }
 
+    private var loggedKinds: Set<AudioKind> = []
+
     fileprivate func deliverAudio(_ sampleBuffer: CMSampleBuffer, kind: AudioKind) {
-        report(level: AudioLevel.peak(of: sampleBuffer), kind: kind)
+        let peak = AudioLevel.peak(of: sampleBuffer)
+        if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil, !loggedKinds.contains(kind),
+           let f = CMSampleBufferGetFormatDescription(sampleBuffer),
+           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(f)?.pointee {
+            loggedKinds.insert(kind)
+            print("Áudio \(kind.rawValue): \(Int(asbd.mSampleRate)) Hz, \(asbd.mChannelsPerFrame) canais, "
+                  + "\(asbd.mBitsPerChannel) bits, flags \(asbd.mFormatFlags), pico do 1º buffer \(peak)")
+        }
+        report(level: peak, kind: kind)
         delegate?.captureSources(self, didOutputAudio: sampleBuffer, kind: kind)
     }
 
