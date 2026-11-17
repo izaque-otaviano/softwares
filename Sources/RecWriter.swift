@@ -31,7 +31,7 @@ final class ChunkWriter {
         self.audioKinds = audioKinds
         writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         // Fragmentos a cada 2 s: se o app cair, o arquivo continua legível até o último fragmento.
-        writer.movieFragmentInterval = CMTime(seconds: 2, preferredTimescale: 600)
+        writer.movieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
 
         if let v = video {
             let settings: [String: Any] = [
@@ -157,6 +157,11 @@ final class ChunkWriter {
         guard startTime != nil, writer.status == .writing else {
             if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
                 print("Trecho cancelado \(url.lastPathComponent): início \(startTime != nil), status \(writer.status.rawValue) \((writer.error as NSError?).map { "\($0.code) \($0.userInfo)" } ?? "")")
+            }
+            if writer.status == .failed {
+                // O arquivo é fragmentado: o que já foi gravado continua legível. Mantém.
+                completion(false)
+                return
             }
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: url)

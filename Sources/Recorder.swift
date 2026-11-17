@@ -43,6 +43,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
     private var markerCount = 0
     private var lastSource: CVPixelBuffer?
     private let finishGroup = DispatchGroup()
+    private var consecutiveFailures = 0
     private var repeatTimer: DispatchSourceTimer?
 
     // Tempo gravado (fila principal)
@@ -522,9 +523,21 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
                           webcamPosition: profile.webcamPosition, webcamSize: profile.webcamSize)
         w.append(pixelBuffer: destination, at: time)
         if w.failed {
-            let message = "A gravação foi interrompida: \(w.error?.localizedDescription ?? "erro ao gravar no disco")."
-            pausedQ = true
-            DispatchQueue.main.async { self.stop(reason: message) }
+            // Um trecho com erro não derruba a gravação: guarda o que ele já tem e abre outro.
+            consecutiveFailures += 1
+            let index = chunkIndex
+            writer = nil
+            needsNewChunk = true
+            store?.chunkFinished(index: index, duration: w.duration, ok: false)
+            if consecutiveFailures >= 4 {
+                let message = "A gravação foi interrompida: \(w.error?.localizedDescription ?? "erro ao gravar no disco")."
+                pausedQ = true
+                DispatchQueue.main.async { self.stop(reason: message) }
+            } else if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                print("Trecho \(index) falhou; continuando em um trecho novo.")
+            }
+        } else {
+            consecutiveFailures = 0
         }
     }
 
