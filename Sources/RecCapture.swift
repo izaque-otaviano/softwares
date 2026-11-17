@@ -212,7 +212,7 @@ final class CaptureSources: NSObject {
 
     fileprivate func clock(of session: AVCaptureSession?) -> CMClock? {
         guard let session = session else { return nil }
-        if #available(macOS 12.0, *) { return session.synchronizationClock }
+        if #available(macOS 12.3, *) { return session.synchronizationClock }
         return session.masterClock
     }
 
