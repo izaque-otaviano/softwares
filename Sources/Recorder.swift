@@ -395,7 +395,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
                 }
                 group.notify(queue: .main) {
                     self.teardownSources()
-                    self.finalize()
+                    self.finalizeRecording()
                 }
             }
         }
@@ -539,7 +539,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
 
     // MARK: Finalização
 
-    private func finalize() {
+    private func finalizeRecording() {
         guard let store = store else { state = .idle; return }
         let hud = ProgressHUD(title: "Finalizando o vídeo…")
         hud.show()
