@@ -202,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Congela a tela onde está o mouse e abre a seleção de área.
     @objc func startCapture(_ sender: Any?) {
-        guard overlay == nil else { return }
+        guard overlay == nil, ensureScreenAccess() else { return }
         let mouse = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
         else { return }
@@ -213,6 +213,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// No macOS 10.15+ o app precisa da permissão "Gravação de Tela". Sem ela o sistema
+    /// entrega só o papel de parede (sem as janelas), e a captura, o desfoque e o
+    /// reconhecimento de texto saem errados sem nenhum erro. A permissão vale para uma
+    /// versão específica do app: depois de atualizar, é preciso concedê-la de novo.
+    private func ensureScreenAccess() -> Bool {
+        if ProcessInfo.processInfo.environment["RECORTE_DEMO"] != nil { return true }
+        guard #available(macOS 10.15, *) else { return true }
+        if CGPreflightScreenCaptureAccess() { return true }
+        CGRequestScreenCaptureAccess() // faz o Recorte aparecer na lista dos Ajustes
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "O Recorte precisa de permissão para ver a tela"
+        alert.informativeText = [
+            "Sem a permissão de Gravação de Tela, o macOS entrega só o papel de parede: "
+                + "o print, o desfoque e o reconhecimento de texto saem errados.",
+            "",
+            "1. Abra Ajustes do Sistema → Privacidade e Segurança → Gravação de Tela.",
+            "2. Se o Recorte já estiver na lista, remova-o com o botão “−” (a permissão antiga "
+                + "não vale para esta versão) e adicione de novo com “+”.",
+            "3. Deixe a chave ligada, encerre o Recorte e abra-o novamente.",
+            "",
+            "Isso precisa ser refeito sempre que você instalar uma versão nova.",
+        ].joined(separator: "\n")
+        alert.addButton(withTitle: "Abrir Ajustes")
+        alert.addButton(withTitle: "Encerrar o Recorte")
+        alert.addButton(withTitle: "Agora não")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        case .alertSecondButtonReturn:
+            NSApp.terminate(nil)
+        default:
+            break
+        }
+        return false
+    }
+
     private func screenUnderMouse() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
@@ -220,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Seleciona uma área e copia o texto dela direto (OCR, sem painel).
     @objc func startTextCapture(_ sender: Any?) {
-        guard overlay == nil, let screen = screenUnderMouse() else { return }
+        guard overlay == nil, ensureScreenAccess(), let screen = screenUnderMouse() else { return }
         let delay: TimeInterval = sender is NSMenuItem ? 0.25 : 0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.openOverlay(on: screen, mode: .textOnly, demoImage: nil)
@@ -229,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Captura com atraso (para pegar menus abertos, efeitos de "passar o mouse" etc.).
     @objc func startDelayedCapture(_ sender: NSMenuItem) {
-        guard overlay == nil, countdownTimer == nil else { return }
+        guard overlay == nil, countdownTimer == nil, ensureScreenAccess() else { return }
         var remaining = max(1, sender.tag)
         Toast.show("Capturando em \(remaining)…", subtitle: "Prepare a tela", duration: 0.6)
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
