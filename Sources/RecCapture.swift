@@ -231,9 +231,7 @@ final class CaptureSources: NSObject {
     }
 
     private var loggedKinds: Set<AudioKind> = []
-    private var stableFormat: [AudioKind: CMFormatDescription] = [:]
-    private var candidateFormat: [AudioKind: CMFormatDescription] = [:]
-    private var candidateCount: [AudioKind: Int] = [:]
+    private var logCount: [AudioKind: Int] = [:]
 
     fileprivate func deliverAudio(_ sampleBuffer: CMSampleBuffer, kind: AudioKind) {
         let peak = AudioLevel.peak(of: sampleBuffer)
@@ -245,20 +243,13 @@ final class CaptureSources: NSObject {
                   + "\(asbd.mBitsPerChannel) bits, flags \(asbd.mFormatFlags), pico do 1º buffer \(peak)")
         }
         report(level: peak, kind: kind)
-        // Só repassa áudio com formato estável: alguns dispositivos (ex.: BlackHole) mandam
-        // buffers de formato diferente logo ao ligar, e o gravador do macOS rejeita a troca.
-        guard let format = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
-        if let stable = stableFormat[kind] {
-            guard CaptureSources.sameAudioFormat(stable, format) else { return }
-        } else {
-            if let c = candidateFormat[kind], CaptureSources.sameAudioFormat(c, format) {
-                candidateCount[kind, default: 0] += 1
-            } else {
-                candidateFormat[kind] = format
-                candidateCount[kind] = 1
-            }
-            guard candidateCount[kind, default: 0] >= 3 else { return }
-            stableFormat[kind] = format
+        if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil, logCount[kind, default: 0] < 8,
+           let f = CMSampleBufferGetFormatDescription(sampleBuffer),
+           let a = CMAudioFormatDescriptionGetStreamBasicDescription(f)?.pointee {
+            logCount[kind, default: 0] += 1
+            print("Buffer \(kind.rawValue) #\(logCount[kind]!): \(a.mSampleRate) Hz \(a.mChannelsPerFrame) ch \(a.mBitsPerChannel) b "
+                  + "flags \(a.mFormatFlags) bpf \(a.mBytesPerFrame) amostras \(CMSampleBufferGetNumSamples(sampleBuffer)) "
+                  + "pts \(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)))")
         }
         delegate?.captureSources(self, didOutputAudio: sampleBuffer, kind: kind)
     }

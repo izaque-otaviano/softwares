@@ -112,6 +112,7 @@ final class ChunkWriter {
 
     /// Fim do último áudio gravado por fonte (o gravador recusa áudio "voltando no tempo").
     private var audioEnd: [AudioKind: CMTime] = [:]
+    private var audioFormat: [AudioKind: CMFormatDescription] = [:]
 
     func append(audio original: CMSampleBuffer, kind: AudioKind) {
         guard let input = audioInputs[kind] else { return }
@@ -129,6 +130,14 @@ final class ChunkWriter {
         guard let start = startTime, CMTimeCompare(pts, start) >= 0 else { return }
         if let end = endTime, CMTimeCompare(pts, end) >= 0 { return }
         guard writer.status == .writing, input.isReadyForMoreMediaData else { return }
+        // O codificador AAC fixa o formato do primeiro buffer; buffers com outro formato o derrubariam.
+        if let f = CMSampleBufferGetFormatDescription(sampleBuffer) {
+            if let locked = audioFormat[kind] {
+                guard CaptureSources.sameAudioFormat(locked, f) else { return }
+            } else {
+                audioFormat[kind] = f
+            }
+        }
         if input.append(sampleBuffer) {
             let count = CMSampleBufferGetNumSamples(sampleBuffer)
             var rate = 48_000.0
