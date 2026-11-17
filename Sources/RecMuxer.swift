@@ -37,12 +37,13 @@ final class Muxer {
         queue.async {
             // Capítulos: tenta texto QuickTime e depois tx3g; se nenhum for aceito, grava sem.
             var result: Error? = RecError.message("sem capítulos")
-            for subType in [kCMTextFormatType_QTText, kCMTextFormatType_3GText] where result != nil && !self.cancelled {
+            for subType in [CMTextFormatType(0), kCMTextFormatType_QTText, kCMTextFormatType_3GText]
+                where result != nil && !self.cancelled {
                 try? FileManager.default.removeItem(at: output)
                 result = self.run(segments: segments, audio: audio, markers: markers, output: output,
                                   chapters: true, chapterType: subType, progress: progress)
                 if let e = result as NSError?, ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
-                    print("Capítulos \(subType == kCMTextFormatType_QTText ? "text" : "tx3g"): \(e.code) \(e.userInfo[NSDebugDescriptionErrorKey] ?? "")")
+                    print("Capítulos \(subType == 0 ? "tx3g binário" : subType == kCMTextFormatType_QTText ? "text" : "tx3g"): \(e.code) \(e.userInfo[NSDebugDescriptionErrorKey] ?? "")")
                 }
             }
             if result != nil && !self.cancelled {
@@ -165,7 +166,8 @@ final class Muxer {
         // Capítulos (marcadores)
         var chapterInput: AVAssetWriterInput?
         var chapterSamples: [CMSampleBuffer] = []
-        if chapters, let video = videoInput, !markers.isEmpty, let fmt = Muxer.textFormat(subType: chapterType) {
+        if chapters, let video = videoInput, !markers.isEmpty,
+           let fmt = chapterType == 0 ? Muxer.tx3gFormat() : Muxer.textFormat(subType: chapterType) {
             let input = AVAssetWriterInput(mediaType: .text, outputSettings: nil, sourceFormatHint: fmt)
             input.marksOutputTrackAsEnabled = false
             // A faixa de texto precisa de dimensões (sem isso o formato é recusado).
@@ -309,6 +311,35 @@ final class Muxer {
     }
 
     // MARK: Capítulos (faixa de texto QuickTime)
+
+    /// Descrição 'tx3g' montada byte a byte (ISO 14496-17), como fazem outras ferramentas de MP4.
+    static func tx3gFormat() -> CMFormatDescription? {
+        var d = Data()
+        func u8(_ v: UInt8) { d.append(v) }
+        func u16(_ v: UInt16) { d.append(UInt8(v >> 8)); d.append(UInt8(v & 0xFF)) }
+        func u32(_ v: UInt32) { u16(UInt16(v >> 16)); u16(UInt16(v & 0xFFFF)) }
+        let font = Array("Helvetica".utf8)
+        let ftabSize = UInt32(8 + 2 + 2 + 1 + font.count)
+        let total = UInt32(8 + 8 + 4 + 1 + 1 + 4 + 8 + 12) + ftabSize
+        u32(total); d.append(contentsOf: Array("tx3g".utf8))
+        for _ in 0..<6 { u8(0) }; u16(1)                // reservado + índice de referência
+        u32(0)                                          // displayFlags
+        u8(1); u8(0xFF)                                 // justificação horizontal / vertical
+        u8(0); u8(0); u8(0); u8(0)                      // cor de fundo
+        u16(0); u16(0); u16(60); u16(400)               // caixa de texto
+        u16(0); u16(0); u16(1); u8(0); u8(12)           // estilo: início, fim, fonte 1, face, tamanho
+        u8(255); u8(255); u8(255); u8(255)              // cor do texto
+        u32(ftabSize); d.append(contentsOf: Array("ftab".utf8))
+        u16(1); u16(1); u8(UInt8(font.count)); d.append(contentsOf: font)
+        var desc: CMFormatDescription?
+        let status = d.withUnsafeBytes { raw -> OSStatus in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return -1 }
+            return CMTextFormatDescriptionCreateFromBigEndianTextDescriptionData(
+                allocator: kCFAllocatorDefault, bigEndianTextDescriptionData: base, size: d.count,
+                textDescriptionFlavor: nil, mediaType: kCMMediaType_Text, formatDescriptionOut: &desc)
+        }
+        return status == noErr ? desc : nil
+    }
 
     /// 'tx3g' (texto MPEG-4, o formato usual de capítulos em MP4) ou 'text' (QuickTime).
     static func textFormat(subType: CMTextFormatType = kCMTextFormatType_3GText) -> CMFormatDescription? {
