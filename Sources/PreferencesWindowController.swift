@@ -152,7 +152,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
                               + "a imagem vai para a área de transferência, pronta para colar com ⌘V. "
                               + "Clique sem arrastar para capturar a janela sob o mouse; C copia a cor sob a lupa. "
                               + "Teclas: M selecionar/mover (⌫ apaga) · A seta · R retângulo · O círculo · H destacar · "
-                              + "P caneta · T texto · N números · B pixelar · E extrair texto (⇧E copia direto) · "
+                              + "P caneta · T texto · N números · B desfocar · E extrair texto (⇧E copia direto) · "
                               + "F fixar na tela · ⇧ formas perfeitas · Esc cancela.", width: 452)
 
         let root = NSStackView(views: [header, card, footer])
