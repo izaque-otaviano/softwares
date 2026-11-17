@@ -37,6 +37,9 @@ final class Muxer {
         queue.async {
             var result = self.run(segments: segments, audio: audio, markers: markers, output: output,
                                   chapters: true, progress: progress)
+            if let e = result, ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                print("Muxer (com capítulos): \(e.localizedDescription)")
+            }
             if result != nil && !self.cancelled {
                 // Se os capítulos não forem aceitos, grava sem eles (os marcadores ficam no histórico).
                 try? FileManager.default.removeItem(at: output)
@@ -118,7 +121,8 @@ final class Muxer {
 
         let writer: AVAssetWriter
         do {
-            writer = try AVAssetWriter(outputURL: output, fileType: .mp4)
+            // Variante MPEG-4 do iTunes (.m4v): aceita a faixa de capítulos e continua sendo MP4.
+            writer = try AVAssetWriter(outputURL: output, fileType: chapters && !markers.isEmpty ? .m4v : .mp4)
         } catch {
             return error
         }
@@ -159,6 +163,9 @@ final class Muxer {
             let input = AVAssetWriterInput(mediaType: .text, outputSettings: nil, sourceFormatHint: fmt)
             input.marksOutputTrackAsEnabled = false
             input.expectsMediaDataInRealTime = false
+            if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                print("Faixa de capítulos aceita: \(writer.canAdd(input))")
+            }
             if writer.canAdd(input) {
                 writer.add(input)
                 if video.canAddTrackAssociation(withTrackOf: input, type: AVAssetTrack.AssociationType.chapterList.rawValue) {

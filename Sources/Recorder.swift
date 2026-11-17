@@ -41,6 +41,8 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
     private var audioKinds: [AudioKind] = []
     private var webcamVisibleQ = true
     private var markerCount = 0
+    private var lastSource: CVPixelBuffer?
+    private var repeatTimer: DispatchSourceTimer?
 
     // Tempo gravado (fila principal)
     private var accumulated: Double = 0
@@ -157,6 +159,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
                 return
             }
             self.segmentStart = Date()
+            self.startFrameRepeater(fps: req.fps)
             if self.profile.clickHighlight { self.startClickMonitor() }
             self.startHealthTimer()
             self.onChange?()
@@ -185,7 +188,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
         // Microfone
         if p.microphone {
             switch AVCaptureDevice.authorizationStatus(for: .audio) {
-            case .notDetermined:
+            case .notDetermined where ProcessInfo.processInfo.environment["RECORTE_TEST"] == nil:
                 AVCaptureDevice.requestAccess(for: .audio) { _ in
                     DispatchQueue.main.async {
                         self.preflight(p, completion: completion)
@@ -250,7 +253,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
         // Webcam
         if p.webcam {
             switch AVCaptureDevice.authorizationStatus(for: .video) {
-            case .notDetermined:
+            case .notDetermined where ProcessInfo.processInfo.environment["RECORTE_TEST"] == nil:
                 AVCaptureDevice.requestAccess(for: .video) { _ in
                     DispatchQueue.main.async {
                         self.preflight(p, completion: completion)
@@ -377,9 +380,12 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
         healthTimer?.invalidate()
         healthTimer = nil
         guard let sources = sources else { return }
+        repeatTimer?.cancel()
+        repeatTimer = nil
+        let end = SampleTiming.hostNow()
         sources.queue.async {
             self.pausedQ = true
-            let end = self.writer?.lastVideoTime ?? SampleTiming.hostNow()
+            self.lastSource = nil
             self.closeCurrentChunk(at: end)
             // Espera o áudio que ainda está chegando e fecha todos os trechos.
             sources.queue.asyncAfter(deadline: .now() + 0.5) {
@@ -402,6 +408,8 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
     }
 
     private func teardownSources() {
+        repeatTimer?.cancel()
+        repeatTimer = nil
         sources?.stop()
         sources = nil
         webcam?.stop()
@@ -445,8 +453,34 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
         }
     }
 
+    /// O ScreenCaptureKit só manda quadros quando a tela muda. Repetimos o último quadro
+    /// para manter a taxa constante: duração certa, áudio intercalado e trechos legíveis.
+    private func startFrameRepeater(fps: Int) {
+        guard let sources = sources else { return }
+        let interval = 1.0 / Double(max(fps, 1))
+        let t = DispatchSource.makeTimerSource(queue: sources.queue)
+        t.schedule(deadline: .now() + interval, repeating: interval)
+        t.setEventHandler { [weak self] in
+            guard let self = self, !self.pausedQ, let src = self.lastSource else { return }
+            let now = SampleTiming.hostNow()
+            if self.needsNewChunk {
+                self.handleFrame(src, at: now)
+            } else if let last = self.writer?.lastVideoTime,
+                      CMTimeGetSeconds(CMTimeSubtract(now, last)) >= interval * 1.5 {
+                self.handleFrame(src, at: now)
+            }
+        }
+        t.resume()
+        repeatTimer = t
+    }
+
     func captureSources(_ sources: CaptureSources, didOutputVideo pixelBuffer: CVPixelBuffer, at time: CMTime) {
         if pausedQ { return }
+        lastSource = pixelBuffer
+        handleFrame(pixelBuffer, at: time)
+    }
+
+    private func handleFrame(_ pixelBuffer: CVPixelBuffer, at time: CMTime) {
         if needsNewChunk {
             openChunk(at: time)
         } else if let w = writer, w.duration > 120 {

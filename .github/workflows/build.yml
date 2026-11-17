@@ -49,27 +49,27 @@ jobs:
         timeout-minutes: 4
         run: |
           APPBIN=build/Recorte.app/Contents/MacOS/Recorte
-          RECORTE_TEST=record RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep -v "IOServiceMatching" | tee rec-modern.log
+          RECORTE_TEST=record RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep --line-buffered -v "IOServiceMatching" | tee rec-modern.log
       - name: Teste do gravador — caminho do Mojave (AVFoundation + BlackHole, binário Intel)
         continue-on-error: true
         timeout-minutes: 4
         run: |
           APPBIN=build/Recorte.app/Contents/MacOS/Recorte
-          RECORTE_TEST=record RECORTE_FORCE_LEGACY=1 RECORTE_TEST_NO_MIC=1 arch -x86_64 "$APPBIN" 2>&1 | grep -v "IOServiceMatching" | tee rec-legacy.log
+          RECORTE_TEST=record RECORTE_FORCE_LEGACY=1 RECORTE_TEST_NO_MIC=1 arch -x86_64 "$APPBIN" 2>&1 | grep --line-buffered -v "IOServiceMatching" | tee rec-legacy.log
       - name: Teste de fonte indisponível (webcam sem câmera)
         continue-on-error: true
         timeout-minutes: 3
         run: |
           APPBIN=build/Recorte.app/Contents/MacOS/Recorte
-          RECORTE_TEST=record RECORTE_TEST_WEBCAM=1 RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep -E "AVISO|RESULTADO|Câmeras" | tee rec-webcam.log
+          RECORTE_TEST=record RECORTE_TEST_WEBCAM=1 RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep --line-buffered -E "AVISO|RESULTADO|Câmeras|Arquivo|Duração" | tee rec-webcam.log
       - name: Teste de recuperação após encerramento inesperado
         continue-on-error: true
         timeout-minutes: 4
         run: |
           APPBIN=build/Recorte.app/Contents/MacOS/Recorte
-          RECORTE_TEST=crash RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep -v "IOServiceMatching" | tail -5 || true
+          RECORTE_TEST=crash RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep --line-buffered -v "IOServiceMatching" | tail -5 || true
           ls -la "$HOME/Library/Application Support/Recorte/Gravacoes/"*/ || true
-          RECORTE_TEST=recover "$APPBIN" 2>&1 | grep -v "IOServiceMatching" | tee rec-recover.log
+          RECORTE_TEST=recover "$APPBIN" 2>&1 | grep --line-buffered -v "IOServiceMatching" | tee rec-recover.log
       - name: Testes do OCR (palavra única, tema escuro, texto longo)
         run: |
           APPBIN=build/Recorte.app/Contents/MacOS/Recorte

@@ -131,7 +131,8 @@ enum AudioLevel {
         CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, bufferListSizeNeededOut: &sizeNeeded,
                                                                 bufferListOut: nil, bufferListSize: 0,
                                                                 blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
-                                                                flags: 0, blockBufferOut: nil)
+                                                                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                                                                blockBufferOut: nil)
         guard sizeNeeded > 0 else { return 0 }
         let raw = UnsafeMutableRawPointer.allocate(byteCount: sizeNeeded, alignment: 16)
         defer { raw.deallocate() }
