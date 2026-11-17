@@ -70,9 +70,10 @@ extension AppDelegate {
         r.onFinished = { url in
             log("Vídeo pronto: \(url.lastPathComponent)")
             let ok = self.describe(url, expectedDuration: 7)
-            let trimOK = ok ? self.testTrim(url) : false
-            print(ok && trimOK ? "RESULTADO: OK" : "RESULTADO: FALHA")
-            exit(ok && trimOK ? 0 : 1)
+            self.testTrim(url) { trimOK in
+                print(ok && trimOK ? "RESULTADO: OK" : "RESULTADO: FALHA")
+                exit(ok && trimOK ? 0 : 1)
+            }
         }
         r.start(screen: screen, rect: rect, profile: p)
 
@@ -153,26 +154,19 @@ extension AppDelegate {
     }
 
     /// Exporta um corte (1 s a 5 s) e confere duração e marcadores ajustados.
-    private func testTrim(_ url: URL) -> Bool {
+    private func testTrim(_ url: URL, completion: @escaping (Bool) -> Void) {
         let markers = RecLibrary.markers(for: url)
         let range = CMTimeRange(start: CMTime(seconds: 1, preferredTimescale: 600),
                                 end: CMTime(seconds: 5, preferredTimescale: 600))
         let kept = markers.filter { $0.time >= 1 && $0.time < 5 }.map { RecMarker(time: $0.time - 1, name: $0.name) }
         let output = url.deletingLastPathComponent().appendingPathComponent("corte-teste.mp4")
         try? FileManager.default.removeItem(at: output)
-        let done = DispatchSemaphore(value: 0)
-        var failure: Error?
         Muxer().export(segments: [Muxer.Segment(url: url, range: range, audioKinds: [.system])], audio: .passthrough,
                        markers: kept, output: output, progress: { _ in }) { error in
-            failure = error
-            done.signal()
+            if let e = error { print("Corte: FALHA \(e.localizedDescription)"); completion(false); return }
+            print("— Corte de 1 s a 5 s —")
+            print("Marcadores esperados no corte: \(kept.map { "\($0.name) @ \(String(format: "%.2f", $0.time))s" })")
+            completion(self.describe(output, expectedDuration: 4))
         }
-        while done.wait(timeout: .now()) == .timedOut {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        }
-        if let e = failure { print("Corte: FALHA \(e.localizedDescription)"); return false }
-        print("— Corte de 1 s a 5 s —")
-        print("Marcadores esperados no corte: \(kept.map { "\($0.name) @ \(String(format: "%.2f", $0.time))s" })")
-        return describe(output, expectedDuration: 4)
     }
 }

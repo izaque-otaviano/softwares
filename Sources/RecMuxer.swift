@@ -37,8 +37,8 @@ final class Muxer {
         queue.async {
             var result = self.run(segments: segments, audio: audio, markers: markers, output: output,
                                   chapters: true, progress: progress)
-            if let e = result, ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
-                print("Muxer (com capítulos): \(e.localizedDescription)")
+            if let e = result as NSError?, ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                print("Muxer (com capítulos): \(e.domain) \(e.code) \(e.userInfo)")
             }
             if result != nil && !self.cancelled {
                 // Se os capítulos não forem aceitos, grava sem eles (os marcadores ficam no histórico).
@@ -301,7 +301,8 @@ final class Muxer {
 
     // MARK: Capítulos (faixa de texto QuickTime)
 
-    static func textFormat() -> CMFormatDescription? {
+    /// 'tx3g' (texto MPEG-4, o formato usual de capítulos em MP4) ou 'text' (QuickTime).
+    static func textFormat(subType: CMTextFormatType = kCMTextFormatType_3GText) -> CMFormatDescription? {
         let extensions: [String: Any] = [
             kCMTextFormatDescriptionExtension_DisplayFlags as String: 0,
             kCMTextFormatDescriptionExtension_BackgroundColor as String: [
@@ -334,7 +335,7 @@ final class Muxer {
         ]
         var desc: CMFormatDescription?
         let status = CMFormatDescriptionCreate(allocator: kCFAllocatorDefault, mediaType: kCMMediaType_Text,
-                                               mediaSubType: kCMTextFormatType_QTText,
+                                               mediaSubType: subType,
                                                extensions: extensions as CFDictionary, formatDescriptionOut: &desc)
         return status == noErr ? desc : nil
     }
