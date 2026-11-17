@@ -366,9 +366,19 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
     var markersAdded: Int { return markerCount }
 
     /// Para e finaliza. `reason` é mostrado no fim (falha de disco, dispositivo etc.).
+    private var discardOnStop = false
+
+    /// Cancela a gravação e apaga o que foi gravado.
+    func cancel() {
+        guard state == .recording || state == .paused || state == .countdown else { return }
+        discardOnStop = true
+        stop()
+    }
+
     func stop(reason: String? = nil) {
         guard state == .recording || state == .paused || state == .countdown else { return }
         if state == .countdown {
+            discardOnStop = false
             countdown?.cancel()
             return
         }
@@ -401,7 +411,15 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
                 }
                 group.notify(queue: .main) {
                     self.teardownSources()
-                    self.finalizeRecording()
+                    if self.discardOnStop {
+                        self.discardOnStop = false
+                        self.store?.remove()
+                        self.store = nil
+                        self.state = .idle
+                        Toast.show("Gravação cancelada", subtitle: "Nada foi salvo.")
+                    } else {
+                        self.finalizeRecording()
+                    }
                 }
             }
         }

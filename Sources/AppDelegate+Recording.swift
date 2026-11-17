@@ -32,7 +32,13 @@ extension AppDelegate {
     // MARK: Configuração
 
     func setUpRecording() {
-        Recorder.shared.onChange = { [weak self] in self?.recordingStateChanged() }
+        Recorder.shared.onChange = { [weak self] in
+            self?.recordingStateChanged()
+            RecControlBar.shared.update()
+        }
+        RecSetupBar.shared.onRecord = { [weak self] target, profile in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self?.startRecording(target, profile: profile) }
+        }
         Recorder.shared.onFinished = { url in RecPreviewWindowController.show(url) }
     }
 
@@ -71,8 +77,30 @@ extension AppDelegate {
             return
         }
         guard r.state == .idle, overlay == nil else { return }
-        let profile = RecSettings.current
+        // Abre a barra de gravação (fecha se já estiver aberta).
+        if RecSetupBar.shared.isVisible { RecSetupBar.shared.close(); return }
         let delay: TimeInterval = sender is NSMenuItem ? 0.25 : 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { RecSetupBar.shared.show() }
+    }
+
+    /// Começa pelo alvo escolhido na barra.
+    func startRecording(_ target: RecSetupBar.Target, profile: RecProfile) {
+        let r = Recorder.shared
+        guard r.state == .idle, overlay == nil else { return }
+        switch target {
+        case .window, .area:
+            selectRecordingArea()
+        case .fullScreen:
+            let chosen = profile.displayID.flatMap { id in NSScreen.screens.first { $0.displayID == id } }
+            guard let screen = chosen ?? mouseScreen() else { return }
+            r.start(screen: screen, rect: NSRect(origin: .zero, size: screen.frame.size), profile: profile)
+        }
+    }
+
+    @objc func legacyToggleRecording(_ sender: Any?) {
+        let r = Recorder.shared
+        let profile = RecSettings.current
+        let delay: TimeInterval = 0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self else { return }
             switch profile.areaMode {
