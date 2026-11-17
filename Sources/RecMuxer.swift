@@ -168,6 +168,9 @@ final class Muxer {
         if chapters, let video = videoInput, !markers.isEmpty, let fmt = Muxer.textFormat(subType: chapterType) {
             let input = AVAssetWriterInput(mediaType: .text, outputSettings: nil, sourceFormatHint: fmt)
             input.marksOutputTrackAsEnabled = false
+            // A faixa de texto precisa de dimensões (sem isso o formato é recusado).
+            let videoSize = firstVideo?.naturalSize ?? CGSize(width: 640, height: 360)
+            input.naturalSize = CGSize(width: max(videoSize.width, 16), height: 60)
             input.expectsMediaDataInRealTime = false
             if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
                 print("Faixa de capítulos aceita: \(writer.canAdd(input))")
