@@ -108,14 +108,36 @@ final class ChunkWriter {
         }
     }
 
-    func append(audio sampleBuffer: CMSampleBuffer, kind: AudioKind) {
+    /// Fim do último áudio gravado por fonte (o gravador recusa áudio "voltando no tempo").
+    private var audioEnd: [AudioKind: CMTime] = [:]
+
+    func append(audio original: CMSampleBuffer, kind: AudioKind) {
         guard let input = audioInputs[kind] else { return }
-        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        var sampleBuffer = original
+        var pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        // A conversão de relógio pode deixar um buffer alguns ms antes do fim do anterior.
+        // Pequeno atraso: encaixa logo depois do anterior. Muito atrás: descarta.
+        if let end = audioEnd[kind], CMTimeCompare(pts, end) < 0 {
+            let behind = CMTimeGetSeconds(CMTimeSubtract(end, pts))
+            guard behind < 0.08, let fixed = SampleTiming.shifted(sampleBuffer, by: CMTimeSubtract(end, pts)) else { return }
+            sampleBuffer = fixed
+            pts = end
+        }
         if videoInput == nil { _ = startIfNeeded(at: pts) }
         guard let start = startTime, CMTimeCompare(pts, start) >= 0 else { return }
         if let end = endTime, CMTimeCompare(pts, end) >= 0 { return }
         guard writer.status == .writing, input.isReadyForMoreMediaData else { return }
-        input.append(sampleBuffer)
+        if input.append(sampleBuffer) {
+            let count = CMSampleBufferGetNumSamples(sampleBuffer)
+            var rate = 48_000.0
+            if let f = CMSampleBufferGetFormatDescription(sampleBuffer),
+               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(f)?.pointee, asbd.mSampleRate > 0 {
+                rate = asbd.mSampleRate
+            }
+            audioEnd[kind] = CMTimeAdd(pts, CMTime(value: CMTimeValue(count), timescale: CMTimeScale(rate)))
+        } else if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+            print("Áudio recusado (\(kind.rawValue)) em \(url.lastPathComponent): \(writer.error?.localizedDescription ?? "")")
+        }
     }
 
     /// Marca o fim do trecho; áudio anterior a `time` ainda pode chegar até `finish`.
