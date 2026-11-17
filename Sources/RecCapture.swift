@@ -222,6 +222,9 @@ final class CaptureSources: NSObject {
     }
 
     private var loggedKinds: Set<AudioKind> = []
+    private var stableFormat: [AudioKind: CMFormatDescription] = [:]
+    private var candidateFormat: [AudioKind: CMFormatDescription] = [:]
+    private var candidateCount: [AudioKind: Int] = [:]
 
     fileprivate func deliverAudio(_ sampleBuffer: CMSampleBuffer, kind: AudioKind) {
         let peak = AudioLevel.peak(of: sampleBuffer)
@@ -233,6 +236,21 @@ final class CaptureSources: NSObject {
                   + "\(asbd.mBitsPerChannel) bits, flags \(asbd.mFormatFlags), pico do 1º buffer \(peak)")
         }
         report(level: peak, kind: kind)
+        // Só repassa áudio com formato estável: alguns dispositivos (ex.: BlackHole) mandam
+        // buffers de formato diferente logo ao ligar, e o gravador do macOS rejeita a troca.
+        guard let format = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
+        if let stable = stableFormat[kind] {
+            guard CMFormatDescriptionEqual(stable, otherFormatDescription: format) else { return }
+        } else {
+            if let c = candidateFormat[kind], CMFormatDescriptionEqual(c, otherFormatDescription: format) {
+                candidateCount[kind, default: 0] += 1
+            } else {
+                candidateFormat[kind] = format
+                candidateCount[kind] = 1
+            }
+            guard candidateCount[kind, default: 0] >= 3 else { return }
+            stableFormat[kind] = format
+        }
         delegate?.captureSources(self, didOutputAudio: sampleBuffer, kind: kind)
     }
 
