@@ -319,8 +319,9 @@ final class Muxer {
         func u16(_ v: UInt16) { d.append(UInt8(v >> 8)); d.append(UInt8(v & 0xFF)) }
         func u32(_ v: UInt32) { u16(UInt16(v >> 16)); u16(UInt16(v & 0xFFFF)) }
         let font = Array("Helvetica".utf8)
-        let ftabSize = UInt32(8 + 2 + 2 + 1 + font.count)
-        let total = UInt32(8 + 8 + 4 + 1 + 1 + 4 + 8 + 12) + ftabSize
+        let ftabSize: UInt32 = 13 + UInt32(font.count)
+        let header: UInt32 = 45
+        let total: UInt32 = header + ftabSize
         u32(total); d.append(contentsOf: Array("tx3g".utf8))
         for _ in 0..<6 { u8(0) }; u16(1)                // reservado + índice de referência
         u32(0)                                          // displayFlags
@@ -336,7 +337,7 @@ final class Muxer {
             guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return -1 }
             return CMTextFormatDescriptionCreateFromBigEndianTextDescriptionData(
                 allocator: kCFAllocatorDefault, bigEndianTextDescriptionData: base, size: d.count,
-                textDescriptionFlavor: nil, mediaType: kCMMediaType_Text, formatDescriptionOut: &desc)
+                flavor: nil, mediaType: kCMMediaType_Text, formatDescriptionOut: &desc)
         }
         return status == noErr ? desc : nil
     }
