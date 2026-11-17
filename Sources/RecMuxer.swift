@@ -35,10 +35,15 @@ final class Muxer {
     func export(segments: [Segment], audio: Audio, markers: [RecMarker], output: URL,
                 progress: @escaping (Double) -> Void, completion: @escaping (Error?) -> Void) {
         queue.async {
-            var result = self.run(segments: segments, audio: audio, markers: markers, output: output,
-                                  chapters: true, progress: progress)
-            if let e = result as NSError?, ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
-                print("Muxer (com capítulos): \(e.domain) \(e.code) \(e.userInfo)")
+            // Capítulos: tenta texto QuickTime e depois tx3g; se nenhum for aceito, grava sem.
+            var result: Error? = RecError.message("sem capítulos")
+            for subType in [kCMTextFormatType_QTText, kCMTextFormatType_3GText] where result != nil && !self.cancelled {
+                try? FileManager.default.removeItem(at: output)
+                result = self.run(segments: segments, audio: audio, markers: markers, output: output,
+                                  chapters: true, chapterType: subType, progress: progress)
+                if let e = result as NSError?, ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                    print("Capítulos \(subType == kCMTextFormatType_QTText ? "text" : "tx3g"): \(e.code) \(e.userInfo[NSDebugDescriptionErrorKey] ?? "")")
+                }
             }
             if result != nil && !self.cancelled {
                 // Se os capítulos não forem aceitos, grava sem eles (os marcadores ficam no histórico).
@@ -96,7 +101,8 @@ final class Muxer {
     }
 
     private func run(segments: [Segment], audio: Audio, markers: [RecMarker], output: URL,
-                     chapters: Bool, progress: @escaping (Double) -> Void) -> Error? {
+                     chapters: Bool, chapterType: CMTextFormatType = kCMTextFormatType_QTText,
+                     progress: @escaping (Double) -> Void) -> Error? {
         let assets = segments.map { AVURLAsset(url: $0.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]) }
         var ranges: [CMTimeRange] = []
         for (i, asset) in assets.enumerated() {
@@ -159,7 +165,7 @@ final class Muxer {
         // Capítulos (marcadores)
         var chapterInput: AVAssetWriterInput?
         var chapterSamples: [CMSampleBuffer] = []
-        if chapters, let video = videoInput, !markers.isEmpty, let fmt = Muxer.textFormat() {
+        if chapters, let video = videoInput, !markers.isEmpty, let fmt = Muxer.textFormat(subType: chapterType) {
             let input = AVAssetWriterInput(mediaType: .text, outputSettings: nil, sourceFormatHint: fmt)
             input.marksOutputTrackAsEnabled = false
             input.expectsMediaDataInRealTime = false
@@ -331,7 +337,6 @@ final class Muxer {
             ],
             kCMTextFormatDescriptionExtension_HorizontalJustification as String: 0,
             kCMTextFormatDescriptionExtension_VerticalJustification as String: 0,
-            kCMTextFormatDescriptionExtension_FontTable as String: ["1": "Helvetica"],
         ]
         var desc: CMFormatDescription?
         let status = CMFormatDescriptionCreate(allocator: kCFAllocatorDefault, mediaType: kCMMediaType_Text,
