@@ -1,7 +1,7 @@
 import Cocoa
 
 enum Tool: Int, CaseIterable {
-    case arrow, rectangle, ellipse, highlight, pen, text, number, pixelate
+    case arrow, rectangle, ellipse, highlight, pen, text, number, blur
 
     var title: String {
         switch self {
@@ -12,7 +12,7 @@ enum Tool: Int, CaseIterable {
         case .pen: return "Caneta (P)"
         case .text: return "Texto (T)"
         case .number: return "Números em sequência (N)"
-        case .pixelate: return "Pixelar / esconder (B)"
+        case .blur: return "Desfocar / esconder (B)"
         }
     }
 
@@ -25,7 +25,7 @@ enum Tool: Int, CaseIterable {
         case .pen: return "p"
         case .text: return "t"
         case .number: return "n"
-        case .pixelate: return "b"
+        case .blur: return "b"
         }
     }
 
@@ -38,7 +38,7 @@ enum Tool: Int, CaseIterable {
         case .pen: return Icons.pen
         case .text: return Icons.text
         case .number: return Icons.number
-        case .pixelate: return Icons.pixelate
+        case .blur: return Icons.blur
         }
     }
 }
@@ -55,7 +55,7 @@ final class Annotation {
     var text: String = ""
     /// Ferramenta "números": o número desta marcação.
     var number: Int = 0
-    /// Ferramenta "pixelar": imagem pixelada da tela inteira e o retângulo onde ela é desenhada.
+    /// Ferramenta "desfocar": imagem desfocada da tela inteira e o retângulo onde ela é desenhada.
     var pixelSource: NSImage?
     var sourceFrame: NSRect = .zero
 
@@ -152,10 +152,10 @@ final class Annotation {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
 
-        if tool == .pixelate {
+        if tool == .blur {
             guard let source = pixelSource else { return }
             NSBezierPath(rect: rect).addClip()
-            NSGraphicsContext.current?.imageInterpolation = .none
+            NSGraphicsContext.current?.imageInterpolation = .high
             source.draw(in: sourceFrame)
             return
         }
@@ -227,7 +227,7 @@ final class Annotation {
             let size = label.size(withAttributes: attrs)
             label.draw(at: CGPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2), withAttributes: attrs)
 
-        case .pixelate:
+        case .blur:
             break
         }
     }

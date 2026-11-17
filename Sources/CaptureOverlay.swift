@@ -1,6 +1,7 @@
 import Cocoa
 import Carbon
 import ImageIO
+import CoreImage
 
 /// Janela sem bordas que cobre a tela inteira durante a captura.
 final class OverlayWindow: NSWindow {
@@ -132,11 +133,26 @@ final class CaptureOverlay: NSObject {
         }
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         let displayID = (screen.deviceDescription[key] as? NSNumber)?.uint32Value ?? CGMainDisplayID()
-        if let image = CGDisplayCreateImage(displayID), !isBlack(image) {
+        if let image = CGDisplayCreateImage(displayID).flatMap(normalized), !isBlack(image) {
             return image
         }
         // Plano B: o utilitário do próprio macOS.
-        return captureWithTool(screen) ?? CGDisplayCreateImage(displayID)
+        if let image = captureWithTool(screen).flatMap(normalized) { return image }
+        return CGDisplayCreateImage(displayID)
+    }
+
+    /// Copia a captura para um bitmap comum (sRGB, 8 bits). A imagem que o sistema
+    /// devolve pode estar num formato especial que sai preto ao ser redimensionado
+    /// ou desfocado.
+    private static func normalized(_ image: CGImage) -> CGImage? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: image.width, height: image.height,
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue) else { return image }
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return ctx.makeImage() ?? image
     }
 
     /// Janelas visíveis (de trás para frente na lista = da frente para trás na tela),
@@ -229,18 +245,14 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     var onColorCopied: ((String) -> Void)?
     var onPin: (() -> Void)?
 
-    /// Versão pixelada da tela inteira (para a ferramenta "pixelar").
-    private lazy var pixelated: NSImage? = {
-        let block = max(1, 12 * pixelScale)
-        let w = max(1, Int(CGFloat(screenshot.width) / block))
-        let h = max(1, Int(CGFloat(screenshot.height) / block))
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.interpolationQuality = .medium
-        ctx.draw(screenshot, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let small = ctx.makeImage() else { return nil }
-        return NSImage(cgImage: small, size: bounds.size)
+    /// Versão desfocada (gaussiano) da tela inteira, para a ferramenta "desfocar".
+    private lazy var blurred: NSImage? = {
+        let input = CIImage(cgImage: screenshot)
+        let sigma = Double(9 * pixelScale)
+        let output = input.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: input.extent)
+        let context = CIContext(options: nil)
+        guard let cg = context.createCGImage(output, from: input.extent) else { return nil }
+        return NSImage(cgImage: cg, size: bounds.size)
     }()
 
     let screenshot: CGImage
@@ -331,6 +343,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         palette.appearance = NSAppearance(named: .darkAqua)
         palette.maskImage = Icons.roundedMask(radius: 12)
         palette.isHidden = true
+        let fill = DarkFillView(radius: 12)
+        palette.addSubview(fill)
 
         var items: [NSView] = []
 
@@ -339,7 +353,15 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         items.append(moveButton)
         for tool in Tool.allCases {
             let b = IconButton(image: tool.icon, tip: tool.title)
-            b.onClick = { [weak self] in self?.selectTool(tool) }
+            b.onClick = { [weak self] in
+                guard let self = self else { return }
+                // Clicar de novo na ferramenta ativa desliga (volta para selecionar/mover).
+                if !self.isMoveTool && self.tool == tool {
+                    self.selectMoveTool()
+                } else {
+                    self.selectTool(tool)
+                }
+            }
             toolButtons.append(b)
             items.append(b)
         }
@@ -384,6 +406,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         ok.onClick = { [weak self] in self?.onConfirm?() }
         items.append(contentsOf: [save, pin, copy, cancel, ok] as [NSView])
 
+        // Nome de cada botão num balão ao passar o mouse (as dicas do sistema
+        // ficariam escondidas atrás da tela de captura).
+        for case let b as PaletteButton in items {
+            b.toolTip = nil
+            b.onHover = { [weak self, weak b] inside in self?.showTip(for: inside ? b : nil) }
+        }
+
         let stack = NSStackView(views: items)
         stack.orientation = .horizontal
         stack.spacing = 2
@@ -397,6 +426,25 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             stack.bottomAnchor.constraint(equalTo: palette.bottomAnchor, constant: -4),
         ])
         addSubview(palette)
+        tipView.isHidden = true
+        addSubview(tipView)
+    }
+
+    private let tipView = TipView()
+
+    private func showTip(for button: PaletteButton?) {
+        guard let b = button, !palette.isHidden else {
+            tipView.isHidden = true
+            return
+        }
+        tipView.text = b.tip
+        let size = tipView.fittingTextSize
+        let r = b.convert(b.bounds, to: self)
+        var y = palette.frame.maxY + 6
+        if y + size.height > bounds.maxY - 4 { y = palette.frame.minY - size.height - 6 }
+        let x = min(max(r.midX - size.width / 2, bounds.minX + 4), bounds.maxX - size.width - 4)
+        tipView.frame = NSRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height)
+        tipView.isHidden = false
     }
 
     static let colors: [(NSColor, String)] = [
@@ -747,8 +795,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
                 return
             }
             let a = Annotation(tool: tool, color: color, width: lineWidth, start: p)
-            if tool == .pixelate {
-                a.pixelSource = pixelated
+            if tool == .blur {
+                a.pixelSource = blurred
                 a.sourceFrame = bounds
             }
             current = a
@@ -1143,8 +1191,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             drag = .selecting(sel.origin)
         } else {
             for a in list {
-                if a.tool == .pixelate {
-                    a.pixelSource = pixelated
+                if a.tool == .blur {
+                    a.pixelSource = blurred
                     a.sourceFrame = bounds
                 }
                 add(a)

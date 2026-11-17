@@ -170,15 +170,13 @@ enum Icons {
         s.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attrs)
     }
 
-    /// Pixelar: grade de quadradinhos alternados.
-    static let pixelate = make { _ in
-        let cell: CGFloat = 4
-        for row in 0..<4 {
-            for col in 0..<4 {
-                let r = NSRect(x: 2 + CGFloat(col) * cell, y: 2 + CGFloat(row) * cell, width: cell, height: cell)
-                NSColor.black.withAlphaComponent((row + col) % 2 == 0 ? 1 : 0.35).setFill()
-                r.fill()
-            }
+    /// Desfocar: gota com anéis suaves.
+    static let blur = make { _ in
+        for (i, alpha) in [CGFloat(0.25), 0.5, 1].enumerated() {
+            let inset = CGFloat(i) * 2.5
+            let r = NSRect(x: 2.5 + inset, y: 2.5 + inset, width: 15 - inset * 2, height: 15 - inset * 2)
+            NSColor.black.withAlphaComponent(alpha).setFill()
+            NSBezierPath(ovalIn: r).fill()
         }
     }
 

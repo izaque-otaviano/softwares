@@ -4,12 +4,16 @@ import Cocoa
 class PaletteButton: NSView {
     var isSelected = false { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
+    /// Chamado ao entrar/sair com o mouse (para mostrar o nome do botão).
+    var onHover: ((Bool) -> Void)?
+    let tip: String
     private var isHovering = false { didSet { needsDisplay = true } }
     private var isPressed = false { didSet { needsDisplay = true } }
     private let fixedSize: NSSize
 
     init(size: NSSize, tip: String) {
         fixedSize = size
+        self.tip = tip
         super.init(frame: NSRect(origin: .zero, size: size))
         toolTip = tip
         setAccessibilityRole(.button)
@@ -31,8 +35,8 @@ class PaletteButton: NSView {
                                        owner: self, userInfo: nil))
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovering = true }
-    override func mouseExited(with event: NSEvent) { isHovering = false }
+    override func mouseEntered(with event: NSEvent) { isHovering = true; onHover?(true) }
+    override func mouseExited(with event: NSEvent) { isHovering = false; onHover?(false) }
     override func mouseDown(with event: NSEvent) { isPressed = true }
     override func mouseUp(with event: NSEvent) {
         isPressed = false
@@ -226,5 +230,58 @@ final class SecondaryButton: PaletteButton {
         let size = (title as NSString).size(withAttributes: attrs)
         (title as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
                                  withAttributes: attrs)
+    }
+}
+
+/// Fundo cinza bem escuro e opaco para a barra de ferramentas e o painel de texto.
+final class DarkFillView: NSView {
+    private let radius: CGFloat
+
+    init(radius: CGFloat) {
+        self.radius = radius
+        super.init(frame: .zero)
+        autoresizingMask = [.width, .height]
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { return nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
+        NSColor(calibratedWhite: 0.11, alpha: 0.96).setFill()
+        path.fill()
+        path.lineWidth = 1
+        NSColor(calibratedWhite: 1, alpha: 0.1).setStroke()
+        path.stroke()
+    }
+}
+
+/// Balão com o nome do botão sob o mouse.
+final class TipView: NSView {
+    var text = "" { didSet { needsDisplay = true } }
+
+    private var attributes: [NSAttributedString.Key: Any] {
+        return [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white]
+    }
+
+    var fittingTextSize: NSSize {
+        let s = (text as NSString).size(withAttributes: attributes)
+        return NSSize(width: ceil(s.width) + 20, height: ceil(s.height) + 10)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { return nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds, xRadius: 7, yRadius: 7)
+        NSColor(calibratedWhite: 0.06, alpha: 0.96).setFill()
+        path.fill()
+        NSColor(calibratedWhite: 1, alpha: 0.15).setStroke()
+        path.stroke()
+        let size = (text as NSString).size(withAttributes: attributes)
+        (text as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+                                withAttributes: attributes)
     }
 }

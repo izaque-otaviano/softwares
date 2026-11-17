@@ -432,7 +432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             o.view.demo(selection: r(0.08, 0.2, 0.68, 0.75), annotations: [], selecting: true)
         case "tools":
             var list: [Annotation] = [
-                make(.pixelate, .systemRed, 0.04, 0.71, 0.27, 0.8),
+                make(.blur, .systemRed, 0.04, 0.71, 0.27, 0.8),
                 make(.rectangle, .systemBlue, 0.035, 0.555, 0.235, 0.62),
                 make(.arrow, .systemRed, 0.62, 0.42, 0.85, 0.52),
             ]

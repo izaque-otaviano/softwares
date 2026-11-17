@@ -23,6 +23,9 @@ final class TextPanelView: SolidEffectView, NSTextViewDelegate {
         state = .active
         appearance = NSAppearance(named: .darkAqua)
         maskImage = Icons.roundedMask(radius: 14)
+        let fill = DarkFillView(radius: 14)
+        fill.frame = bounds
+        addSubview(fill)
 
         let title = NSTextField(labelWithString: "Texto reconhecido")
         title.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
