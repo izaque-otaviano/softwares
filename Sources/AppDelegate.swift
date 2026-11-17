@@ -75,7 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = Icons.menuBar
+        if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = true
+            item.button?.image = image
+        } else {
+            item.button?.image = Icons.menuBar
+        }
         item.button?.toolTip = "Recorte"
 
         let menu = NSMenu()

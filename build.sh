@@ -38,6 +38,7 @@ rm -f "${BINARIES[@]}"
 
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
 cp Resources/AppIcon.icns "$BUNDLE/Contents/Resources/AppIcon.icns"
+cp Resources/MenuBarIcon.png "$BUNDLE/Contents/Resources/MenuBarIcon.png"
 printf 'APPL????' > "$BUNDLE/Contents/PkgInfo"
 
 # OCR para macOS 10.14 (opcional: gerado por scripts/build_tesseract.sh)
