@@ -105,6 +105,8 @@ final class ChunkWriter {
         guard input.isReadyForMoreMediaData else { return } // atraso: descarta o quadro
         if adaptor.append(pixelBuffer, withPresentationTime: time) {
             lastVideoTime = time
+        } else if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+            print("Quadro recusado em \(url.lastPathComponent) t=\(CMTimeGetSeconds(time)) início=\(startTime.map { CMTimeGetSeconds($0) } ?? -1): \((writer.error as NSError?).map { "\($0.code) \($0.userInfo)" } ?? "")")
         }
     }
 
@@ -136,7 +138,7 @@ final class ChunkWriter {
             }
             audioEnd[kind] = CMTimeAdd(pts, CMTime(value: CMTimeValue(count), timescale: CMTimeScale(rate)))
         } else if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
-            print("Áudio recusado (\(kind.rawValue)) em \(url.lastPathComponent): \(writer.error?.localizedDescription ?? "")")
+            print("Áudio recusado (\(kind.rawValue)) em \(url.lastPathComponent) t=\(CMTimeGetSeconds(pts)): \((writer.error as NSError?).map { "\($0.code) \($0.userInfo)" } ?? "")")
         }
     }
 
@@ -154,7 +156,7 @@ final class ChunkWriter {
     func finish(completion: @escaping (Bool) -> Void) {
         guard startTime != nil, writer.status == .writing else {
             if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
-                print("Trecho cancelado \(url.lastPathComponent): início \(startTime != nil), status \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
+                print("Trecho cancelado \(url.lastPathComponent): início \(startTime != nil), status \(writer.status.rawValue) \((writer.error as NSError?).map { "\($0.code) \($0.userInfo)" } ?? "")")
             }
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: url)
