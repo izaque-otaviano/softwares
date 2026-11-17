@@ -47,7 +47,12 @@ final class DeskClient: NSObject {
         var address = serverAddress
         guard !address.isEmpty else { return nil }
         if !address.lowercased().hasPrefix("http://") && !address.lowercased().hasPrefix("https://") {
-            address = "http://" + address
+            // Domínios (desk.convertize.com.br) vão por HTTPS; IPs e nomes locais, por HTTP.
+            let host = address.split(separator: "/").first.map(String.init) ?? address
+            let hostOnly = host.split(separator: ":").first.map(String.init) ?? host
+            let isIP = hostOnly.allSatisfy { $0.isNumber || $0 == "." }
+            let isLocal = hostOnly == "localhost" || hostOnly.hasSuffix(".local") || !hostOnly.contains(".")
+            address = (isIP || isLocal ? "http://" : "https://") + address
         }
         while address.hasSuffix("/") { address.removeLast() }
         var path = uploadPath.isEmpty ? "/" : uploadPath
