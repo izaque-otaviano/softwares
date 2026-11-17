@@ -73,7 +73,9 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.font = NSFont.systemFont(ofSize: 11)
         infoLabel.lineBreakMode = .byTruncatingMiddle
-        let buttons = NSStackView(views: [playButton, finder, trim, NSView(), infoLabel])
+        let desk = NSButton(title: "Enviar ao Desk", target: self, action: #selector(sendToDesk))
+        desk.bezelStyle = .rounded
+        let buttons = NSStackView(views: [playButton, finder, trim, desk, NSView(), infoLabel])
         buttons.orientation = .horizontal
         buttons.spacing = 8
         buttons.translatesAutoresizingMaskIntoConstraints = false
@@ -156,6 +158,22 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
 
     @objc private func togglePlay() {
         if player.rate > 0 { player.pause() } else { player.play() }
+    }
+
+    @objc private func sendToDesk() {
+        let hud = ProgressHUD(title: "Enviando ao Convertize Desk…")
+        hud.show()
+        DeskClient.shared.sendVideo(url, progress: { p in hud.progress = p }) { error in
+            hud.close()
+            if let error = error {
+                let a = NSAlert()
+                a.messageText = "Não foi possível enviar ao Desk"
+                a.informativeText = error.localizedDescription
+                a.runModal()
+            } else {
+                Toast.show("Enviado ao Desk", subtitle: self.url.lastPathComponent)
+            }
+        }
     }
 
     @objc private func showInFinder() {

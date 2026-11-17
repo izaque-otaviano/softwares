@@ -12,7 +12,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let recView = RecPrefsView()
     private let recScroll = NSScrollView()
     private var capturePane: [NSView] = []
-    private let tabs = NSSegmentedControl(labels: ["Captura", "Gravação de tela"], trackingMode: .selectOne,
+    private let deskView = DeskPrefsView()
+    private let tabs = NSSegmentedControl(labels: ["Captura", "Gravação de tela", "Convertize Desk"], trackingMode: .selectOne,
                                           target: nil, action: nil)
     /// Atalhos de gravação mudaram (o app registra de novo).
     var onRecordingShortcutsChange: (() -> Bool)? {
@@ -199,7 +200,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         ])
         capturePane = [card, footer]
 
-        let root = NSStackView(views: [header, tabs, card, footer, recScroll])
+        deskView.translatesAutoresizingMaskIntoConstraints = false
+        deskView.isHidden = true
+        let root = NSStackView(views: [header, tabs, card, footer, recScroll, deskView])
         root.orientation = .vertical
         root.alignment = .leading
         root.spacing = 18
@@ -214,6 +217,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             root.widthAnchor.constraint(equalToConstant: 452),
             card.widthAnchor.constraint(equalTo: root.widthAnchor),
             recScroll.widthAnchor.constraint(equalTo: root.widthAnchor),
+            deskView.widthAnchor.constraint(equalTo: root.widthAnchor),
         ])
 
         background.layoutSubtreeIfNeeded()
@@ -242,8 +246,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         guard let window = window, let content = window.contentView else { return }
         tabs.selectedSegment = index
         let recording = index == 1
-        for v in capturePane { v.isHidden = recording }
+        for v in capturePane { v.isHidden = index != 0 }
         recScroll.isHidden = !recording
+        deskView.isHidden = index != 2
+        if index == 2 { deskView.refresh() }
         if recording { recView.activate() } else { recView.deactivate() }
         content.layoutSubtreeIfNeeded()
         let size = content.fittingSize

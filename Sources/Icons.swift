@@ -121,6 +121,15 @@ enum Icons {
         Icons.stroke(p)
     }
 
+    /// Enviar ao Desk: seta para cima saindo da bandeja.
+    static let upload = make { _ in
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: 10, y: 6.5)); p.line(to: NSPoint(x: 10, y: 16.5))
+        p.move(to: NSPoint(x: 6.5, y: 13)); p.line(to: NSPoint(x: 10, y: 16.5)); p.line(to: NSPoint(x: 13.5, y: 13))
+        p.move(to: NSPoint(x: 3.5, y: 8)); p.line(to: NSPoint(x: 3.5, y: 3.5)); p.line(to: NSPoint(x: 16.5, y: 3.5)); p.line(to: NSPoint(x: 16.5, y: 8))
+        Icons.stroke(p)
+    }
+
     /// Copiar: dois quadrados sobrepostos.
     static let copy = make { _ in
         Icons.stroke(NSBezierPath(roundedRect: NSRect(x: 7, y: 3.5, width: 9.5, height: 9.5), xRadius: 2, yRadius: 2))

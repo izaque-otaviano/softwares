@@ -38,6 +38,15 @@
 	<string>O Recorte usa a câmera para sobrepor a webcam nas gravações de tela.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>O Recorte grava o som do Mac nas gravações de tela.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>O Recorte envia prints e gravações para o Convertize Desk na sua rede.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

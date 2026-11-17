@@ -62,6 +62,24 @@ jobs:
           fi
           RECORTE_DEMO=prefsrec "$APPBIN" & PID=$!
           sleep 7; screencapture -x screenshots/prefs-gravacao.png; kill $PID || true
+      - name: Teste do envio ao Convertize Desk (servidor local) e da volta do login
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          APPBIN=build/Recorte.app/Contents/MacOS/Recorte
+          python3 scripts/desk_test_server.py > desk-server.log 2>&1 &
+          sleep 2
+          RECORTE_TEST=desk RECORTE_TEST_DESK_TOKEN=token-de-teste RECORTE_DEMO_IMAGE="$PWD/scripts/sample.png" "$APPBIN" 2>&1 | grep --line-buffered -v IOService
+          sleep 1; cat desk-server.log
+          # Login: o app sobe 127.0.0.1:<porta>/callback; simulamos a volta do navegador.
+          RECORTE_TEST=login "$APPBIN" > login.log 2>&1 &
+          sleep 4
+          URL=$(grep -o "https://auth[^ ]*" login.log | head -1)
+          echo "Autorização: $URL" | cut -c1-200
+          PORT=$(echo "$URL" | python3 -c "import sys,urllib.parse as u;q=u.parse_qs(u.urlsplit(sys.stdin.read().strip()).query);print(u.urlsplit(q['redirect_uri'][0]).port)")
+          STATE=$(echo "$URL" | python3 -c "import sys,urllib.parse as u;print(u.parse_qs(u.urlsplit(sys.stdin.read().strip()).query)['state'][0])")
+          curl -s "http://127.0.0.1:$PORT/callback?code=codigo-falso&state=$STATE" | head -c 200; echo
+          sleep 8; cat login.log | grep -v IOService
       - name: Teste do gravador — caminho do Mojave (AVFoundation + BlackHole, binário Intel)
         continue-on-error: true
         timeout-minutes: 4

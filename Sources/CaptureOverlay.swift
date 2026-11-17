@@ -27,6 +27,8 @@ final class CaptureOverlay: NSObject {
     var onColorCopied: ((String) -> Void)?
     /// Fixar na tela: imagem final e onde ela estava (coordenadas globais).
     var onPin: ((NSBitmapImageRep, NSRect) -> Void)?
+    /// Enviar ao Desk: imagem final.
+    var onSendDesk: ((NSBitmapImageRep) -> Void)?
     /// Gravação: área escolhida (tela + retângulo em pontos da tela).
     var onAreaChosen: ((NSScreen, NSRect) -> Void)?
     /// Sempre chamado quando a sobreposição fecha.
@@ -72,6 +74,12 @@ final class CaptureOverlay: NSObject {
                 self.finish()
                 self.onAreaChosen?(screen, sel)
             }
+        }
+        view.onSendDesk = { [weak self] in
+            guard let self = self else { return }
+            let rep = self.view.render()
+            self.finish()
+            if let rep = rep { self.onSendDesk?(rep) }
         }
         view.onTextCopied = { [weak self] text in
             guard let self = self else { return }
@@ -255,6 +263,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     var onQuickText: ((OCR.Outcome) -> Void)?
     var onColorCopied: ((String) -> Void)?
     var onPin: (() -> Void)?
+    var onSendDesk: (() -> Void)?
 
     /// Versão desfocada (gaussiano) da tela inteira, para a ferramenta "desfocar".
     private lazy var blurred: NSImage? = {
@@ -417,7 +426,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
             let save = IconButton(image: Icons.save, tip: "Salvar como… (⌘S)")
             save.onClick = { [weak self] in self?.onSaveAs?() }
-            let pin = IconButton(image: Icons.pin, tip: "Fixar na tela (F)")
+            let desk = IconButton(image: Icons.upload, tip: "Enviar ao Convertize Desk (D)")
+        desk.onClick = { [weak self] in self?.onSendDesk?() }
+        let pin = IconButton(image: Icons.pin, tip: "Fixar na tela (F)")
             pin.onClick = { [weak self] in self?.onPin?() }
             let copy = IconButton(image: Icons.copy, tip: "Copiar (⌘C)")
             copy.onClick = { [weak self] in self?.onConfirm?() }
@@ -425,7 +436,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             cancel.onClick = { [weak self] in self?.onCancel?() }
             let ok = AccentButton(title: "OK", tip: "Copiar e salvar (Enter)")
             ok.onClick = { [weak self] in self?.onConfirm?() }
-            items.append(contentsOf: [save, pin, copy, cancel, ok] as [NSView])
+                items.append(contentsOf: [save, desk, pin, copy, cancel, ok] as [NSView])
         }
 
         // Nome de cada botão num balão ao passar o mouse (as dicas do sistema
@@ -997,6 +1008,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             }
             if chars == "f" {
                 onPin?()
+                return
+            }
+            if chars == "d" {
+                onSendDesk?()
                 return
             }
             if chars == "m" || chars == "v" {

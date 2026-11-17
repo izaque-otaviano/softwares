@@ -12,6 +12,30 @@ extension AppDelegate {
         case "sources":
             printSources()
             exit(0)
+        case "desk":
+            DeskClient.serverAddress = "127.0.0.1:8765"
+            DeskClient.uploadPath = "/api/capturas/"
+            DeskClient.imageFormat = .jpeg
+            guard let image = NSImage(contentsOfFile: ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"] ?? ""),
+                  let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else {
+                print("RESULTADO: FALHA (imagem)"); exit(1)
+            }
+            print("Título do print: \(DeskClient.title(kind: "Print", detail: "Safari"))")
+            DeskClient.shared.sendImage(rep, sourceApp: "Safari") { error in
+                print("Envio do print: \(error?.localizedDescription ?? "ok")")
+                DeskClient.videoFormat = .mov
+                let video = URL(fileURLWithPath: "/tmp/recorte-ultimo.mp4")
+                DeskClient.shared.sendVideo(video, progress: { _ in }) { error2 in
+                    print("Envio do vídeo (MOV): \(error2?.localizedDescription ?? "ok")")
+                    print(error == nil && error2 == nil ? "RESULTADO: OK" : "RESULTADO: FALHA")
+                    exit(error == nil && error2 == nil ? 0 : 1)
+                }
+            }
+        case "login":
+            DeskClient.shared.login { error in
+                print("Login terminou: \(error?.localizedDescription ?? "ok")")
+                exit(0)
+            }
         case "crash":
             startTestRecording(stopAfter: nil)
             DispatchQueue.main.asyncAfter(deadline: .now() + 7) {

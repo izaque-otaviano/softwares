@@ -356,6 +356,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSSound(named: NSSound.Name("Pop"))?.play()
             Toast.show("Cor copiada", subtitle: hex)
         }
+        let frontApp = NSWorkspace.shared.frontmostApplication.flatMap { app -> String? in
+            app.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app.localizedName
+        }
+        o.onSendDesk = { rep in
+            if let png = rep.representation(using: .png, properties: [:]) { History.add(png) }
+            Toast.show("Enviando ao Desk…", subtitle: DeskClient.uploadURL?.host ?? "", duration: 1.5)
+            DeskClient.shared.sendImage(rep, sourceApp: frontApp) { error in
+                if let error = error {
+                    NSSound.beep()
+                    Toast.show("Não foi enviado ao Desk", subtitle: error.localizedDescription, duration: 4)
+                } else {
+                    NSSound(named: NSSound.Name("Pop"))?.play()
+                    Toast.show("Enviado ao Desk", subtitle: DeskClient.title(kind: "Print", detail: frontApp))
+                }
+            }
+        }
         o.onPin = { rep, frame in
             if let png = rep.representation(using: .png, properties: [:]) { History.add(png) }
             PinWindow.show(rep, at: frame)
