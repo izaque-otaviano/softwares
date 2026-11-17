@@ -1107,7 +1107,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let panel = textPanel ?? makeTextPanel()
         layoutTextPanel(panel)
         panel.showLoading()
-        OCR.recognize(image) { [weak self, weak panel] outcome in
+        OCR.recognize(image, pixelScale: pixelScale) { [weak self, weak panel] outcome in
             guard let self = self, let panel = panel, panel === self.textPanel else { return }
             panel.show(outcome)
             if ProcessInfo.processInfo.environment["RECORTE_DEMO"] != nil, case .text(let t) = outcome {
@@ -1124,7 +1124,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         palette.isHidden = true
         isRecognizing = true
         needsDisplay = true
-        OCR.recognize(image) { [weak self] outcome in
+        OCR.recognize(image, pixelScale: pixelScale) { [weak self] outcome in
             guard let self = self else { return }
             self.isRecognizing = false
             self.onQuickText?(outcome)
