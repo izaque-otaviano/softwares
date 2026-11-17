@@ -471,6 +471,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "prefs":
             showPreferences(nil)
             return
+        case "prefsrec":
+            showPreferences(nil)
+            preferences?.showTab(1)
+            return
+        case "preview":
+            if let path = ProcessInfo.processInfo.environment["RECORTE_DEMO_VIDEO"] {
+                RecPreviewWindowController.show(URL(fileURLWithPath: path))
+            }
+            return
         case "toast":
             Toast.show("Copiado", subtitle: "Cópia salva em Mesa", duration: 60)
             return

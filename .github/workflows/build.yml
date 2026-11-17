@@ -49,7 +49,19 @@ jobs:
         timeout-minutes: 4
         run: |
           APPBIN=build/Recorte.app/Contents/MacOS/Recorte
+          mkdir -p screenshots
+          open -a Preview "$PWD/scripts/sample.png"; sleep 4
+          ( sleep 6; screencapture -x screenshots/gravando.png ) &
           RECORTE_TEST=record RECORTE_TEST_MIC_BLACKHOLE=1 "$APPBIN" 2>&1 | grep --line-buffered -v "IOServiceMatching" | tee rec-modern.log
+          osascript -e 'quit app "Preview"' || true
+          VIDEO=$(ls -t "$TMPDIR"/recorte-saida/Gravação*.mp4 2>/dev/null | head -1)
+          echo "Vídeo para a prévia: $VIDEO"
+          if [ -n "$VIDEO" ]; then
+            RECORTE_DEMO=preview RECORTE_DEMO_VIDEO="$VIDEO" "$APPBIN" & PID=$!
+            sleep 7; screencapture -x screenshots/previa.png; kill $PID || true
+          fi
+          RECORTE_DEMO=prefsrec "$APPBIN" & PID=$!
+          sleep 7; screencapture -x screenshots/prefs-gravacao.png; kill $PID || true
       - name: Teste do gravador — caminho do Mojave (AVFoundation + BlackHole, binário Intel)
         continue-on-error: true
         timeout-minutes: 4
