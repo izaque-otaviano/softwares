@@ -42,6 +42,7 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
     private var webcamVisibleQ = true
     private var markerCount = 0
     private var lastSource: CVPixelBuffer?
+    private let finishGroup = DispatchGroup()
     private var repeatTimer: DispatchSourceTimer?
 
     // Tempo gravado (fila principal)
@@ -400,17 +401,16 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
             self.closeCurrentChunk(at: end)
             // Espera o áudio que ainda está chegando e fecha todos os trechos.
             sources.queue.asyncAfter(deadline: .now() + 0.5) {
-                let group = DispatchGroup()
                 let pending = self.closing
                 self.closing = []
                 for (w, index) in pending {
-                    group.enter()
                     w.finish { ok in
                         self.store?.chunkFinished(index: index, duration: w.duration, ok: ok)
-                        group.leave()
+                        self.finishGroup.leave()
                     }
                 }
-                group.notify(queue: .main) {
+                // Espera TODOS os trechos (inclusive os que já estavam fechando) antes de montar o MP4.
+                self.finishGroup.notify(queue: .main) {
                     self.teardownSources()
                     if self.discardOnStop {
                         self.discardOnStop = false
@@ -445,10 +445,15 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
         writer = nil
         let index = chunkIndex
         closing.append((w, index))
+        // Cada trecho fechado só conta como pronto quando o arquivo termina de ser gravado.
+        finishGroup.enter()
         sources?.queue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self = self, let i = self.closing.firstIndex(where: { $0.0 === w }) else { return }
             self.closing.remove(at: i)
-            w.finish { ok in self.store?.chunkFinished(index: index, duration: w.duration, ok: ok) }
+            w.finish { ok in
+                self.store?.chunkFinished(index: index, duration: w.duration, ok: ok)
+                self.finishGroup.leave()
+            }
         }
     }
 
