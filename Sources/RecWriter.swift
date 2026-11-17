@@ -131,6 +131,9 @@ final class ChunkWriter {
 
     func finish(completion: @escaping (Bool) -> Void) {
         guard startTime != nil, writer.status == .writing else {
+            if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                print("Trecho cancelado \(url.lastPathComponent): início \(startTime != nil), status \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
+            }
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: url)
             completion(false)
@@ -142,6 +145,9 @@ final class ChunkWriter {
         videoInput?.markAsFinished()
         for input in audioInputs.values { input.markAsFinished() }
         writer.finishWriting { [writer] in
+            if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                print("Fechou \(writer.outputURL.lastPathComponent): status \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
+            }
             completion(writer.status == .completed)
         }
     }

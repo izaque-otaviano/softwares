@@ -164,7 +164,14 @@ final class RecSessionStore {
             let url = chunkURL(i)
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-            guard let track = asset.tracks(withMediaType: .video).first else { continue }
+            let tracks = asset.tracks(withMediaType: .video)
+            if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                print("Trecho \(i): \(size ?? 0) bytes, legível \(asset.isReadable), vídeo \(tracks.count), "
+                      + "faixa \(tracks.first.map { CMTimeGetSeconds($0.timeRange.start) } ?? -1)s + "
+                      + "\(tracks.first.map { CMTimeGetSeconds($0.timeRange.duration) } ?? -1)s, manifesto \(info.duration)s ok=\(info.completed)")
+            }
+            guard let track = tracks.first else { continue }
             let d = CMTimeGetSeconds(track.timeRange.duration)
             guard d > 0.05 else { continue }
             segments.append(Muxer.Segment(url: url, range: nil, audioKinds: info.audioKinds))
