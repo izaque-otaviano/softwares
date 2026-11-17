@@ -221,6 +221,15 @@ final class CaptureSources: NSObject {
         delegate?.captureSources(self, didOutputVideo: pixelBuffer, at: hostTime)
     }
 
+    /// Mesmo formato de áudio na prática (taxa, canais, bits, tipo, intercalação).
+    static func sameAudioFormat(_ a: CMFormatDescription, _ b: CMFormatDescription) -> Bool {
+        guard let x = CMAudioFormatDescriptionGetStreamBasicDescription(a)?.pointee,
+              let y = CMAudioFormatDescriptionGetStreamBasicDescription(b)?.pointee else { return false }
+        return x.mSampleRate == y.mSampleRate && x.mChannelsPerFrame == y.mChannelsPerFrame
+            && x.mBitsPerChannel == y.mBitsPerChannel && x.mFormatID == y.mFormatID
+            && x.mFormatFlags == y.mFormatFlags && x.mBytesPerFrame == y.mBytesPerFrame
+    }
+
     private var loggedKinds: Set<AudioKind> = []
     private var stableFormat: [AudioKind: CMFormatDescription] = [:]
     private var candidateFormat: [AudioKind: CMFormatDescription] = [:]
@@ -240,9 +249,9 @@ final class CaptureSources: NSObject {
         // buffers de formato diferente logo ao ligar, e o gravador do macOS rejeita a troca.
         guard let format = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
         if let stable = stableFormat[kind] {
-            guard CMFormatDescriptionEqual(stable, otherFormatDescription: format) else { return }
+            guard CaptureSources.sameAudioFormat(stable, format) else { return }
         } else {
-            if let c = candidateFormat[kind], CMFormatDescriptionEqual(c, otherFormatDescription: format) {
+            if let c = candidateFormat[kind], CaptureSources.sameAudioFormat(c, format) {
                 candidateCount[kind, default: 0] += 1
             } else {
                 candidateFormat[kind] = format
