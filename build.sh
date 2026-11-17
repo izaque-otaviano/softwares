@@ -23,7 +23,9 @@ for ARCH in $ARCHS; do
   esac
   echo "▸ Compilando para ${ARCH}…"
   if xcrun swiftc -O -sdk "$SDK" -target "$TARGET" \
-      -framework Cocoa -framework Carbon -framework Vision \
+      -framework Cocoa -framework Carbon -framework Vision -framework AVFoundation -framework AVKit \
+      -framework CoreMedia -framework CoreVideo -framework CoreAudio -framework CoreImage \
+      -Xlinker -weak_framework -Xlinker ScreenCaptureKit \
       Sources/*.swift -o "$BUILD/$APP-$ARCH"; then
     BINARIES+=("$BUILD/$APP-$ARCH")
   elif [ "$ARCH" = "arm64" ]; then

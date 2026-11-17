@@ -1,13 +1,19 @@
 import Cocoa
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private var statusItem: NSStatusItem?
+    var statusItem: NSStatusItem?
     private var captureMenuItem: NSMenuItem?
     private var textMenuItem: NSMenuItem?
     private var recentMenu: NSMenu?
     private var countdownTimer: Timer?
-    private var preferences: PreferencesWindowController?
-    private var overlay: CaptureOverlay?
+    var preferences: PreferencesWindowController?
+    var overlay: CaptureOverlay?
+    var recordingMenuTimer: Timer?
+    var statusTitleTimer: Timer?
+    var statusMenu: NSMenu?
+    var recordingRecentMenu: NSMenu?
+    var profileMenu: NSMenu?
+    var meterRows: [MeterMenuRow] = []
 
     // MARK: Ciclo de vida
 
@@ -21,10 +27,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             switch action {
             case .capture: self?.startCapture(nil)
             case .copyText: self?.startTextCapture(nil)
+            default: self?.handleRecordingHotKey(action)
             }
         }
         HotKeyManager.shared.installHandler()
         applyShortcut()
+
+        setUpRecording()
+        if let test = ProcessInfo.processInfo.environment["RECORTE_TEST"] {
+            runRecordingTest(test)
+            return
+        }
 
         if let demo = ProcessInfo.processInfo.environment["RECORTE_DEMO"] {
             runDemo(demo)
@@ -35,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Settings.launchedBefore = true
             showPreferences(nil)
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.checkIncompleteRecordings() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -48,17 +62,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Registra os dois atalhos globais e atualiza o menu. Retorna `false` se algum falhou.
     @discardableResult
-    private func applyShortcut() -> Bool {
+    func applyShortcut() -> Bool {
         let capture = Settings.shortcut
         let text = Settings.textShortcut
         let ok1 = HotKeyManager.shared.register(capture, for: .capture)
         let ok2 = HotKeyManager.shared.register(text, for: .copyText)
         show(capture, in: captureMenuItem, title: "Capturar área")
         show(text, in: textMenuItem, title: "Copiar texto da tela")
-        return ok1 && ok2
+        let ok3 = applyRecordingShortcuts()
+        return ok1 && ok2 && ok3
     }
 
-    private func show(_ shortcut: Shortcut, in item: NSMenuItem?, title: String) {
+    func show(_ shortcut: Shortcut, in item: NSMenuItem?, title: String) {
         guard let item = item else { return }
         item.keyEquivalent = shortcut.menuKeyEquivalent
         item.keyEquivalentModifierMask = shortcut.modifiers
@@ -67,7 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Mostra o ícone no Dock enquanto houver janelas abertas, como um app normal.
     private func updateActivationPolicy() {
-        let hasWindows = preferences?.window?.isVisible ?? false
+        refreshActivationPolicy()
+    }
+
+    func refreshActivationPolicy() {
+        let hasWindows = (preferences?.window?.isVisible ?? false)
+            || NSApp.windows.contains { $0.isVisible && $0.windowController is RecPreviewWindowController }
         NSApp.setActivationPolicy(hasWindows ? .regular : .accessory)
     }
 
@@ -102,7 +122,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(delayed)
         }
         menu.addItem(NSMenuItem.separator())
-        let recentItem = NSMenuItem(title: "Recentes", action: nil, keyEquivalent: "")
+        // Gravação de tela (itens montados em menuNeedsUpdate)
+        let recordingAnchor = NSMenuItem.separator()
+        recordingAnchor.tag = RecordingMenu.anchorTag
+        menu.addItem(recordingAnchor)
+        let recentItem = NSMenuItem(title: "Capturas recentes", action: nil, keyEquivalent: "")
         let recent = NSMenu(title: "Recentes")
         recent.delegate = self
         recentItem.submenu = recent
@@ -118,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Sair do Recorte", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
+        menu.delegate = self
+        statusMenu = menu
         statusItem = item
     }
 
@@ -194,6 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
             p.onClose = { [weak self] in self?.updateActivationPolicy() }
+            p.onRecordingShortcutsChange = { [weak self] in self?.applyShortcut() ?? false }
             preferences = p
         }
         NSApp.setActivationPolicy(.regular)
@@ -386,6 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Recentes
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if updateRecordingMenus(menu) { return }
         guard menu === recentMenu else { return }
         menu.removeAllItems()
         let entries = History.entries()

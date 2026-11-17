@@ -9,6 +9,16 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     private let recorder = ShortcutRecorderView(frame: .zero)
     private let textRecorder = ShortcutRecorderView(frame: .zero)
+    private let recView = RecPrefsView()
+    private let recScroll = NSScrollView()
+    private var capturePane: [NSView] = []
+    private let tabs = NSSegmentedControl(labels: ["Captura", "Gravação de tela"], trackingMode: .selectOne,
+                                          target: nil, action: nil)
+    /// Atalhos de gravação mudaram (o app registra de novo).
+    var onRecordingShortcutsChange: (() -> Bool)? {
+        get { return recView.onShortcutsChanged }
+        set { recView.onShortcutsChanged = newValue }
+    }
     private let warningLabel = NSTextField(labelWithString: "")
     private let folderLabel = NSTextField(labelWithString: "")
     private let saveCheckbox = NSButton(checkboxWithTitle: "Salvar uma cópia aqui ao dar OK",
@@ -89,6 +99,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         textRecorder.widthAnchor.constraint(equalToConstant: 180).isActive = true
         textRecorder.heightAnchor.constraint(equalToConstant: 28).isActive = true
         textRecorder.onChange = { [weak self] s in
+            if let other = RecSettings.conflict(for: s, except: "Copiar texto da tela") {
+                self?.textRecorder.shortcut = Settings.textShortcut
+                self?.warningLabel.stringValue = "\(s.displayString) já é usado em “\(other)”."
+                self?.warningLabel.isHidden = false
+                return
+            }
             Settings.textShortcut = s
             self?.reportShortcutResult(self?.onShortcutChange?(s) ?? true)
         }
@@ -155,7 +171,35 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
                               + "P caneta · T texto · N números · B desfocar · E extrair texto (⇧E copia direto) · "
                               + "F fixar na tela · ⇧ formas perfeitas · Esc cancela.", width: 452)
 
-        let root = NSStackView(views: [header, card, footer])
+        // Aba de gravação, com rolagem.
+        tabs.selectedSegment = 0
+        tabs.target = self
+        tabs.action = #selector(tabChanged)
+        recView.onRecordingShortcut = { [weak self] r in self?.onRecordingChange?(r) }
+        recView.translatesAutoresizingMaskIntoConstraints = false
+        let doc = FlippedView()
+        doc.translatesAutoresizingMaskIntoConstraints = false
+        doc.addSubview(recView)
+        recScroll.documentView = doc
+        recScroll.drawsBackground = false
+        recScroll.hasVerticalScroller = true
+        recScroll.autohidesScrollers = true
+        recScroll.translatesAutoresizingMaskIntoConstraints = false
+        recScroll.isHidden = true
+        let visibleHeight = min(640, (NSScreen.main?.visibleFrame.height ?? 800) - 220)
+        NSLayoutConstraint.activate([
+            recView.topAnchor.constraint(equalTo: doc.topAnchor),
+            recView.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
+            recView.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
+            recView.bottomAnchor.constraint(equalTo: doc.bottomAnchor),
+            doc.topAnchor.constraint(equalTo: recScroll.contentView.topAnchor),
+            doc.leadingAnchor.constraint(equalTo: recScroll.contentView.leadingAnchor),
+            doc.widthAnchor.constraint(equalTo: recScroll.contentView.widthAnchor),
+            recScroll.heightAnchor.constraint(equalToConstant: visibleHeight),
+        ])
+        capturePane = [card, footer]
+
+        let root = NSStackView(views: [header, tabs, card, footer, recScroll])
         root.orientation = .vertical
         root.alignment = .leading
         root.spacing = 18
@@ -169,6 +213,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             root.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -22),
             root.widthAnchor.constraint(equalToConstant: 452),
             card.widthAnchor.constraint(equalTo: root.widthAnchor),
+            recScroll.widthAnchor.constraint(equalTo: root.widthAnchor),
         ])
 
         background.layoutSubtreeIfNeeded()
@@ -188,7 +233,33 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    @objc private func tabChanged() {
+        showTab(tabs.selectedSegment)
+    }
+
+    /// 0 = Captura, 1 = Gravação de tela.
+    func showTab(_ index: Int) {
+        guard let window = window, let content = window.contentView else { return }
+        tabs.selectedSegment = index
+        let recording = index == 1
+        for v in capturePane { v.isHidden = recording }
+        recScroll.isHidden = !recording
+        if recording { recView.activate() } else { recView.deactivate() }
+        content.layoutSubtreeIfNeeded()
+        let size = content.fittingSize
+        let top = window.frame.maxY
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        frame.origin = NSPoint(x: window.frame.minX, y: top - frame.height)
+        window.setFrame(frame, display: true, animate: window.isVisible)
+    }
+
     private func shortcutChanged(_ shortcut: Shortcut) {
+        if let other = RecSettings.conflict(for: shortcut, except: "Capturar área") {
+            recorder.shortcut = Settings.shortcut
+            warningLabel.stringValue = "\(shortcut.displayString) já é usado em “\(other)”."
+            warningLabel.isHidden = false
+            return
+        }
         Settings.shortcut = shortcut
         reportShortcutResult(onShortcutChange?(shortcut) ?? true)
     }
@@ -219,7 +290,13 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        recView.deactivate()
         window?.makeFirstResponder(nil)
         DispatchQueue.main.async { [weak self] in self?.onClose?() }
     }
+}
+
+/// Visão com origem no topo (para o conteúdo rolável começar de cima).
+final class FlippedView: NSView {
+    override var isFlipped: Bool { return true }
 }

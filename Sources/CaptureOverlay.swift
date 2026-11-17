@@ -27,6 +27,8 @@ final class CaptureOverlay: NSObject {
     var onColorCopied: ((String) -> Void)?
     /// Fixar na tela: imagem final e onde ela estava (coordenadas globais).
     var onPin: ((NSBitmapImageRep, NSRect) -> Void)?
+    /// Gravação: área escolhida (tela + retângulo em pontos da tela).
+    var onAreaChosen: ((NSScreen, NSRect) -> Void)?
     /// Sempre chamado quando a sobreposição fecha.
     var onFinish: (() -> Void)?
 
@@ -63,6 +65,13 @@ final class CaptureOverlay: NSObject {
             let rep = self.view.render()
             self.finish()
             if let rep = rep { self.onConfirm?(rep) }
+        }
+        if mode == .recordArea {
+            view.onConfirm = { [weak self] in
+                guard let self = self, let sel = self.view.selection else { return }
+                self.finish()
+                self.onAreaChosen?(screen, sel)
+            }
         }
         view.onTextCopied = { [weak self] text in
             guard let self = self else { return }
@@ -224,6 +233,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case normal
         /// Copiar texto direto: seleciona a área, reconhece e copia.
         case textOnly
+        /// Escolher a área de uma gravação de tela.
+        case recordArea
     }
 
     private enum Drag {
@@ -303,6 +314,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         super.init(frame: frame)
         buildPalette()
         selectTool(Settings.lastTool)
+        if mode == .recordArea { isMoveTool = true }
         selectColor(Settings.lastColorIndex)
         selectWidth(Settings.lastWidthIndex)
     }
@@ -347,64 +359,74 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         palette.addSubview(fill)
 
         var items: [NSView] = []
+        if mode == .recordArea {
+            // Gravação: só confirmar ou cancelar (a área pode ser ajustada pelas alças).
+            moveButton = IconButton(image: Icons.move, tip: "")
+            let cancel = IconButton(image: Icons.close, tip: "Cancelar (Esc)")
+            cancel.onClick = { [weak self] in self?.onCancel?() }
+            let record = AccentButton(title: "Gravar", tip: "Gravar esta área (Enter)", width: 92)
+            record.onClick = { [weak self] in self?.onConfirm?() }
+            items = [cancel, record]
+        } else {
 
-        moveButton = IconButton(image: Icons.move, tip: "Selecionar e mover marcações ou a área (M) · ⌫ apaga")
-        moveButton.onClick = { [weak self] in self?.selectMoveTool() }
-        items.append(moveButton)
-        for tool in Tool.allCases {
-            let b = IconButton(image: tool.icon, tip: tool.title)
-            b.onClick = { [weak self] in
-                guard let self = self else { return }
-                // Clicar de novo na ferramenta ativa desliga (volta para selecionar/mover).
-                if !self.isMoveTool && self.tool == tool {
-                    self.selectMoveTool()
-                } else {
-                    self.selectTool(tool)
+            moveButton = IconButton(image: Icons.move, tip: "Selecionar e mover marcações ou a área (M) · ⌫ apaga")
+            moveButton.onClick = { [weak self] in self?.selectMoveTool() }
+            items.append(moveButton)
+            for tool in Tool.allCases {
+                let b = IconButton(image: tool.icon, tip: tool.title)
+                b.onClick = { [weak self] in
+                    guard let self = self else { return }
+                    // Clicar de novo na ferramenta ativa desliga (volta para selecionar/mover).
+                    if !self.isMoveTool && self.tool == tool {
+                        self.selectMoveTool()
+                    } else {
+                        self.selectTool(tool)
+                    }
                 }
+                toolButtons.append(b)
+                items.append(b)
             }
-            toolButtons.append(b)
-            items.append(b)
+            let ocr = IconButton(image: Icons.ocr, tip: "Extrair texto da área (E)")
+            ocr.onClick = { [weak self] in self?.extractText() }
+            items.append(ocr)
+            items.append(makeSeparator())
+
+            for (i, entry) in OverlayView.colors.enumerated() {
+                let b = ColorButton(color: entry.0, tip: entry.1)
+                b.onClick = { [weak self] in self?.selectColor(i) }
+                colorButtons.append(b)
+                items.append(b)
+            }
+            items.append(makeSeparator())
+
+            for (i, entry) in OverlayView.widths.enumerated() {
+                let b = WidthButton(width: entry.0, tip: "Espessura: \(entry.1)")
+                b.onClick = { [weak self] in self?.selectWidth(i) }
+                widthButtons.append(b)
+                items.append(b)
+            }
+            items.append(makeSeparator())
+
+            let undo = IconButton(image: Icons.undo, tip: "Desfazer (⌘Z)")
+            undo.onClick = { [weak self] in self?.undoManager?.undo() }
+            let redo = IconButton(image: Icons.redo, tip: "Refazer (⇧⌘Z)")
+            redo.onClick = { [weak self] in self?.undoManager?.redo() }
+            items.append(undo)
+            items.append(redo)
+            items.append(makeSeparator())
+
+            let save = IconButton(image: Icons.save, tip: "Salvar como… (⌘S)")
+            save.onClick = { [weak self] in self?.onSaveAs?() }
+            let pin = IconButton(image: Icons.pin, tip: "Fixar na tela (F)")
+            pin.onClick = { [weak self] in self?.onPin?() }
+            let copy = IconButton(image: Icons.copy, tip: "Copiar (⌘C)")
+            copy.onClick = { [weak self] in self?.onConfirm?() }
+            let cancel = IconButton(image: Icons.close, tip: "Cancelar (Esc)")
+            cancel.onClick = { [weak self] in self?.onCancel?() }
+            let ok = AccentButton(title: "OK", tip: "Copiar e salvar (Enter)")
+            ok.onClick = { [weak self] in self?.onConfirm?() }
+            items.append(contentsOf: [save, pin, copy, cancel, ok] as [NSView])
         }
-        let ocr = IconButton(image: Icons.ocr, tip: "Extrair texto da área (E)")
-        ocr.onClick = { [weak self] in self?.extractText() }
-        items.append(ocr)
-        items.append(makeSeparator())
-
-        for (i, entry) in OverlayView.colors.enumerated() {
-            let b = ColorButton(color: entry.0, tip: entry.1)
-            b.onClick = { [weak self] in self?.selectColor(i) }
-            colorButtons.append(b)
-            items.append(b)
-        }
-        items.append(makeSeparator())
-
-        for (i, entry) in OverlayView.widths.enumerated() {
-            let b = WidthButton(width: entry.0, tip: "Espessura: \(entry.1)")
-            b.onClick = { [weak self] in self?.selectWidth(i) }
-            widthButtons.append(b)
-            items.append(b)
-        }
-        items.append(makeSeparator())
-
-        let undo = IconButton(image: Icons.undo, tip: "Desfazer (⌘Z)")
-        undo.onClick = { [weak self] in self?.undoManager?.undo() }
-        let redo = IconButton(image: Icons.redo, tip: "Refazer (⇧⌘Z)")
-        redo.onClick = { [weak self] in self?.undoManager?.redo() }
-        items.append(undo)
-        items.append(redo)
-        items.append(makeSeparator())
-
-        let save = IconButton(image: Icons.save, tip: "Salvar como… (⌘S)")
-        save.onClick = { [weak self] in self?.onSaveAs?() }
-        let pin = IconButton(image: Icons.pin, tip: "Fixar na tela (F)")
-        pin.onClick = { [weak self] in self?.onPin?() }
-        let copy = IconButton(image: Icons.copy, tip: "Copiar (⌘C)")
-        copy.onClick = { [weak self] in self?.onConfirm?() }
-        let cancel = IconButton(image: Icons.close, tip: "Cancelar (Esc)")
-        cancel.onClick = { [weak self] in self?.onCancel?() }
-        let ok = AccentButton(title: "OK", tip: "Copiar e salvar (Enter)")
-        ok.onClick = { [weak self] in self?.onConfirm?() }
-        items.append(contentsOf: [save, pin, copy, cancel, ok] as [NSView])
 
         // Nome de cada botão num balão ao passar o mouse (as dicas do sistema
         // ficariam escondidas atrás da tela de captura).
@@ -534,7 +556,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
                 border.stroke()
             }
             drawCrosshair()
-            let hint = mode == .textOnly
+            let hint = mode == .recordArea
+                ? "Arraste para escolher a área a gravar  ·  Clique numa janela para gravá-la inteira  ·  Esc cancela"
+                : mode == .textOnly
                 ? "Selecione a área com texto para copiar  ·  Esc para cancelar"
                 : "Arraste para selecionar  ·  Clique numa janela para capturá-la  ·  C copia a cor  ·  Esc cancela"
             drawPill(hint, at: NSPoint(x: bounds.midX, y: bounds.maxY - 60), centered: true)
@@ -961,6 +985,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             remove(a)
             return
         }
+        if mode == .recordArea { return }
         if mods == [.shift], chars == "e" {
             quickCopyText()
             return

@@ -32,6 +32,12 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Capturas de tela com marcações.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O Recorte usa o microfone para gravar a sua voz nas gravações de tela.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>O Recorte usa a câmera para sobrepor a webcam nas gravações de tela.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>O Recorte grava o som do Mac nas gravações de tela.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

@@ -7,6 +7,11 @@ final class HotKeyManager {
     enum Action: UInt32 {
         case capture = 1
         case copyText = 2
+        case recordToggle = 3
+        case recordLastArea = 4
+        case recordPause = 5
+        case recordMarker = 6
+        case recordWebcam = 7
     }
 
     static let shared = HotKeyManager()
