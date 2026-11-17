@@ -77,8 +77,9 @@ final class Recorder: NSObject, CaptureSourcesDelegate {
                                                screenHeight: screen.frame.height, x: rect.minX, y: rect.minY,
                                                width: rect.width, height: rect.height)
             let mic = adjusted.microphone ? AudioDevices.microphone(uid: adjusted.micDeviceUID) : nil
-            let req = CaptureRequest(screen: screen, rect: rect, video: true, systemAudio: adjusted.systemAudio,
+            var req = CaptureRequest(screen: screen, rect: rect, video: true, systemAudio: adjusted.systemAudio,
                                      microphone: mic, fps: adjusted.videoQuality.fps)
+            req.showsCursor = adjusted.showCursor ?? true
             self.request = req
             self.format = RecVideoFormat(capturePixels: req.pixelSize, quality: adjusted.videoQuality)
             if adjusted.countdown && ProcessInfo.processInfo.environment["RECORTE_TEST"] == nil {

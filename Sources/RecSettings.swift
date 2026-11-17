@@ -122,6 +122,8 @@ struct RecProfile: Codable, Equatable {
     var cameraUID: String?
     var webcamPosition: WebcamPosition
     var webcamSize: WebcamSize
+    /// Mostrar o cursor no vídeo (nil = sim; campo novo, compatível com perfis antigos).
+    var showCursor: Bool? = nil
 
     static let names = ["Reunião", "Treinamento", "Tutorial"]
 

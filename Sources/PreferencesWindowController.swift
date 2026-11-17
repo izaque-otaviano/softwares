@@ -13,6 +13,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let recScroll = NSScrollView()
     private var capturePane: [NSView] = []
     private let deskView = DeskPrefsView()
+    private let captureScroll = NSScrollView()
+    private let paneTitle = NSTextField(labelWithString: "")
+    private let paneSubtitle = NSTextField(labelWithString: "")
+    private var sidebar: PrefsSidebar?
     private let tabs = NSSegmentedControl(labels: ["Captura", "Gravação de tela", "Convertize Desk"], trackingMode: .selectOne,
                                           target: nil, action: nil)
     /// Atalhos de gravação mudaram (o app registra de novo).
@@ -187,7 +191,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         recScroll.autohidesScrollers = true
         recScroll.translatesAutoresizingMaskIntoConstraints = false
         recScroll.isHidden = true
-        let visibleHeight = min(640, (NSScreen.main?.visibleFrame.height ?? 800) - 220)
         NSLayoutConstraint.activate([
             recView.topAnchor.constraint(equalTo: doc.topAnchor),
             recView.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
@@ -196,32 +199,105 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             doc.topAnchor.constraint(equalTo: recScroll.contentView.topAnchor),
             doc.leadingAnchor.constraint(equalTo: recScroll.contentView.leadingAnchor),
             doc.widthAnchor.constraint(equalTo: recScroll.contentView.widthAnchor),
-            recScroll.heightAnchor.constraint(equalToConstant: visibleHeight),
         ])
         capturePane = [card, footer]
 
         deskView.translatesAutoresizingMaskIntoConstraints = false
         deskView.isHidden = true
-        let root = NSStackView(views: [header, tabs, card, footer, recScroll, deskView])
-        root.orientation = .vertical
-        root.alignment = .leading
-        root.spacing = 18
-        root.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(root)
-
-        NSLayoutConstraint.activate([
-            root.topAnchor.constraint(equalTo: background.topAnchor, constant: 40),
-            root.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 24),
-            root.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -24),
-            root.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -22),
-            root.widthAnchor.constraint(equalToConstant: 452),
-            card.widthAnchor.constraint(equalTo: root.widthAnchor),
-            recScroll.widthAnchor.constraint(equalTo: root.widthAnchor),
-            deskView.widthAnchor.constraint(equalTo: root.widthAnchor),
+        // Layout no estilo dos Ajustes do Sistema: barra lateral + conteúdo.
+        _ = header
+        tabs.isHidden = true
+        let sidebar = PrefsSidebar(items: [
+            ("Captura", RecTheme.symbol("viewfinder", fallback: Icons.menuBar), NSColor.systemBlue),
+            ("Gravação de tela", RecTheme.symbol("record.circle", fallback: RecIcons.stop), RecTheme.record),
+            ("Convertize Desk", RecTheme.symbol("paperplane", fallback: Icons.upload),
+             NSColor(calibratedRed: 0x1B / 255, green: 0x20 / 255, blue: 0x30 / 255, alpha: 1)),
         ])
+        sidebar.onSelect = { [weak self] i in self?.showTab(i) }
+        self.sidebar = sidebar
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+
+        paneTitle.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
+        paneSubtitle.font = NSFont.systemFont(ofSize: 12)
+        paneSubtitle.textColor = .secondaryLabelColor
+
+        // Conteúdo de "Captura" com rolagem, como as outras seções.
+        let captureStack = NSStackView(views: [card, footer])
+        captureStack.orientation = .vertical
+        captureStack.alignment = .leading
+        captureStack.spacing = 16
+        captureStack.translatesAutoresizingMaskIntoConstraints = false
+        let captureDoc = FlippedView()
+        captureDoc.translatesAutoresizingMaskIntoConstraints = false
+        captureDoc.addSubview(captureStack)
+        captureScroll.documentView = captureDoc
+        captureScroll.drawsBackground = false
+        captureScroll.hasVerticalScroller = true
+        captureScroll.autohidesScrollers = true
+        captureScroll.translatesAutoresizingMaskIntoConstraints = false
+        capturePane = [captureScroll]
+
+        let content = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        content.wantsLayer = true
+        for v in [paneTitle, paneSubtitle, captureScroll, recScroll, deskView] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(v)
+        }
+        let contentBG = NSVisualEffectView()
+        contentBG.material = .windowBackground
+        contentBG.blendingMode = .behindWindow
+        contentBG.state = .followsWindowActiveState
+        contentBG.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(sidebar)
+        background.addSubview(contentBG)
+        background.addSubview(content)
+
+        let paneWidth: CGFloat = 452
+        NSLayoutConstraint.activate([
+            sidebar.topAnchor.constraint(equalTo: background.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            sidebar.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: 190),
+            contentBG.topAnchor.constraint(equalTo: background.topAnchor),
+            contentBG.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            contentBG.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            contentBG.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            content.topAnchor.constraint(equalTo: background.topAnchor, constant: 38),
+            content.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -20),
+            content.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 24),
+            content.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -20),
+            content.widthAnchor.constraint(equalToConstant: paneWidth),
+            background.heightAnchor.constraint(equalToConstant: 560),
+            paneTitle.topAnchor.constraint(equalTo: content.topAnchor),
+            paneTitle.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            paneSubtitle.topAnchor.constraint(equalTo: paneTitle.bottomAnchor, constant: 2),
+            paneSubtitle.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            paneSubtitle.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor),
+            captureStack.topAnchor.constraint(equalTo: captureDoc.topAnchor),
+            captureStack.leadingAnchor.constraint(equalTo: captureDoc.leadingAnchor),
+            captureStack.trailingAnchor.constraint(equalTo: captureDoc.trailingAnchor),
+            captureStack.bottomAnchor.constraint(equalTo: captureDoc.bottomAnchor),
+            captureDoc.topAnchor.constraint(equalTo: captureScroll.contentView.topAnchor),
+            captureDoc.leadingAnchor.constraint(equalTo: captureScroll.contentView.leadingAnchor),
+            captureDoc.widthAnchor.constraint(equalTo: captureScroll.contentView.widthAnchor),
+            card.widthAnchor.constraint(equalTo: captureStack.widthAnchor),
+        ])
+        for v in [captureScroll, recScroll, deskView] as [NSView] {
+            NSLayoutConstraint.activate([
+                v.topAnchor.constraint(equalTo: paneSubtitle.bottomAnchor, constant: 16),
+                v.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                v.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            ])
+        }
+        captureScroll.bottomAnchor.constraint(equalTo: content.bottomAnchor).isActive = true
+        recScroll.bottomAnchor.constraint(equalTo: content.bottomAnchor).isActive = true
+        // A altura fixa antiga da rolagem dá lugar à altura da janela.
+        for c in recScroll.constraints where c.firstAttribute == .height { c.isActive = false }
 
         background.layoutSubtreeIfNeeded()
-        window.setContentSize(background.fittingSize)
+        window.setContentSize(NSSize(width: 190 + 24 + paneWidth + 20, height: 560))
+        showTab(0)
     }
 
     private func updateFolderLabel() {
@@ -243,20 +319,20 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     /// 0 = Captura, 1 = Gravação de tela.
     func showTab(_ index: Int) {
-        guard let window = window, let content = window.contentView else { return }
         tabs.selectedSegment = index
-        let recording = index == 1
-        for v in capturePane { v.isHidden = index != 0 }
-        recScroll.isHidden = !recording
+        sidebar?.select(index)
+        let titles = [
+            ("Captura", "Atalhos, pasta das capturas e como usar as ferramentas de marcação."),
+            ("Gravação de tela", "Perfis, área, áudio, qualidade, webcam e atalhos do gravador."),
+            ("Convertize Desk", "Conta da equipe, endereço do Desk e formato dos arquivos enviados."),
+        ]
+        paneTitle.stringValue = titles[index].0
+        paneSubtitle.stringValue = titles[index].1
+        captureScroll.isHidden = index != 0
+        recScroll.isHidden = index != 1
         deskView.isHidden = index != 2
+        if index == 1 { recView.activate() } else { recView.deactivate() }
         if index == 2 { deskView.refresh() }
-        if recording { recView.activate() } else { recView.deactivate() }
-        content.layoutSubtreeIfNeeded()
-        let size = content.fittingSize
-        let top = window.frame.maxY
-        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
-        frame.origin = NSPoint(x: window.frame.minX, y: top - frame.height)
-        window.setFrame(frame, display: true, animate: window.isVisible)
     }
 
     private func shortcutChanged(_ shortcut: Shortcut) {
@@ -305,4 +381,109 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 /// Visão com origem no topo (para o conteúdo rolável começar de cima).
 final class FlippedView: NSView {
     override var isFlipped: Bool { return true }
+}
+
+/// Barra lateral das Preferências (estilo Ajustes do Sistema): ícone do app e seções
+/// com ícones em quadradinhos coloridos.
+final class PrefsSidebar: NSVisualEffectView {
+    var onSelect: ((Int) -> Void)?
+    private var rows: [SidebarRow] = []
+
+    init(items: [(String, NSImage, NSColor)]) {
+        super.init(frame: .zero)
+        material = .sidebar
+        blendingMode = .behindWindow
+        state = .followsWindowActiveState
+
+        let icon = NSImageView(image: NSApp.applicationIconImage)
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        let name = NSTextField(labelWithString: "Recorte")
+        name.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+        let version = NSTextField(labelWithString: "Versão " + ((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"))
+        version.font = NSFont.systemFont(ofSize: 11)
+        version.textColor = .secondaryLabelColor
+        let names = NSStackView(views: [name, version])
+        names.orientation = .vertical
+        names.alignment = .leading
+        names.spacing = 0
+        let head = NSStackView(views: [icon, names])
+        head.orientation = .horizontal
+        head.spacing = 10
+
+        var views: [NSView] = [head]
+        for (i, item) in items.enumerated() {
+            let row = SidebarRow(title: item.0, image: item.1, color: item.2)
+            row.onClick = { [weak self] in
+                self?.select(i)
+                self?.onSelect?(i)
+            }
+            rows.append(row)
+            views.append(row)
+        }
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        stack.setCustomSpacing(22, after: head)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 46),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+        ])
+        for r in rows { r.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    func select(_ index: Int) {
+        for (i, r) in rows.enumerated() { r.isSelected = i == index }
+    }
+}
+
+private final class SidebarRow: NSView {
+    var onClick: (() -> Void)?
+    var isSelected = false { didSet { needsDisplay = true } }
+    private let title: String
+    private let image: NSImage
+    private let color: NSColor
+
+    init(title: String, image: NSImage, color: NSColor) {
+        self.title = title
+        self.image = image
+        self.color = color
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(equalToConstant: 28).isActive = true
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func mouseDown(with event: NSEvent) { onClick?() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isSelected {
+            NSColor.controlAccentColor.withAlphaComponent(0.85).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 7, yRadius: 7).fill()
+        }
+        let tile = NSRect(x: 8, y: bounds.midY - 10, width: 20, height: 20)
+        color.setFill()
+        NSBezierPath(roundedRect: tile, xRadius: 6, yRadius: 6).fill()
+        Icons.drawTinted(image, in: tile.insetBy(dx: 3.5, dy: 3.5), color: .white)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: isSelected ? .medium : .regular),
+            .foregroundColor: isSelected ? NSColor.white : NSColor.labelColor,
+        ]
+        let size = (title as NSString).size(withAttributes: attrs)
+        (title as NSString).draw(at: NSPoint(x: tile.maxX + 10, y: bounds.midY - size.height / 2), withAttributes: attrs)
+    }
 }

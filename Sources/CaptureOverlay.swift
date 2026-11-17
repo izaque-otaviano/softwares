@@ -373,9 +373,29 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             moveButton = IconButton(image: Icons.move, tip: "")
             let cancel = IconButton(image: Icons.close, tip: "Cancelar (Esc)")
             cancel.onClick = { [weak self] in self?.onCancel?() }
-            let record = AccentButton(title: "Gravar", tip: "Gravar esta área (Enter)", width: 92)
+            // Fontes de áudio e webcam (salvas no perfil atual), tamanho da área e REC.
+            var profile = RecSettings.current
+            func toggle(_ image: NSImage, _ tip: String, _ key: WritableKeyPath<RecProfile, Bool>) -> IconButton {
+                let b = IconButton(image: image, tip: tip)
+                b.isSelected = profile[keyPath: key]
+                b.onClick = { [weak b] in
+                    profile[keyPath: key].toggle()
+                    RecSettings.save(profile)
+                    b?.isSelected = profile[keyPath: key]
+                }
+                return b
+            }
+            let system = toggle(RecTheme.symbol("speaker.wave.2.fill", fallback: RecIcons.speaker), "Som do Mac", \.systemAudio)
+            let mic = toggle(RecTheme.symbol("mic.fill", fallback: RecIcons.mic), "Microfone", \.microphone)
+            let cam = toggle(RecTheme.symbol("web.camera", fallback: RecIcons.camera), "Webcam", \.webcam)
+            sizeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            sizeLabel.textColor = .white
+            sizeLabel.alignment = .center
+            sizeLabel.translatesAutoresizingMaskIntoConstraints = false
+            sizeLabel.widthAnchor.constraint(equalToConstant: 96).isActive = true
+            let record = RecCircleButton(diameter: 30)
             record.onClick = { [weak self] in self?.onConfirm?() }
-            items = [cancel, record]
+            items = [cancel, makeSeparator(), system, mic, cam, makeSeparator(), sizeLabel, record]
         } else {
 
             moveButton = IconButton(image: Icons.move, tip: "Selecionar e mover marcações ou a área (M) · ⌫ apaga")
@@ -464,6 +484,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     }
 
     private let tipView = TipView()
+    private let sizeLabel = NSTextField(labelWithString: "")
 
     private func showTip(for button: PaletteButton?) {
         guard let b = button, !palette.isHidden else {
@@ -507,6 +528,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         if y < bounds.minY + 8 { y = sel.maxY + 10 }
         if y + size.height > bounds.maxY - 8 { y = sel.minY + 10 }
         palette.frame = NSRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height)
+        if mode == .recordArea {
+            sizeLabel.stringValue = "\(Int((sel.width * pixelScale).rounded())) × \(Int((sel.height * pixelScale).rounded()))"
+        }
         palette.isHidden = false
         window?.invalidateCursorRects(for: self)
     }
@@ -609,6 +633,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         // Borda da seleção
         let border = NSBezierPath(rect: sel.insetBy(dx: -0.5, dy: -0.5))
         border.lineWidth = 1
+        if mode == .recordArea {
+            border.lineWidth = 1.5
+            border.setLineDash([5, 4], count: 2, phase: 0)
+        }
         NSColor.white.withAlphaComponent(0.9).setStroke()
         border.stroke()
 

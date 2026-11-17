@@ -487,6 +487,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "prefs":
             showPreferences(nil)
             return
+        case "recarea":
+            guard let screen = NSScreen.main, let image = NSImage(contentsOfFile: ProcessInfo.processInfo.environment["RECORTE_DEMO_IMAGE"] ?? ""),
+                  let o = CaptureOverlay(screen: screen, mode: .recordArea, demoImage: image) else { return }
+            overlay = o
+            o.show()
+            let f = screen.frame
+            o.view.demo(selection: NSRect(x: f.width * 0.1, y: f.height * 0.25, width: f.width * 0.55, height: f.height * 0.5),
+                        annotations: [], selecting: false)
+            return
         case "recbar":
             RecSetupBar.shared.show()
             return

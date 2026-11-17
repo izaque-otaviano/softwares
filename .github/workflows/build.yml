@@ -64,6 +64,8 @@ jobs:
           RECORTE_DEMO=recbar "$APPBIN" & PID=$!
           sleep 6; screencapture -x screenshots/barra-gravacao.png; kill $PID || true
           osascript -e 'quit app "Preview"' || true
+          RECORTE_DEMO=recarea RECORTE_DEMO_IMAGE="$PWD/scripts/sample.png" "$APPBIN" & PID=$!
+          sleep 6; screencapture -x screenshots/area-gravacao.png; kill $PID || true
           RECORTE_DEMO=prefsrec "$APPBIN" & PID=$!
           sleep 7; screencapture -x screenshots/prefs-gravacao.png; kill $PID || true
       - name: Teste do envio ao Convertize Desk (servidor local) e da volta do login

@@ -345,9 +345,171 @@ class BarPanel: NSPanel {
     }
 }
 
-// MARK: - Barra de configuração (antes de gravar)
+// MARK: - Painel de gravação (antes de gravar)
 
-/// Abre com "Gravar tela": escolher o que gravar, fontes de áudio, webcam e opções.
+/// Bloco de modo (Área, Tela, Janela, Webcam): ícone em cima, nome embaixo.
+final class ModeTile: NSView {
+    var onClick: (() -> Void)?
+    var isOn = false { didSet { needsDisplay = true } }
+    var subtitle: String? { didSet { needsDisplay = true } }
+    var isEnabled = true { didSet { alphaValue = isEnabled ? 1 : 0.35 } }
+    private let image: NSImage
+    private let title: String
+    private var hover = false { didSet { needsDisplay = true } }
+
+    init(image: NSImage, title: String, tip: String) {
+        self.image = image
+        self.title = title
+        super.init(frame: .zero)
+        toolTip = tip
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title)
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 64).isActive = true
+        heightAnchor.constraint(equalToConstant: 56).isActive = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hover = true }
+    override func mouseExited(with event: NSEvent) { hover = false }
+    override func mouseUp(with event: NSEvent) {
+        if isEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let r = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let shape = NSBezierPath(roundedRect: r, xRadius: 9, yRadius: 9)
+        if isOn {
+            RecTheme.lavender.withAlphaComponent(0.2).setFill()
+            shape.fill()
+            shape.lineWidth = 1
+            RecTheme.lavender.withAlphaComponent(0.8).setStroke()
+            shape.stroke()
+        } else {
+            NSColor(white: 1, alpha: hover ? 0.1 : 0.05).setFill()
+            shape.fill()
+        }
+        let iconColor = isOn ? RecTheme.lavender : RecTheme.text
+        Icons.drawTinted(image, in: NSRect(x: bounds.midX - 10, y: bounds.maxY - 28, width: 20, height: 20), color: iconColor)
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),
+                                                    .foregroundColor: isOn ? RecTheme.text : RecTheme.secondary]
+        let text = subtitle.map { "\(title) \($0)" } ?? title
+        let size = (text as NSString).size(withAttributes: attrs)
+        (text as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: 7), withAttributes: attrs)
+    }
+}
+
+/// O botão REC: disco vermelho com anel lavanda.
+final class RecCircleButton: NSView {
+    var onClick: (() -> Void)?
+    private var hover = false { didSet { needsDisplay = true } }
+    private var pressed = false { didSet { needsDisplay = true } }
+    private let diameter: CGFloat
+
+    init(diameter: CGFloat) {
+        self.diameter = diameter
+        super.init(frame: .zero)
+        toolTip = "Começar a gravar (Enter)"
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Gravar")
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: diameter).isActive = true
+        heightAnchor.constraint(equalToConstant: diameter).isActive = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hover = true }
+    override func mouseExited(with event: NSEvent) { hover = false }
+    override func mouseDown(with event: NSEvent) { pressed = true }
+    override func mouseUp(with event: NSEvent) {
+        pressed = false
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5))
+        ring.lineWidth = 2
+        RecTheme.lavender.withAlphaComponent(hover ? 1 : 0.75).setStroke()
+        ring.stroke()
+        let inset = diameter * 0.13 + (pressed ? 1.5 : 0)
+        RecTheme.record.withAlphaComponent(hover ? 1 : 0.92).setFill()
+        NSBezierPath(ovalIn: bounds.insetBy(dx: inset, dy: inset)).fill()
+        if diameter >= 40 {
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: diameter * 0.22, weight: .heavy),
+                                                        .foregroundColor: NSColor.white]
+            let size = ("REC" as NSString).size(withAttributes: attrs)
+            ("REC" as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+                                     withAttributes: attrs)
+        }
+    }
+}
+
+/// Botão redondo pequeno da linha de baixo (cursor, cliques, som, microfone).
+final class RoundToggle: NSView {
+    var onClick: (() -> Void)?
+    var isOn = false { didSet { needsDisplay = true } }
+    private let image: NSImage
+    let meter = MiniMeter()
+
+    init(image: NSImage, tip: String, withMeter: Bool = false) {
+        self.image = image
+        super.init(frame: .zero)
+        toolTip = tip
+        setAccessibilityRole(.checkBox)
+        setAccessibilityLabel(tip)
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 28).isActive = true
+        heightAnchor.constraint(equalToConstant: 28).isActive = true
+        if withMeter {
+            meter.frame = NSRect(x: 5, y: 2, width: 18, height: 2.5)
+            addSubview(meter)
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5))
+        (isOn ? RecTheme.lavender.withAlphaComponent(0.85) : NSColor(white: 1, alpha: 0.1)).setFill()
+        circle.fill()
+        let color: NSColor = isOn ? RecTheme.navy.withAlphaComponent(1) : RecTheme.secondary
+        Icons.drawTinted(image, in: NSRect(x: bounds.midX - 8, y: bounds.midY - 7, width: 16, height: 16), color: color)
+        meter.isHidden = !isOn
+    }
+}
+
+/// Abre com "Gravar tela": modo (Área, Tela, Janela), webcam, fontes, formato e REC.
 final class RecSetupBar: NSObject {
     static let shared = RecSetupBar()
 
@@ -355,17 +517,19 @@ final class RecSetupBar: NSObject {
 
     private var panel: BarPanel?
     private var target: Target = .fullScreen
-    private var targetButtons: [Target: BarButton] = [:]
-    private var systemButton: BarButton!
-    private var micButton: BarButton!
-    private var webcamButton: BarButton!
-    private let systemMeter = MiniMeter()
-    private let micMeter = MiniMeter()
+    private var tiles: [Target: ModeTile] = [:]
+    private var webcamTile: ModeTile!
+    private var cursorToggle: RoundToggle!
+    private var clicksToggle: RoundToggle!
+    private var systemToggle: RoundToggle!
+    private var micToggle: RoundToggle!
+    private let formatButton = NSButton(title: "", target: nil, action: nil)
+    private let profileButton = NSButton(title: "", target: nil, action: nil)
     private let monitor = AudioMonitor()
     private var meterTimer: Timer?
     private var profile = RecSettings.current
 
-    /// Chamado ao clicar em "Gravar": alvo escolhido e perfil ajustado.
+    /// Chamado ao clicar em REC: alvo escolhido e perfil ajustado.
     var onRecord: ((Target, RecProfile) -> Void)?
 
     var isVisible: Bool { return panel?.isVisible ?? false }
@@ -373,19 +537,17 @@ final class RecSetupBar: NSObject {
     func show() {
         if isVisible { panel?.makeKeyAndOrderFront(nil); return }
         profile = RecSettings.current
-        switch profile.areaMode {
-        case .fullScreen: target = .fullScreen
-        case .lastArea, .select: target = .area
-        }
+        target = profile.areaMode == .fullScreen ? .fullScreen : .area
         let p = build()
         panel = p
         let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main
         let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        p.setFrameOrigin(NSPoint(x: (area.midX - p.frame.width / 2).rounded(), y: area.minY + 28))
+        p.setFrameOrigin(NSPoint(x: (area.midX - p.frame.width / 2).rounded(),
+                                 y: (area.maxY - p.frame.height - 60).rounded()))
         p.alphaValue = 0
         p.makeKeyAndOrderFront(nil)
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.18
+            ctx.duration = 0.16
             p.animator().alphaValue = 1
         }, completionHandler: nil)
         startMeters()
@@ -399,59 +561,100 @@ final class RecSetupBar: NSObject {
         panel = nil
     }
 
+    private func small(_ button: NSButton, title: String) {
+        button.isBordered = false
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: RecTheme.secondary])
+    }
+
     private func build() -> BarPanel {
+        // Linha de cima: título, perfil, pasta, fechar.
+        let title = NSTextField(labelWithString: "Gravar tela")
+        title.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        title.textColor = RecTheme.text
+        profileButton.target = self
+        profileButton.action = #selector(profileMenu(_:))
+        profileButton.toolTip = "Trocar o perfil de gravação"
+        let folder = BarButton(image: RecTheme.symbol("folder", fallback: Icons.save), tip: "Abrir a pasta das gravações")
+        folder.onClick = { (NSApp.delegate as? AppDelegate)?.showRecordingsFolder(nil) }
         let close = BarButton(image: RecTheme.symbol("xmark", fallback: RecIcons.close), tip: "Fechar (Esc)")
         close.onClick = { [weak self] in self?.close() }
+        for b in [folder, close] {
+            b.translatesAutoresizingMaskIntoConstraints = false
+            b.widthAnchor.constraint(equalToConstant: 26).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        }
+        let top = NSStackView(views: [title, profileButton, NSView(), folder, close])
+        top.orientation = .horizontal
+        top.spacing = 6
 
-        let full = BarButton(image: RecTheme.symbol("rectangle", fallback: RecIcons.fullScreen),
-                             title: "Tela inteira", tip: "Gravar a tela inteira", toggle: true)
-        let window = BarButton(image: RecTheme.symbol("macwindow", fallback: RecIcons.window),
-                               title: "Janela", tip: "Gravar uma janela (clique nela)", toggle: true)
-        let area = BarButton(image: RecTheme.symbol("rectangle.dashed", fallback: RecIcons.area),
-                             title: "Área", tip: "Gravar uma área (arraste para escolher)", toggle: true)
-        targetButtons = [.fullScreen: full, .window: window, .area: area]
-        for (t, b) in targetButtons { b.onClick = { [weak self] in self?.select(t) } }
+        // Blocos de modo + webcam + REC.
+        let area = ModeTile(image: RecTheme.symbol("viewfinder", fallback: RecIcons.area), title: "Área",
+                            tip: "Arraste para escolher a área")
+        let full = ModeTile(image: RecTheme.symbol("display", fallback: RecIcons.fullScreen), title: "Tela",
+                            tip: "Gravar a tela inteira")
+        let window = ModeTile(image: RecTheme.symbol("macwindow", fallback: RecIcons.window), title: "Janela",
+                              tip: "Clique na janela a gravar")
+        tiles = [.area: area, .fullScreen: full, .window: window]
+        for (t, tile) in tiles { tile.onClick = { [weak self] in self?.target = t; self?.refresh() } }
+        webcamTile = ModeTile(image: RecTheme.symbol("web.camera", fallback: RecIcons.camera), title: "Webcam",
+                              tip: "Mostrar a webcam no canto do vídeo")
+        webcamTile.onClick = { [weak self] in self?.toggle(\.webcam) }
+        let rec = RecCircleButton(diameter: 50)
+        rec.onClick = { [weak self] in self?.record() }
+        let tilesRow = NSStackView(views: [area, full, window, webcamTile, NSView(), rec])
+        tilesRow.orientation = .horizontal
+        tilesRow.spacing = 6
+        tilesRow.alignment = .centerY
+        tilesRow.setCustomSpacing(14, after: webcamTile)
 
-        systemButton = BarButton(image: RecTheme.symbol("speaker.wave.2", fallback: RecIcons.speaker),
-                                 title: "Som do Mac", tip: "Gravar o som do Mac", toggle: true)
-        systemButton.onClick = { [weak self] in self?.toggle(\.systemAudio) }
-        micButton = BarButton(image: RecTheme.symbol("mic", fallback: RecIcons.mic),
-                              title: "Microfone", tip: "Gravar o microfone", toggle: true)
-        micButton.onClick = { [weak self] in self?.toggle(\.microphone) }
-        webcamButton = BarButton(image: RecTheme.symbol("video", fallback: RecIcons.camera),
-                                 title: "Webcam", tip: "Sobrepor a webcam no vídeo", toggle: true)
-        webcamButton.onClick = { [weak self] in self?.toggle(\.webcam) }
-
-        let options = BarButton(image: RecTheme.symbol("gearshape", fallback: RecIcons.gear),
-                                title: "Opções", tip: "Perfil, contagem, cliques, qualidade, microfone e tela")
+        // Linha de baixo: cursor, cliques, som do Mac, microfone · formato · opções.
+        cursorToggle = RoundToggle(image: RecTheme.symbol("cursorarrow", fallback: Icons.arrow), tip: "Mostrar o cursor")
+        cursorToggle.onClick = { [weak self] in
+            guard let self = self else { return }
+            self.profile.showCursor = !(self.profile.showCursor ?? true)
+            RecSettings.save(self.profile)
+            self.refresh()
+        }
+        clicksToggle = RoundToggle(image: RecTheme.symbol("cursorarrow.click", fallback: Icons.ellipse), tip: "Destacar cliques")
+        clicksToggle.onClick = { [weak self] in self?.toggle(\.clickHighlight) }
+        systemToggle = RoundToggle(image: RecTheme.symbol("speaker.wave.2.fill", fallback: RecIcons.speaker),
+                                   tip: "Som do Mac", withMeter: true)
+        systemToggle.onClick = { [weak self] in self?.toggle(\.systemAudio) }
+        micToggle = RoundToggle(image: RecTheme.symbol("mic.fill", fallback: RecIcons.mic), tip: "Microfone", withMeter: true)
+        micToggle.onClick = { [weak self] in self?.toggle(\.microphone) }
+        formatButton.target = self
+        formatButton.action = #selector(qualityMenu(_:))
+        formatButton.toolTip = "Qualidade do vídeo"
+        let options = BarButton(image: RecTheme.symbol("gearshape", fallback: RecIcons.gear), tip: "Mais opções")
+        options.translatesAutoresizingMaskIntoConstraints = false
+        options.widthAnchor.constraint(equalToConstant: 26).isActive = true
+        options.heightAnchor.constraint(equalToConstant: 26).isActive = true
         options.onClick = { [weak self, weak options] in
             guard let self = self, let o = options else { return }
             self.showOptionsMenu(from: o)
         }
+        let bottom = NSStackView(views: [cursorToggle, clicksToggle, systemToggle, micToggle, NSView(), formatButton, options])
+        bottom.orientation = .horizontal
+        bottom.spacing = 6
+        bottom.alignment = .centerY
 
-        let record = RecordButton(frame: .zero)
-        record.onClick = { [weak self] in self?.record() }
-
-        let systemStack = withMeter(systemButton, systemMeter)
-        let micStack = withMeter(micButton, micMeter)
-
-        let row = NSStackView(views: [close, barSeparator(), full, window, area, barSeparator(),
-                                      systemStack, micStack, webcamButton, barSeparator(), options, record])
-        row.orientation = .horizontal
-        row.spacing = 2
-        row.alignment = .centerY
-        row.setCustomSpacing(8, after: close)
-        row.setCustomSpacing(10, after: options)
-        row.translatesAutoresizingMaskIntoConstraints = false
+        let column = NSStackView(views: [top, tilesRow, bottom])
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 10
+        column.translatesAutoresizingMaskIntoConstraints = false
+        for row in [top, tilesRow, bottom] { row.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true }
 
         let bg = BarBackground(radius: 14)
-        bg.addSubview(row)
+        bg.addSubview(column)
         NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: 8),
-            row.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -8),
-            row.topAnchor.constraint(equalTo: bg.topAnchor, constant: 7),
-            row.bottomAnchor.constraint(equalTo: bg.bottomAnchor, constant: -7),
+            column.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: 14),
+            column.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -14),
+            column.topAnchor.constraint(equalTo: bg.topAnchor, constant: 10),
+            column.bottomAnchor.constraint(equalTo: bg.bottomAnchor, constant: -12),
         ])
+        refresh()
         bg.layoutSubtreeIfNeeded()
         let size = bg.fittingSize
         let p = BarPanel(size: size)
@@ -464,44 +667,26 @@ final class RecSetupBar: NSObject {
             default: return false
             }
         }
-        refresh()
         return p
     }
 
-    private func withMeter(_ button: BarButton, _ meter: MiniMeter) -> NSView {
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        button.translatesAutoresizingMaskIntoConstraints = false
-        meter.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(button)
-        container.addSubview(meter)
-        NSLayoutConstraint.activate([
-            button.topAnchor.constraint(equalTo: container.topAnchor),
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            meter.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 31),
-            meter.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
-            meter.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-            meter.heightAnchor.constraint(equalToConstant: 3),
-        ])
-        return container
-    }
-
     private func refresh() {
-        for (t, b) in targetButtons { b.isOn = t == target }
-        systemButton.isOn = profile.systemAudio
-        micButton.isOn = profile.microphone
-        webcamButton.isOn = profile.webcam
-        webcamButton.isEnabled = !WebcamSource.cameras().isEmpty
-        if !webcamButton.isEnabled { webcamButton.toolTip = "Nenhuma câmera conectada" }
-        systemMeter.isHidden = !profile.systemAudio
-        micMeter.isHidden = !profile.microphone
-    }
-
-    private func select(_ t: Target) {
-        target = t
-        refresh()
+        for (t, tile) in tiles { tile.isOn = t == target }
+        let hasCamera = !WebcamSource.cameras().isEmpty
+        webcamTile.isEnabled = hasCamera
+        webcamTile.isOn = profile.webcam && hasCamera
+        if !hasCamera { webcamTile.toolTip = "Nenhuma câmera conectada" }
+        cursorToggle.isOn = profile.showCursor ?? true
+        clicksToggle.isOn = profile.clickHighlight
+        systemToggle.isOn = profile.systemAudio
+        micToggle.isOn = profile.microphone
+        small(profileButton, title: "Perfil: \(profile.name) ▾")
+        let screen = profile.displayID.flatMap { id in NSScreen.screens.first { $0.displayID == id } } ?? NSScreen.main
+        let px = screen.map { CGSize(width: $0.frame.width * $0.backingScaleFactor, height: $0.frame.height * $0.backingScaleFactor) }
+            ?? CGSize(width: 1920, height: 1080)
+        let fmt = RecVideoFormat(capturePixels: px, quality: profile.videoQuality)
+        let label = target == .fullScreen ? "\(fmt.width)×\(fmt.height) · \(fmt.fps) fps ▾" : "até \(fmt.height)p · \(fmt.fps) fps ▾"
+        small(formatButton, title: label)
     }
 
     private func toggle(_ key: WritableKeyPath<RecProfile, Bool>) {
@@ -516,8 +701,8 @@ final class RecSetupBar: NSObject {
         meterTimer?.invalidate()
         let t = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.systemMeter.value = self.monitor.level(.system)
-            self.micMeter.value = self.monitor.level(.mic)
+            self.systemToggle.meter.value = self.monitor.level(.system)
+            self.micToggle.meter.value = self.monitor.level(.mic)
         }
         RunLoop.main.add(t, forMode: .common)
         meterTimer = t
@@ -531,7 +716,37 @@ final class RecSetupBar: NSObject {
         onRecord?(chosen, p)
     }
 
-    // MARK: Opções
+    // MARK: Menus
+
+    @objc private func profileMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for name in RecProfile.names {
+            let i = ClosureMenuItem(title: name) { [weak self] in
+                RecSettings.currentProfileName = name
+                self?.profile = RecSettings.current
+                self?.target = self?.profile.areaMode == .fullScreen ? .fullScreen : .area
+                self?.refresh()
+                self?.startMeters()
+            }
+            i.state = name == profile.name ? .on : .off
+            menu.addItem(i)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    @objc private func qualityMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for q in RecVideoQuality.allCases {
+            let i = ClosureMenuItem(title: q.title) { [weak self] in
+                self?.profile.videoQuality = q
+                if let p = self?.profile { RecSettings.save(p) }
+                self?.refresh()
+            }
+            i.state = q == profile.videoQuality ? .on : .off
+            menu.addItem(i)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
 
     private func showOptionsMenu(from view: NSView) {
         let menu = NSMenu()
@@ -540,33 +755,7 @@ final class RecSetupBar: NSObject {
             i.state = on ? .on : .off
             return i
         }
-        let profiles = NSMenuItem(title: "Perfil: \(profile.name)", action: nil, keyEquivalent: "")
-        let pm = NSMenu()
-        for name in RecProfile.names {
-            pm.addItem(item(name, name == profile.name) { [weak self] in
-                RecSettings.currentProfileName = name
-                self?.profile = RecSettings.current
-                self?.refresh()
-                self?.startMeters()
-            })
-        }
-        profiles.submenu = pm
-        menu.addItem(profiles)
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Contagem regressiva de 3 s", profile.countdown) { [weak self] in self?.toggle(\.countdown) })
-        menu.addItem(item("Destacar cliques", profile.clickHighlight) { [weak self] in self?.toggle(\.clickHighlight) })
-
-        let quality = NSMenuItem(title: "Qualidade do vídeo", action: nil, keyEquivalent: "")
-        let qm = NSMenu()
-        for q in RecVideoQuality.allCases {
-            qm.addItem(item(q.title, q == profile.videoQuality) { [weak self] in
-                self?.profile.videoQuality = q
-                if let p = self?.profile { RecSettings.save(p) }
-            })
-        }
-        quality.submenu = qm
-        menu.addItem(quality)
-
         let mics = NSMenuItem(title: "Microfone", action: nil, keyEquivalent: "")
         let mm = NSMenu()
         mm.addItem(item("Padrão do sistema", profile.micDeviceUID == nil) { [weak self] in
@@ -583,26 +772,26 @@ final class RecSetupBar: NSObject {
         }
         mics.submenu = mm
         menu.addItem(mics)
-
         if NSScreen.screens.count > 1 {
             let screens = NSMenuItem(title: "Tela", action: nil, keyEquivalent: "")
             let sm = NSMenu()
             sm.addItem(item("Onde está o mouse", profile.displayID == nil) { [weak self] in
                 self?.profile.displayID = nil
                 if let p = self?.profile { RecSettings.save(p) }
+                self?.refresh()
             })
             for s in NSScreen.screens {
                 let id = s.displayID
                 sm.addItem(item(s.recorteName, profile.displayID == id) { [weak self] in
                     self?.profile.displayID = id
                     if let p = self?.profile { RecSettings.save(p) }
+                    self?.refresh()
                 })
             }
             screens.submenu = sm
             menu.addItem(screens)
         }
         if RecSettings.lastArea?.validScreen() != nil {
-            menu.addItem(NSMenuItem.separator())
             menu.addItem(item("Gravar a última área", false) { [weak self] in
                 guard let self = self else { return }
                 RecSettings.save(self.profile)
@@ -614,7 +803,7 @@ final class RecSetupBar: NSObject {
         menu.addItem(item("Mais preferências…", false) {
             (NSApp.delegate as? AppDelegate)?.showRecordingPreferences(nil)
         })
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 6), in: view)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 4), in: view)
     }
 }
 
