@@ -304,10 +304,21 @@ enum RecLibrary {
     static func markers(for url: URL) -> [RecMarker] {
         if let item = item(for: url) { return item.markers }
         let asset = AVURLAsset(url: url)
-        let groups = asset.chapterMetadataGroups(bestMatchingPreferredLanguages: ["pt", "en"])
+        let groups = readChapters(asset)
         return groups.compactMap { group in
             guard let title = group.items.first?.stringValue else { return nil }
             return RecMarker(time: CMTimeGetSeconds(group.timeRange.start), name: title)
         }.filter { $0.name != "Início" }
     }
+}
+
+/// Lê os capítulos do arquivo em qualquer idioma.
+func readChapters(_ asset: AVAsset) -> [AVTimedMetadataGroup] {
+    var locales = asset.availableChapterLocales
+    if locales.isEmpty { locales = [Locale(identifier: "und")] }
+    for locale in locales {
+        let groups = asset.chapterMetadataGroups(withTitleLocale: locale, containingItemsWithCommonKeys: [.commonKeyTitle])
+        if !groups.isEmpty { return groups }
+    }
+    return asset.chapterMetadataGroups(bestMatchingPreferredLanguages: Locale.preferredLanguages)
 }

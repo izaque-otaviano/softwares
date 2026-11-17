@@ -69,6 +69,8 @@ extension AppDelegate {
         func log(_ s: String) { print(String(format: "[%.1fs] ", Date().timeIntervalSince(start)) + s) }
         r.onFinished = { url in
             log("Vídeo pronto: \(url.lastPathComponent)")
+            try? FileManager.default.removeItem(atPath: "/tmp/recorte-ultimo.mp4")
+            try? FileManager.default.copyItem(atPath: url.path, toPath: "/tmp/recorte-ultimo.mp4")
             let ok = self.describe(url, expectedDuration: 7)
             self.testTrim(url) { trimOK in
                 print(ok && trimOK ? "RESULTADO: OK" : "RESULTADO: FALHA")
@@ -119,7 +121,8 @@ extension AppDelegate {
         let video = asset.tracks(withMediaType: .video)
         let audio = asset.tracks(withMediaType: .audio)
         let text = asset.tracks(withMediaType: .text)
-        let chapters = asset.chapterMetadataGroups(bestMatchingPreferredLanguages: ["pt"])
+        let chapters = readChapters(asset)
+        print("Idiomas de capítulos: \(asset.availableChapterLocales.map { $0.identifier })")
         print(String(format: "Arquivo: %@ · %.2f s · tocável: %@", url.lastPathComponent, d, asset.isPlayable ? "sim" : "não"))
         if let v = video.first {
             print("Vídeo: \(Int(v.naturalSize.width))×\(Int(v.naturalSize.height)) · \(String(format: "%.1f", v.nominalFrameRate)) fps "
