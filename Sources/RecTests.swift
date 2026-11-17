@@ -12,6 +12,18 @@ extension AppDelegate {
         case "sources":
             printSources()
             exit(0)
+        case "deskblock":
+            DeskClient.serverAddress = "http://203.0.113.10"
+            print("uploadURL: \(DeskClient.uploadURL?.absoluteString ?? "nil")")
+            for h in ["192.168.0.20", "10.1.2.3", "172.20.0.1", "172.32.0.1", "203.0.113.10", "desk.convertize.com.br", "servidor", "mac.local"] {
+                print("privado(\(h)) = \(DeskClient.isPrivateHost(h))")
+            }
+            let f = FileManager.default.temporaryDirectory.appendingPathComponent("x.png")
+            try? Data([1]).write(to: f)
+            DeskClient.shared.send(DeskClient.Item(file: f, title: "t", kind: "imagem", fields: [:])) { error in
+                print("Envio http público: \(error?.localizedDescription ?? "PERMITIDO (errado)")")
+                exit(0)
+            }
         case "desk":
             DeskClient.serverAddress = "127.0.0.1:8765"
             DeskClient.uploadPath = "/api/capturas/"

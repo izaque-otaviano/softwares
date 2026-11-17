@@ -83,7 +83,10 @@ final class DeskClient: NSObject {
         let challenge = DeskClient.base64URL(DeskClient.sha256(Data(verifier.utf8)))
         let listener: NWListener
         do {
-            listener = try NWListener(using: .tcp, on: .any)
+            // Só aceita conexões do próprio Mac (127.0.0.1), nunca da rede.
+            let parameters = NWParameters.tcp
+            parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: .any)
+            listener = try NWListener(using: parameters)
         } catch {
             completion(error)
             return
@@ -135,6 +138,14 @@ final class DeskClient: NSObject {
     private var redirectURI = ""
 
     private func handleCallback(_ connection: NWConnection, state: String, verifier: String, listener: NWListener) {
+        // Defesa extra: recusa qualquer conexão que não venha do próprio Mac.
+        if case .hostPort(let host, _) = connection.endpoint {
+            let text = "\(host)"
+            guard text.hasPrefix("127.") || text == "::1" || text == "localhost" else {
+                connection.cancel()
+                return
+            }
+        }
         connection.start(queue: .main)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
             guard let self = self else { return }
@@ -368,6 +379,12 @@ final class DeskClient: NSObject {
             completion(RecError.message("Defina o endereço do Desk nas Preferências › Convertize Desk."))
             return
         }
+        // Sem criptografia, o token da conta só pode trafegar dentro da rede interna.
+        if target.scheme?.lowercased() != "https", !DeskClient.isPrivateHost(target.host ?? "") {
+            completion(RecError.message("Por segurança, o envio sem criptografia (http) só é permitido para "
+                + "endereços da rede interna. Use https:// no endereço do Desk."))
+            return
+        }
         withAccessToken { result in
             switch result {
             case .failure(let error):
@@ -446,6 +463,19 @@ final class DeskClient: NSObject {
         }
         write("\r\n--\(boundary)--\r\n")
         return (url, boundary)
+    }
+
+    /// Endereço da rede interna? (127.x, 10.x, 172.16–31.x, 192.168.x, 169.254.x, localhost, *.local, nome sem ponto)
+    static func isPrivateHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        if h == "localhost" || h.hasSuffix(".local") || (!h.isEmpty && !h.contains(".")) { return true }
+        let parts = h.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4, h.split(separator: ".").count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
+        switch (parts[0], parts[1]) {
+        case (127, _), (10, _), (192, 168), (169, 254): return true
+        case (172, 16...31): return true
+        default: return false
+        }
     }
 
     // MARK: Utilidades

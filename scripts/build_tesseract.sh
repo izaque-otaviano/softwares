@@ -23,10 +23,20 @@ export PKG_CONFIG_LIBDIR="$WORK/empty"
 export PKG_CONFIG_PATH=""
 cd "$WORK"
 
+# Downloads conferidos: o pacote da Leptonica por SHA-256; o Tesseract e os dicionários
+# por commit fixo do Git (o próprio Git confere o conteúdo pelo hash).
+LEPT_SHA256=155302ee914668c27b6fe3ca9ff2da63b245f6d62f3061c8f27563774b8ae2d6
+TESS_COMMIT=f38e7a7ba850b668d4505dd4c712238d7ec63ca8
+TESSDATA_COMMIT=65727574dfcd264acbb0c3e07860e4e9e9b22185
+
 curl -fsSL -o lept.tar.gz "https://github.com/DanBloomberg/leptonica/releases/download/$LEPT_VERSION/leptonica-$LEPT_VERSION.tar.gz"
-curl -fsSL -o tess.tar.gz "https://github.com/tesseract-ocr/tesseract/archive/refs/tags/$TESS_VERSION.tar.gz"
+echo "$LEPT_SHA256  lept.tar.gz" | shasum -a 256 -c -
 tar xzf lept.tar.gz
-tar xzf tess.tar.gz
+
+git init -q "tesseract-$TESS_VERSION"
+git -C "tesseract-$TESS_VERSION" fetch -q --depth 1 https://github.com/tesseract-ocr/tesseract "$TESS_COMMIT"
+git -C "tesseract-$TESS_VERSION" checkout -q FETCH_HEAD
+[ "$(git -C "tesseract-$TESS_VERSION" rev-parse HEAD)" = "$TESS_COMMIT" ] || { echo "Tesseract: commit inesperado"; exit 1; }
 
 COMMON=(
   -DCMAKE_BUILD_TYPE=Release
@@ -68,7 +78,7 @@ strip -x "$OUT/bin/tesseract" || true
 
 for LANG in por eng; do
   curl -fsSL -o "$OUT/tessdata/$LANG.traineddata" \
-    "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$LANG.traineddata"
+    "https://github.com/tesseract-ocr/tessdata_fast/raw/$TESSDATA_COMMIT/$LANG.traineddata"
 done
 
 echo "▸ Dependências do binário:"
