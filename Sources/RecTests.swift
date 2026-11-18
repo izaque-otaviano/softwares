@@ -24,6 +24,30 @@ extension AppDelegate {
                 print("Envio http público: \(error?.localizedDescription ?? "PERMITIDO (errado)")")
                 exit(0)
             }
+        case "deskconfig":
+            // Configuração diferente do padrão: PUT, JSON, nomes de campos próprios, link na resposta.
+            DeskClient.serverAddress = "127.0.0.1:8765"
+            DeskClient.uploadPath = "/api/v1/prints/"
+            DeskClient.set("method", "PUT")
+            DeskClient.set("body", "json")
+            DeskClient.set("fileField", "imagem")
+            DeskClient.set("fields", "title={titulo}\nkind={tipo}\nlength={duracao}\nfixo=valor")
+            DeskClient.set("success", "201")
+            DeskClient.set("linkKey", "data.link")
+            DeskClient.set("authHeader", "X-Token")
+            DeskClient.set("authPrefix", "-")
+            DeskClient.shared.sendTest { ok, detail in
+                print("Teste configurado: \(ok) \(detail.replacingOccurrences(of: "\n", with: " | "))")
+                print("Link lido da resposta: \(DeskClient.shared.lastLink ?? "nenhum")")
+                DeskClient.set("maxImageMB", "0.00001")
+                DeskClient.shared.sendTest { ok2, detail2 in
+                    print("Com limite de tamanho: \(ok2) \(detail2.prefix(120))")
+                    for k in ["method", "body", "fileField", "fields", "success", "linkKey", "authHeader", "authPrefix", "maxImageMB"] {
+                        UserDefaults.standard.removeObject(forKey: "desk." + k)
+                    }
+                    exit(0)
+                }
+            }
         case "desk":
             DeskClient.serverAddress = "127.0.0.1:8765"
             DeskClient.uploadPath = "/api/capturas/"

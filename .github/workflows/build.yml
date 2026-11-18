@@ -78,6 +78,10 @@ jobs:
           RECORTE_TEST=desk RECORTE_TEST_DESK_TOKEN=token-de-teste RECORTE_DEMO_IMAGE="$PWD/scripts/sample.png" "$APPBIN" 2>&1 | grep --line-buffered -v IOService
           sleep 1; cat desk-server.log
           RECORTE_TEST=deskblock RECORTE_TEST_DESK_TOKEN=token-de-teste "$APPBIN" 2>&1 | grep --line-buffered -v IOService
+          RECORTE_TEST=deskconfig RECORTE_TEST_DESK_TOKEN=token-de-teste "$APPBIN" 2>&1 | grep --line-buffered -v IOService
+          sleep 1; tail -1 desk-server.log
+          RECORTE_DEMO=prefsdesk "$APPBIN" & PID=$!
+          sleep 7; screencapture -x screenshots/prefs-desk.png; kill $PID || true
           # Login: o app sobe 127.0.0.1:<porta>/callback; simulamos a volta do navegador.
           RECORTE_TEST=login "$APPBIN" > login.log 2>&1 &
           sleep 4

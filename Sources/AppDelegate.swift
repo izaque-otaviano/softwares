@@ -499,6 +499,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "recbar":
             RecSetupBar.shared.show()
             return
+        case "prefsdesk":
+            showPreferences(nil)
+            preferences?.showTab(2)
+            return
         case "prefsrec":
             showPreferences(nil)
             preferences?.showTab(1)

@@ -292,6 +292,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         }
         captureScroll.bottomAnchor.constraint(equalTo: content.bottomAnchor).isActive = true
         recScroll.bottomAnchor.constraint(equalTo: content.bottomAnchor).isActive = true
+        deskView.bottomAnchor.constraint(equalTo: content.bottomAnchor).isActive = true
         // A altura fixa antiga da rolagem dá lugar à altura da janela.
         for c in recScroll.constraints where c.firstAttribute == .height { c.isActive = false }
 

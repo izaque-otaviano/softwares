@@ -10,9 +10,53 @@ import AVFoundation
 final class DeskClient: NSObject {
     static let shared = DeskClient()
 
-    static let issuer = "https://auth.convertize.com.br"
-    static let clientID = "convertize-print-mac"
-    static let scopes = "openid profile email desk.capturas"
+    // Tudo o que depende do Desk/gestor é configurável nas Preferências (com estes padrões).
+    static func setting(_ key: String, _ fallback: String) -> String {
+        let v = UserDefaults.standard.string(forKey: "desk." + key)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return v.isEmpty ? fallback : v
+    }
+
+    static func set(_ key: String, _ value: String) {
+        UserDefaults.standard.set(value, forKey: "desk." + key)
+    }
+
+    static let defaultFields = [
+        "titulo={titulo}", "tipo={tipo}", "origem={origem}", "criado_em={data}", "enviado_por={email}",
+        "largura={largura}", "altura={altura}", "formato={formato}", "duracao={duracao}", "marcadores={marcadores}",
+    ].joined(separator: "\n")
+
+    static var issuer: String {
+        var v = setting("issuer", "https://auth.convertize.com.br")
+        while v.hasSuffix("/") { v.removeLast() }
+        return v
+    }
+    static var clientID: String { return setting("clientID", "convertize-print-mac") }
+    static var scopes: String { return setting("scopes", "openid profile email desk.capturas") }
+    static var method: String { return setting("method", "POST").uppercased() }
+    /// "multipart", "json" (arquivo em base64) ou "raw" (arquivo puro no corpo; campos na URL).
+    static var bodyFormat: String { return setting("body", "multipart") }
+    static var fileField: String { return setting("fileField", "arquivo") }
+    static var fieldsTemplate: String { return setting("fields", defaultFields) }
+    static var maxImageMB: Double { return Double(setting("maxImageMB", "0").replacingOccurrences(of: ",", with: ".")) ?? 0 }
+    static var maxVideoMB: Double { return Double(setting("maxVideoMB", "0").replacingOccurrences(of: ",", with: ".")) ?? 0 }
+    static var successCodes: String { return setting("success", "200-299") }
+    /// Campo da resposta JSON com o link da captura (ex.: "url" ou "data.link"). Vazio = não usar.
+    static var linkKey: String { return setting("linkKey", "") }
+    static var authHeader: String { return setting("authHeader", "Authorization") }
+    static var authPrefix: String { return setting("authPrefix", "Bearer") }
+
+    static func isSuccess(_ status: Int) -> Bool {
+        for part in successCodes.split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" }) {
+            let bounds = part.split(separator: "-").compactMap { Int($0) }
+            if bounds.count == 1, bounds[0] == status { return true }
+            if bounds.count == 2, (bounds[0]...max(bounds[0], bounds[1])).contains(status) { return true }
+        }
+        return false
+    }
+
+    /// Última resposta do Desk (para o teste nas Preferências) e link devolvido, se houver.
+    private(set) var lastResponse = ""
+    private(set) var lastLink: String?
 
     enum ImageFormat: String, CaseIterable { case png, jpeg }
     enum VideoFormat: String, CaseIterable { case mp4, mov }
@@ -373,8 +417,10 @@ final class DeskClient: NSObject {
         }
     }
 
-    /// POST multipart/form-data com o arquivo e os dados, autenticado com o token da Convertize.
+    /// Envia o arquivo e os campos conforme a configuração (método, formato, nomes dos campos).
     func send(_ item: Item, progress: ((Double) -> Void)? = nil, completion: @escaping (Error?) -> Void) {
+        lastResponse = ""
+        lastLink = nil
         guard let target = DeskClient.uploadURL else {
             completion(RecError.message("Defina o endereço do Desk nas Preferências › Convertize Desk."))
             return
@@ -385,31 +431,88 @@ final class DeskClient: NSObject {
                 + "endereços da rede interna. Use https:// no endereço do Desk."))
             return
         }
+        // Limite de tamanho configurado.
+        let bytes = ((try? item.file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? nil) ?? 0
+        let limit = item.kind == "video" ? DeskClient.maxVideoMB : DeskClient.maxImageMB
+        if limit > 0, Double(bytes) > limit * 1_048_576 {
+            let mb = String(format: "%.1f", Double(bytes) / 1_048_576)
+            completion(RecError.message("O arquivo tem \(mb) MB e o limite configurado para \(item.kind == "video" ? "gravações" : "prints") é \(limit) MB."))
+            return
+        }
         withAccessToken { result in
             switch result {
             case .failure(let error):
                 completion(error)
             case .success(let token):
                 do {
-                    let body = try DeskClient.multipartFile(for: item, sender: self.userEmail)
+                    let fields = DeskClient.resolvedFields(for: item, email: self.userEmail, name: self.userName)
+                    let mime = DeskClient.mime(of: item.file)
                     var request = URLRequest(url: target)
-                    request.httpMethod = "POST"
-                    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                    request.setValue("multipart/form-data; boundary=\(body.boundary)", forHTTPHeaderField: "Content-Type")
+                    let bodyFile: URL
+                    var temporary = true
+                    switch DeskClient.bodyFormat {
+                    case "json":
+                        var object: [String: Any] = [:]
+                        for (k, v) in fields { object[k] = v }
+                        object[DeskClient.fileField] = try Data(contentsOf: item.file).base64EncodedString()
+                        object["nome_arquivo"] = item.file.lastPathComponent
+                        object["tipo_mime"] = mime
+                        bodyFile = FileManager.default.temporaryDirectory.appendingPathComponent("recorte-envio-\(UUID().uuidString)")
+                        try JSONSerialization.data(withJSONObject: object).write(to: bodyFile)
+                        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    case "raw":
+                        var c = URLComponents(url: target, resolvingAgainstBaseURL: false)
+                        c?.queryItems = (c?.queryItems ?? []) + fields.map { URLQueryItem(name: $0.0, value: $0.1) }
+                        request.url = c?.url ?? target
+                        request.setValue(mime, forHTTPHeaderField: "Content-Type")
+                        request.setValue(item.file.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                                         forHTTPHeaderField: "X-Nome-Arquivo")
+                        bodyFile = item.file
+                        temporary = false
+                    default:
+                        let body = try DeskClient.multipartFile(file: item.file, fields: fields, mime: mime)
+                        bodyFile = body.file
+                        request.setValue("multipart/form-data; boundary=\(body.boundary)", forHTTPHeaderField: "Content-Type")
+                    }
+                    request.httpMethod = DeskClient.method
+                    let prefix = DeskClient.authPrefix
+                    request.setValue(prefix.isEmpty || prefix == "-" ? token : "\(prefix) \(token)",
+                                     forHTTPHeaderField: DeskClient.authHeader)
+                    request.setValue("application/json", forHTTPHeaderField: "Accept")
                     request.timeoutInterval = 600
-                    let task = URLSession.shared.uploadTask(with: request, fromFile: body.file) { data, response, error in
-                        try? FileManager.default.removeItem(at: body.file)
+                    let task = URLSession.shared.uploadTask(with: request, fromFile: bodyFile) { data, response, error in
+                        if temporary { try? FileManager.default.removeItem(at: bodyFile) }
                         DispatchQueue.main.async {
                             if let error = error {
+                                self.lastResponse = error.localizedDescription
                                 completion(RecError.message("Não foi possível conectar ao Desk (\(target.host ?? "")): \(error.localizedDescription)"))
                                 return
                             }
                             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                            if (200..<300).contains(status) {
+                            let text = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                            self.lastResponse = "\(DeskClient.method) \(request.url?.absoluteString ?? "") → \(status)\n\(text.prefix(400))"
+                            if DeskClient.isSuccess(status) {
+                                self.lastLink = DeskClient.link(in: data)
+                                if let link = self.lastLink {
+                                    let pb = NSPasteboard.general
+                                    pb.clearContents()
+                                    pb.setString(link, forType: .string)
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
+                                        Toast.show("Link do Desk copiado", subtitle: link, duration: 2.5)
+                                    }
+                                }
                                 completion(nil)
                             } else {
-                                let text = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                                completion(RecError.message("O Desk respondeu \(status). \(text.prefix(200))"))
+                                var hint = ""
+                                switch status {
+                                case 404: hint = " O caminho de envio não existe no Desk; confira com o gestor."
+                                case 401, 403: hint = " O Desk recusou o token; confira o cabeçalho de autenticação e os escopos."
+                                case 400, 415, 422: hint = " O Desk não aceitou o formato; confira o formato do corpo e os nomes dos campos."
+                                case 413: hint = " Arquivo grande demais para o Desk."
+                                case 405: hint = " O Desk não aceita o método \(DeskClient.method) neste endereço."
+                                default: break
+                                }
+                                completion(RecError.message("O Desk respondeu \(status).\(hint) \(text.prefix(200))"))
                             }
                         }
                     }
@@ -428,33 +531,65 @@ final class DeskClient: NSObject {
 
     private var observations: [NSKeyValueObservation] = []
 
+    /// Campos a enviar: cada linha "nome={variavel}" do modelo; valores vazios são omitidos.
+    static func resolvedFields(for item: Item, email: String?, name: String?) -> [(String, String)] {
+        var values = item.fields
+        values["titulo"] = item.title
+        values["tipo"] = item.kind
+        values["origem"] = "Recorte (Mac)"
+        values["data"] = ISO8601DateFormatter().string(from: Date())
+        values["email"] = email ?? ""
+        values["nome"] = name ?? ""
+        values["arquivo"] = item.file.lastPathComponent
+        var out: [(String, String)] = []
+        for line in fieldsTemplate.components(separatedBy: .newlines) {
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
+            var value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { continue }
+            for (k, v) in values { value = value.replacingOccurrences(of: "{\(k)}", with: v) }
+            // Variáveis sem valor neste envio (ex.: {duracao} num print) somem.
+            if value.contains("{"), value.contains("}") { continue }
+            if value.isEmpty { continue }
+            out.append((key, value))
+        }
+        return out
+    }
+
+    static func mime(of file: URL) -> String {
+        switch file.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "mov": return "video/quicktime"
+        default: return "video/mp4"
+        }
+    }
+
+    /// Procura o link na resposta JSON pelo caminho configurado (ex.: "url" ou "data.link").
+    static func link(in data: Data?) -> String? {
+        let path = linkKey
+        guard !path.isEmpty, let data = data, var node = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        for key in path.split(separator: ".") {
+            guard let dict = node as? [String: Any], let next = dict[String(key)] else { return nil }
+            node = next
+        }
+        return node as? String
+    }
+
     /// Monta o corpo multipart num arquivo temporário (vídeos grandes não vão para a memória).
-    private static func multipartFile(for item: Item, sender: String?) throws -> (file: URL, boundary: String) {
+    private static func multipartFile(file: URL, fields: [(String, String)], mime: String) throws -> (file: URL, boundary: String) {
         let boundary = "RecorteBoundary\(UUID().uuidString)"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("recorte-envio-\(UUID().uuidString)")
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let out = try FileHandle(forWritingTo: url)
         defer { out.closeFile() }
         func write(_ s: String) { out.write(Data(s.utf8)) }
-        var fields = item.fields
-        fields["titulo"] = item.title
-        fields["tipo"] = item.kind
-        fields["origem"] = "Recorte (Mac)"
-        fields["criado_em"] = ISO8601DateFormatter().string(from: Date())
-        if let s = sender { fields["enviado_por"] = s }
-        for (k, v) in fields.sorted(by: { $0.key < $1.key }) {
+        for (k, v) in fields {
             write("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(k)\"\r\n\r\n\(v)\r\n")
         }
-        let name = item.file.lastPathComponent.replacingOccurrences(of: "\"", with: "")
-        let mime: String
-        switch item.file.pathExtension.lowercased() {
-        case "png": mime = "image/png"
-        case "jpg", "jpeg": mime = "image/jpeg"
-        case "mov": mime = "video/quicktime"
-        default: mime = "video/mp4"
-        }
-        write("--\(boundary)\r\nContent-Disposition: form-data; name=\"arquivo\"; filename=\"\(name)\"\r\nContent-Type: \(mime)\r\n\r\n")
-        let input = try FileHandle(forReadingFrom: item.file)
+        let name = file.lastPathComponent.replacingOccurrences(of: "\"", with: "")
+        write("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(fileField)\"; filename=\"\(name)\"\r\nContent-Type: \(mime)\r\n\r\n")
+        let input = try FileHandle(forReadingFrom: file)
         defer { input.closeFile() }
         while true {
             let chunk = input.readData(ofLength: 1_048_576)
@@ -463,6 +598,27 @@ final class DeskClient: NSObject {
         }
         write("\r\n--\(boundary)--\r\n")
         return (url, boundary)
+    }
+
+    /// Envia uma imagem pequena de teste e devolve a resposta do Desk (Preferências).
+    func sendTest(completion: @escaping (Bool, String) -> Void) {
+        let size = NSSize(width: 320, height: 120)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor(calibratedRed: 0x1B / 255, green: 0x20 / 255, blue: 0x30 / 255, alpha: 1).setFill()
+            rect.fill()
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 18, weight: .semibold),
+                                                        .foregroundColor: NSColor.white]
+            ("Teste do Recorte" as NSString).draw(at: NSPoint(x: 20, y: 46), withAttributes: attrs)
+            return true
+        }
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else {
+            completion(false, "Não foi possível criar a imagem de teste.")
+            return
+        }
+        sendImage(rep, sourceApp: "Teste") { error in
+            let detail = self.lastResponse.isEmpty ? (error?.localizedDescription ?? "") : self.lastResponse
+            completion(error == nil, error == nil ? "Enviado. \(detail)" : "\(error!.localizedDescription)\n\(detail)")
+        }
     }
 
     /// Endereço da rede interna? (127.x, 10.x, 172.16–31.x, 192.168.x, 169.254.x, localhost, *.local, nome sem ponto)
