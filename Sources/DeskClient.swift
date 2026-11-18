@@ -462,7 +462,8 @@ final class DeskClient: NSObject {
                         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     case "raw":
                         var c = URLComponents(url: target, resolvingAgainstBaseURL: false)
-                        c?.queryItems = (c?.queryItems ?? []) + fields.map { URLQueryItem(name: $0.0, value: $0.1) }
+                        let existing = c?.queryItems ?? []
+                        c?.queryItems = existing + fields.map { URLQueryItem(name: $0.0, value: $0.1) }
                         request.url = c?.url ?? target
                         request.setValue(mime, forHTTPHeaderField: "Content-Type")
                         request.setValue(item.file.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
