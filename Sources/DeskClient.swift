@@ -494,7 +494,12 @@ final class DeskClient: NSObject {
                             self.lastResponse = "\(DeskClient.method) \(request.url?.absoluteString ?? "") → \(status)\n\(text.prefix(400))"
                             if DeskClient.isSuccess(status) {
                                 self.lastLink = DeskClient.link(in: data)
-                                if let link = self.lastLink {
+                                if item.kind == "imagem", let image = try? Data(contentsOf: item.file),
+                                   let rep = NSBitmapImageRep(data: image),
+                                   let png = rep.representation(using: .png, properties: [:]) {
+                                    // Prints: copia a própria imagem (e não o link) para colar em qualquer lugar.
+                                    DeskClient.copyImage(png: png, link: self.lastLink)
+                                } else if let link = self.lastLink {
                                     let pb = NSPasteboard.general
                                     pb.clearContents()
                                     pb.setString(link, forType: .string)
@@ -563,6 +568,22 @@ final class DeskClient: NSObject {
         case "jpg", "jpeg": return "image/jpeg"
         case "mov": return "video/quicktime"
         default: return "video/mp4"
+        }
+    }
+
+    /// Coloca a imagem na área de transferência. Com o link do Desk, também vai uma versão
+    /// HTML (<img src="link">): e-mail e editores web colam a imagem hospedada no Desk;
+    /// os demais apps colam a própria imagem. Não vai texto, para nunca colar só o link.
+    static func copyImage(png: Data, link: String?) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(png, forType: .png)
+        if let image = NSImage(data: png), let tiff = image.tiffRepresentation { pb.setData(tiff, forType: .tiff) }
+        if let link = link, let url = URL(string: link), let scheme = url.scheme?.lowercased(),
+           scheme == "https" || scheme == "http" {
+            let safe = link.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+                .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+            pb.setString("<img src=\"\(safe)\" alt=\"Print\">", forType: .html)
         }
     }
 

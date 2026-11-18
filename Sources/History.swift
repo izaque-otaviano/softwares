@@ -15,7 +15,8 @@ enum History {
         return base.appendingPathComponent("Recorte/Historico", isDirectory: true)
     }
 
-    static func add(_ png: Data) {
+    @discardableResult
+    static func add(_ png: Data) -> URL {
         let fm = FileManager.default
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: nil)
         let f = DateFormatter()
@@ -24,7 +25,23 @@ enum History {
         try? png.write(to: url)
         for old in entries().dropFirst(limit) {
             try? fm.removeItem(at: old.url)
+            try? fm.removeItem(at: linkFile(for: old.url))
         }
+        return url
+    }
+
+    /// Link do Desk de uma captura do histórico (guardado ao lado, em .link).
+    private static func linkFile(for url: URL) -> URL {
+        return url.deletingPathExtension().appendingPathExtension("link")
+    }
+
+    static func setLink(_ link: String?, for url: URL) {
+        guard let link = link else { return }
+        try? link.write(to: linkFile(for: url), atomically: true, encoding: .utf8)
+    }
+
+    static func link(for url: URL) -> String? {
+        return try? String(contentsOf: linkFile(for: url), encoding: .utf8)
     }
 
     /// Mais recentes primeiro.
@@ -41,7 +58,10 @@ enum History {
     }
 
     static func clear() {
-        for e in entries() { try? FileManager.default.removeItem(at: e.url) }
+        for e in entries() {
+            try? FileManager.default.removeItem(at: e.url)
+            try? FileManager.default.removeItem(at: linkFile(for: e.url))
+        }
     }
 
     static func thumbnail(for url: URL, height: CGFloat = 36) -> NSImage? {
@@ -59,12 +79,7 @@ enum History {
 
     static func copyToClipboard(_ url: URL) -> Bool {
         guard let data = try? Data(contentsOf: url) else { return false }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setData(data, forType: .png)
-        if let image = NSImage(data: data), let tiff = image.tiffRepresentation {
-            pb.setData(tiff, forType: .tiff)
-        }
+        DeskClient.copyImage(png: data, link: link(for: url))
         return true
     }
 }

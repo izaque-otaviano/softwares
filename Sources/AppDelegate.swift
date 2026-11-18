@@ -360,15 +360,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             app.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app.localizedName
         }
         o.onSendDesk = { rep in
-            if let png = rep.representation(using: .png, properties: [:]) { History.add(png) }
+            let png = rep.representation(using: .png, properties: [:])
+            let saved = png.map { History.add($0) }
+            // A imagem já fica copiada; se o envio der certo, é copiada de novo junto com o link do Desk.
+            if let png = png { DeskClient.copyImage(png: png, link: nil) }
             Toast.show("Enviando ao Desk…", subtitle: DeskClient.uploadURL?.host ?? "", duration: 1.5)
             DeskClient.shared.sendImage(rep, sourceApp: frontApp) { error in
                 if let error = error {
                     NSSound.beep()
-                    Toast.show("Não foi enviado ao Desk", subtitle: error.localizedDescription, duration: 4)
+                    Toast.show("Não foi enviado ao Desk (a imagem está copiada)", subtitle: error.localizedDescription, duration: 4)
                 } else {
+                    if let saved = saved { History.setLink(DeskClient.shared.lastLink, for: saved) }
                     NSSound(named: NSSound.Name("Pop"))?.play()
-                    Toast.show("Enviado ao Desk", subtitle: DeskClient.title(kind: "Print", detail: frontApp))
+                    Toast.show("Enviado ao Desk · imagem copiada", subtitle: "Pronto para colar (⌘V)")
                 }
             }
         }
