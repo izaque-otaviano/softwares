@@ -43,6 +43,7 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
         super.init(window: window)
         window.delegate = self
         build(in: window)
+        window.setContentSize(NSSize(width: 1000, height: 620))
         window.center()
     }
 
@@ -258,6 +259,8 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
             playerView.bottomAnchor.constraint(equalTo: frame.bottomAnchor),
             playerView.leadingAnchor.constraint(equalTo: frame.leadingAnchor),
             playerView.trailingAnchor.constraint(equalTo: frame.trailingAnchor),
+            frame.heightAnchor.constraint(greaterThanOrEqualToConstant: 340),
+            listScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
             bar.leadingAnchor.constraint(equalTo: frame.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: frame.trailingAnchor),
             bar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -18),
