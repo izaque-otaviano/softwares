@@ -25,13 +25,6 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
     private let scopes = NSTextField(string: "")
     private let testButton = NSButton(title: "Enviar captura de teste", target: nil, action: nil)
     private let testResult = NSTextField(wrappingLabelWithString: "")
-    private let audience = NSTextField(string: "")
-    private let sendAudience = NSButton(checkboxWithTitle: "Pedir esta audiência no login", target: nil, action: nil)
-    private let mePath = NSTextField(string: "")
-    private let meButton = NSButton(title: "Ver resposta do /me", target: nil, action: nil)
-    private let meCopy = NSButton(title: "Copiar", target: nil, action: nil)
-    private let meView = NSTextView()
-    private weak var pageScroll: NSScrollView?
     /// Campo de texto → chave da configuração.
     private var keys: [NSTextField: String] = [:]
 
@@ -122,43 +115,6 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
         field(issuer, key: "issuer", value: "", placeholder: "https://auth.convertize.com.br")
         field(clientID, key: "clientID", value: "", placeholder: "convertize-print-mac")
         field(scopes, key: "scopes", value: "", placeholder: "openid profile email desk.capturas")
-        field(audience, key: "audience", value: "", placeholder: "desk-capturas", width: 150)
-        field(mePath, key: "mePath", value: "", placeholder: "/api/v1/me/", width: 150)
-        sendAudience.state = DeskClient.sendAudience ? .on : .off
-        sendAudience.target = self
-        sendAudience.action = #selector(sendAudienceChanged)
-        sendAudience.controlSize = .small
-        sendAudience.font = NSFont.systemFont(ofSize: 11)
-
-        meButton.bezelStyle = .rounded
-        meButton.target = self
-        meButton.action = #selector(mePressed)
-        meCopy.bezelStyle = .rounded
-        meCopy.target = self
-        meCopy.action = #selector(meCopyPressed)
-        meCopy.isEnabled = false
-        let meButtons = NSStackView(views: [meButton, meCopy])
-        meButtons.orientation = .horizontal
-        meButtons.spacing = 6
-        meView.isEditable = false
-        meView.isSelectable = true
-        meView.isRichText = false
-        meView.font = NSFont.userFixedPitchFont(ofSize: 10)
-        meView.textColor = .labelColor
-        meView.backgroundColor = .textBackgroundColor
-        meView.textContainerInset = NSSize(width: 3, height: 4)
-        meView.isVerticallyResizable = true
-        meView.isHorizontallyResizable = false
-        meView.autoresizingMask = [.width]
-        meView.string = "Clique em \"Ver resposta do /me\" para consultar o Desk com o seu login."
-        let meScroll = NSScrollView()
-        meScroll.documentView = meView
-        meScroll.hasVerticalScroller = true
-        meScroll.borderType = .bezelBorder
-        meScroll.translatesAutoresizingMaskIntoConstraints = false
-        meScroll.widthAnchor.constraint(equalToConstant: 262).isActive = true
-        meScroll.heightAnchor.constraint(equalToConstant: 170).isActive = true
-        meView.frame = NSRect(x: 0, y: 0, width: 245, height: 170)
 
         // Campos enviados (um por linha: nome={variavel})
         fieldsView.string = DeskClient.fieldsTemplate
@@ -229,17 +185,10 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
             [label("Servidor de login:"), issuer],
             [label("Client ID:"), clientID],
             [label("Escopos:"), scopes],
-            [label("Audiência (aud):"), audience],
-            [empty, sendAudience],
-            [empty, hint("O Desk só aceita tokens com esta audiência (CAPTURAS_OAUTH_AUDIENCES no servidor). "
-                         + "O botão do /me mostra se o seu token confere. Mudou o servidor, o client ID, "
-                         + "os escopos ou a audiência? Saia e entre de novo para valer.")],
+            [empty, hint("Mudou o servidor, o client ID ou os escopos? Saia e entre de novo para valer.")],
             [empty, section("Teste")],
             [empty, testButton],
             [empty, testResult],
-            [label("Caminho do /me:"), mePath],
-            [empty, meButtons],
-            [empty, meScroll],
         ]
         let grid = NSGridView(views: rows)
         grid.translatesAutoresizingMaskIntoConstraints = false
@@ -253,7 +202,6 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
             }
         }
         grid.cell(for: fieldsScroll)?.row?.yPlacement = .top
-        grid.cell(for: meScroll)?.row?.yPlacement = .top
 
         let card = CardView()
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -268,7 +216,6 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
         scroll.autohidesScrollers = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)
-        pageScroll = scroll
         NSLayoutConstraint.activate([
             grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
             grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
@@ -349,37 +296,6 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
             self?.testResult.textColor = ok ? .systemGreen : .systemRed
             self?.testResult.stringValue = detail
         }
-    }
-
-    @objc private func sendAudienceChanged() {
-        DeskClient.set("sendAudience", sendAudience.state == .on ? "1" : "0")
-    }
-
-    @objc private func mePressed() {
-        meButton.isEnabled = false
-        meView.string = "Consultando \(DeskClient.meURL?.absoluteString ?? "")…"
-        DeskClient.shared.fetchMe { [weak self] report in
-            self?.meButton.isEnabled = true
-            self?.meCopy.isEnabled = true
-            self?.meView.string = report
-            self?.meView.scrollToBeginningOfDocument(nil)
-        }
-    }
-
-    /// Demonstração (CI): rola até o fim e consulta o /me.
-    func runMeDemo() {
-        layoutSubtreeIfNeeded()
-        if let scroll = pageScroll, let doc = scroll.documentView {
-            doc.scroll(NSPoint(x: 0, y: max(0, doc.bounds.height - scroll.contentView.bounds.height)))
-        }
-        mePressed()
-    }
-
-    @objc private func meCopyPressed() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(meView.string, forType: .string)
-        meCopy.title = "Copiado"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.meCopy.title = "Copiar" }
     }
 
     func controlTextDidChange(_ obj: Notification) {

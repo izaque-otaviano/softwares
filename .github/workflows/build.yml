@@ -82,11 +82,6 @@ jobs:
           sleep 1; tail -1 desk-server.log
           RECORTE_DEMO=prefsdesk "$APPBIN" & PID=$!
           sleep 7; screencapture -x screenshots/prefs-desk.png; kill $PID || true
-          # /api/v1/me/ com um JWT de teste (aud desk-capturas)
-          JWT=$(python3 -c "import base64,json,time;e=lambda d:base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip('=');print(e({'alg':'none'})+'.'+e({'aud':'desk-capturas','sub':'7','scope':'openid desk.capturas','iss':'https://auth.convertize.com.br','exp':int(time.time())+3600})+'.x')")
-          RECORTE_TEST=deskme RECORTE_TEST_DESK_TOKEN="$JWT" "$APPBIN" 2>&1 | grep --line-buffered -v IOService
-          RECORTE_TEST_DESK_TOKEN="$JWT" RECORTE_DEMO=prefsdeskme "$APPBIN" & PID=$!
-          sleep 8; screencapture -x screenshots/prefs-desk-me.png; kill $PID || true
           # Login: o app sobe 127.0.0.1:<porta>/callback; simulamos a volta do navegador.
           RECORTE_TEST=login "$APPBIN" > login.log 2>&1 &
           sleep 4

@@ -44,11 +44,6 @@ final class DeskClient: NSObject {
     static var linkKey: String { return setting("linkKey", "") }
     static var authHeader: String { return setting("authHeader", "Authorization") }
     static var authPrefix: String { return setting("authPrefix", "Bearer") }
-    /// Audiência que o Desk aceita (CAPTURAS_OAUTH_AUDIENCES no servidor do Desk).
-    static var audience: String { return setting("audience", "desk-capturas") }
-    /// Envia "audience" e "resource" no login/token (só ligue se o servidor de login suportar).
-    static var sendAudience: Bool { return setting("sendAudience", "0") == "1" }
-    static var mePath: String { return setting("mePath", "/api/v1/me/") }
 
     static func isSuccess(_ status: Int) -> Bool {
         for part in successCodes.split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" }) {
@@ -92,12 +87,7 @@ final class DeskClient: NSObject {
     }
 
     /// URL completa de envio, ou nil se o endereço for inválido.
-    static var uploadURL: URL? { return url(path: uploadPath.isEmpty ? "/" : uploadPath) }
-
-    static var meURL: URL? { return url(path: mePath) }
-
-    /// Base do Desk (endereço configurado) + caminho.
-    static func url(path rawPath: String) -> URL? {
+    static var uploadURL: URL? {
         var address = serverAddress
         guard !address.isEmpty else { return nil }
         if !address.lowercased().hasPrefix("http://") && !address.lowercased().hasPrefix("https://") {
@@ -109,7 +99,7 @@ final class DeskClient: NSObject {
             address = (isIP || isLocal ? "http://" : "https://") + address
         }
         while address.hasSuffix("/") { address.removeLast() }
-        var path = rawPath
+        var path = uploadPath.isEmpty ? "/" : uploadPath
         if !path.hasPrefix("/") { path = "/" + path }
         return URL(string: address + path)
     }
@@ -167,10 +157,6 @@ final class DeskClient: NSObject {
                     URLQueryItem(name: "code_challenge", value: challenge),
                     URLQueryItem(name: "code_challenge_method", value: "S256"),
                 ]
-                if DeskClient.sendAudience {
-                    c.queryItems?.append(URLQueryItem(name: "audience", value: DeskClient.audience))
-                    c.queryItems?.append(URLQueryItem(name: "resource", value: DeskClient.audience))
-                }
                 DispatchQueue.main.async {
                     guard let url = c.url else { return }
                     if ProcessInfo.processInfo.environment["RECORTE_TEST"] != nil {
@@ -286,11 +272,6 @@ final class DeskClient: NSObject {
     // MARK: Tokens
 
     private func postToken(_ form: [String: String], completion: @escaping (Error?) -> Void) {
-        var form = form
-        if DeskClient.sendAudience {
-            form["audience"] = DeskClient.audience
-            form["resource"] = DeskClient.audience
-        }
         var request = URLRequest(url: URL(string: DeskClient.issuer + "/oauth/token/")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -621,91 +602,6 @@ final class DeskClient: NSObject {
     }
 
     /// Envia uma imagem pequena de teste e devolve a resposta do Desk (Preferências).
-    /// Lê as declarações (claims) de um JWT, sem validar a assinatura (só para diagnóstico).
-    static func jwtClaims(_ token: String) -> [String: Any]? {
-        let parts = token.split(separator: ".")
-        guard parts.count >= 2 else { return nil }
-        var b64 = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        while b64.count % 4 != 0 { b64 += "=" }
-        guard let data = Data(base64Encoded: b64) else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-    }
-
-    static func pretty(_ data: Data) -> String {
-        if let obj = try? JSONSerialization.jsonObject(with: data, options: [.allowFragments]),
-           JSONSerialization.isValidJSONObject(obj),
-           let out = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
-           let text = String(data: out, encoding: .utf8) {
-            return text.replacingOccurrences(of: "\\/", with: "/")
-        }
-        return String(data: data, encoding: .utf8) ?? "(\(data.count) bytes não textuais)"
-    }
-
-    /// Resumo do token: aud, escopos, validade, e se a audiência bate com a configurada.
-    static func tokenSummary(_ token: String) -> String {
-        guard let claims = jwtClaims(token) else {
-            return "Token: opaco (não é JWT), não dá para ler aud/escopos aqui."
-        }
-        var lines = ["Token (JWT):"]
-        let aud: [String]
-        if let a = claims["aud"] as? String { aud = [a] } else { aud = (claims["aud"] as? [String]) ?? [] }
-        lines.append("  aud: " + (aud.isEmpty ? "(ausente)" : aud.joined(separator: ", ")))
-        let ok = aud.contains(audience)
-        lines.append("  audiência esperada \"\(audience)\": " + (ok ? "OK" : "NÃO CONFERE"))
-        for key in ["iss", "sub", "client_id", "azp"] {
-            if let v = claims[key] { lines.append("  \(key): \(v)") }
-        }
-        if let scope = claims["scope"] ?? claims["scp"] { lines.append("  escopos: \(scope)") }
-        if let exp = claims["exp"] as? Double {
-            let f = DateFormatter()
-            f.dateFormat = "dd/MM/yyyy HH:mm:ss"
-            let left = Int(exp - Date().timeIntervalSince1970)
-            lines.append("  expira: \(f.string(from: Date(timeIntervalSince1970: exp))) (\(left >= 0 ? "em \(left / 60) min" : "expirado"))")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    /// GET no /api/v1/me/ do Desk com o token atual; devolve um relatório em texto.
-    func fetchMe(completion: @escaping (String) -> Void) {
-        guard let url = DeskClient.meURL else {
-            completion("Preencha o endereço do Desk primeiro.")
-            return
-        }
-        if url.scheme == "http", let host = url.host, !DeskClient.isPrivateHost(host) {
-            completion("Recusado: \(url.absoluteString) é HTTP fora da rede local. Use https://.")
-            return
-        }
-        withAccessToken { result in
-            switch result {
-            case .failure(let error):
-                DispatchQueue.main.async { completion("GET \(url.absoluteString)\n\n\(error.localizedDescription)") }
-            case .success(let token):
-                var request = URLRequest(url: url)
-                request.httpMethod = "GET"
-                request.timeoutInterval = 20
-                request.setValue("application/json", forHTTPHeaderField: "Accept")
-                let prefix = DeskClient.authPrefix
-                request.setValue(prefix.isEmpty ? token : "\(prefix) \(token)", forHTTPHeaderField: DeskClient.authHeader)
-                let started = Date()
-                URLSession.shared.dataTask(with: request) { data, response, error in
-                    var out = ["GET \(url.absoluteString)"]
-                    if let error = error {
-                        out.append("Falha: \(error.localizedDescription)")
-                    } else if let http = response as? HTTPURLResponse {
-                        let ms = Int(Date().timeIntervalSince(started) * 1000)
-                        out.append("Status: \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode)) (\(ms) ms)")
-                        if let type = http.allHeaderFields["Content-Type"] as? String { out.append("Content-Type: \(type)") }
-                        out.append("")
-                        out.append(data.map { DeskClient.pretty($0) } ?? "(sem corpo)")
-                    }
-                    out.append("")
-                    out.append(DeskClient.tokenSummary(token))
-                    DispatchQueue.main.async { completion(out.joined(separator: "\n")) }
-                }.resume()
-            }
-        }
-    }
-
     func sendTest(completion: @escaping (Bool, String) -> Void) {
         let size = NSSize(width: 320, height: 120)
         let image = NSImage(size: size, flipped: false) { rect in
