@@ -10,13 +10,24 @@ jobs:
   sondar:
     runs-on: ubuntu-latest
     steps:
-      - name: Descoberta do login (OIDC)
-        run: curl -sS -m 20 https://auth.convertize.com.br/.well-known/openid-configuration | python3 -m json.tool || true
-      - name: O que o Desk responde (sem token, sem dados)
+      - name: Rotas de API usadas pelo site do Desk
         run: |
-          probe() { echo "== $1 $2"; curl -sS -m 20 -X "$1" -o body.txt -D headers.txt -w "status %{http_code} tipo %{content_type}\n" "$2" || true; grep -iE "^(allow|www-authenticate|location|server|content-type):" headers.txt || true; head -c 700 body.txt; echo; }
-          for p in / /api/ /api/capturas/ /api/capturas /capturas/ /api/v1/capturas/ /api/schema/ /api/docs/ /openapi.json /api/openapi.json /swagger/ /.well-known/openid-configuration; do
-            probe GET "https://desk.convertize.com.br$p"
+          B=https://desk.convertize.com.br
+          curl -sS -m 20 "$B/" -o index.html
+          grep -oE '(src|href)="/assets/[^"]+\.js"' index.html | sed -E 's/.*="([^"]+)"/\1/' | sort -u > js.txt
+          cat js.txt
+          : > all.js
+          while read -r f; do curl -sS -m 30 "$B$f" >> all.js; echo >> all.js; done < js.txt
+          # pedaços carregados sob demanda citados nos arquivos principais
+          grep -oE 'assets/[A-Za-z0-9_.-]+\.js' all.js | sort -u | head -80 > more.txt
+          while read -r f; do curl -sS -m 30 "$B/$f" >> all.js; echo >> all.js; done < more.txt
+          wc -c all.js
+          echo "--- caminhos /api/"
+          grep -oE '["`]/?api/[A-Za-z0-9_/${}.:-]*' all.js | sort | uniq -c | sort -rn | head -80
+          echo "--- menções a captura / upload / anexo"
+          grep -oE '.{60}(captur|upload|anexo|attachment|multipart|FormData).{80}' all.js | head -40 | cut -c1-220
+          echo "--- baseURL"
+          grep -oE '.{40}baseURL.{80}' all.js | head -5
+          for p in /api/captures/ /api/desk/capturas/ /api/uploads/ /api/attachments/ /api/files/ /api/health/ /api/me/; do
+            echo "== POST $p: $(curl -sS -m 15 -X POST -o /dev/null -w '%{http_code}' "$B$p")  GET: $(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$B$p")"
           done
-          probe OPTIONS https://desk.convertize.com.br/api/capturas/
-          probe POST https://desk.convertize.com.br/api/capturas/
