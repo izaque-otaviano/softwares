@@ -1,0 +1,22 @@
+name: Diagnóstico Desk
+
+on:
+  push:
+    branches: [recorte]
+    paths: [".github/workflows/diagnostico.yml"]
+  workflow_dispatch:
+
+jobs:
+  sondar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descoberta do login (OIDC)
+        run: curl -sS -m 20 https://auth.convertize.com.br/.well-known/openid-configuration | python3 -m json.tool || true
+      - name: O que o Desk responde (sem token, sem dados)
+        run: |
+          probe() { echo "== $1 $2"; curl -sS -m 20 -X "$1" -o body.txt -D headers.txt -w "status %{http_code} tipo %{content_type}\n" "$2" || true; grep -iE "^(allow|www-authenticate|location|server|content-type):" headers.txt || true; head -c 700 body.txt; echo; }
+          for p in / /api/ /api/capturas/ /api/capturas /capturas/ /api/v1/capturas/ /api/schema/ /api/docs/ /openapi.json /api/openapi.json /swagger/ /.well-known/openid-configuration; do
+            probe GET "https://desk.convertize.com.br$p"
+          done
+          probe OPTIONS https://desk.convertize.com.br/api/capturas/
+          probe POST https://desk.convertize.com.br/api/capturas/
