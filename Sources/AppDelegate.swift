@@ -372,7 +372,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 } else {
                     if let saved = saved { History.setLink(DeskClient.shared.lastLink, for: saved) }
                     NSSound(named: NSSound.Name("Pop"))?.play()
-                    Toast.show("Enviado ao Desk · imagem copiada", subtitle: "Pronto para colar (⌘V)")
+                    Toast.show("Enviado ao Desk · imagem copiada",
+                               subtitle: (DeskClient.isPublic ? "Link público" : "Link privado") + ". Pronto para colar (⌘V)")
                 }
             }
         }

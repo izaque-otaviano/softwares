@@ -23,6 +23,10 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
     private let issuer = NSTextField(string: "")
     private let clientID = NSTextField(string: "")
     private let scopes = NSTextField(string: "")
+    private let visibilityPopup = NSPopUpButton()
+    private let visibilityField = NSTextField(string: "")
+    private let publicValue = NSTextField(string: "")
+    private let privateValue = NSTextField(string: "")
     private let testButton = NSButton(title: "Enviar captura de teste", target: nil, action: nil)
     private let testResult = NSTextField(wrappingLabelWithString: "")
     /// Campo de texto → chave da configuração.
@@ -114,6 +118,12 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
         field(authPrefix, key: "authPrefix", value: "", placeholder: "Bearer", width: 150)
         field(issuer, key: "issuer", value: "", placeholder: "https://auth.convertize.com.br")
         field(clientID, key: "clientID", value: "", placeholder: "convertize-print-mac")
+        field(visibilityField, key: "visibilityField", value: "", placeholder: "visibilidade", width: 150)
+        field(publicValue, key: "publicValue", value: "", placeholder: "publico", width: 150)
+        field(privateValue, key: "privateValue", value: "", placeholder: "privado", width: 150)
+        visibilityPopup.addItems(withTitles: ["Privado — só a equipe", "Público — qualquer pessoa com o link"])
+        visibilityPopup.target = self
+        visibilityPopup.action = #selector(popupChanged)
         field(scopes, key: "scopes", value: "", placeholder: "openid profile email desk.capturas")
 
         // Campos enviados (um por linha: nome={variavel})
@@ -179,6 +189,13 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
             [label("Códigos de sucesso:"), successCodes],
             [label("Campo com o link:"), linkKey],
             [empty, hint("Se o Desk devolver o link da captura num campo do JSON, informe o nome: o Recorte copia o link ao enviar.")],
+            [empty, section("Link público ou privado")],
+            [label("Link padrão:"), visibilityPopup],
+            [label("Campo enviado:"), visibilityField],
+            [label("Valor para público:"), publicValue],
+            [label("Valor para privado:"), privateValue],
+            [empty, hint("Também dá para trocar na hora: no cadeado da barra do print e na tela da gravação. "
+                         + "Fica a última escolha. Escreva - no campo enviado se o Desk não usar visibilidade.")],
             [empty, section("Autenticação (6)")],
             [label("Cabeçalho:"), authHeader],
             [label("Prefixo do token:"), authPrefix],
@@ -253,6 +270,7 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
         urlPreview.stringValue = DeskClient.uploadURL.map { "\(DeskClient.method) \($0.absoluteString)" }
             ?? "Endereço ainda não definido"
         fileField.isEnabled = DeskClient.bodyFormat != "raw"
+        visibilityPopup.selectItem(at: DeskClient.isPublic ? 1 : 0)
     }
 
     @objc private func loginPressed() {
@@ -274,11 +292,14 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
         }
     }
 
-    @objc private func popupChanged() {
+    @objc private func popupChanged(_ sender: Any?) {
         DeskClient.imageFormat = imagePopup.indexOfSelectedItem == 1 ? .jpeg : .png
         DeskClient.videoFormat = videoPopup.indexOfSelectedItem == 1 ? .mov : .mp4
         DeskClient.set("method", methodPopup.titleOfSelectedItem ?? "POST")
         DeskClient.set("body", ["multipart", "json", "raw"][max(0, bodyPopup.indexOfSelectedItem)])
+        if let sender = sender as? NSPopUpButton, sender === visibilityPopup {
+            DeskClient.isPublic = visibilityPopup.indexOfSelectedItem == 1
+        }
         refresh()
     }
 

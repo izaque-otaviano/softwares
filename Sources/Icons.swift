@@ -130,6 +130,26 @@ enum Icons {
         Icons.stroke(p)
     }
 
+    /// Cadeado fechado (link privado) e aberto (link público).
+    static let lockClosed = make { _ in
+        Icons.stroke(NSBezierPath(roundedRect: NSRect(x: 4.5, y: 3.5, width: 11, height: 8.5), xRadius: 2, yRadius: 2))
+        let arc = NSBezierPath()
+        arc.move(to: NSPoint(x: 7, y: 12)); arc.line(to: NSPoint(x: 7, y: 13.5))
+        arc.appendArc(withCenter: NSPoint(x: 10, y: 13.5), radius: 3, startAngle: 180, endAngle: 0, clockwise: true)
+        arc.line(to: NSPoint(x: 13, y: 12))
+        Icons.stroke(arc)
+        NSBezierPath(ovalIn: NSRect(x: 9.1, y: 6.6, width: 1.8, height: 1.8)).fill()
+    }
+
+    static let lockOpen = make { _ in
+        Icons.stroke(NSBezierPath(roundedRect: NSRect(x: 4.5, y: 3.5, width: 11, height: 8.5), xRadius: 2, yRadius: 2))
+        let arc = NSBezierPath()
+        arc.move(to: NSPoint(x: 13, y: 12)); arc.line(to: NSPoint(x: 13, y: 13.5))
+        arc.appendArc(withCenter: NSPoint(x: 16, y: 13.5), radius: 3, startAngle: 180, endAngle: 30, clockwise: true)
+        Icons.stroke(arc)
+        NSBezierPath(ovalIn: NSRect(x: 9.1, y: 6.6, width: 1.8, height: 1.8)).fill()
+    }
+
     /// Copiar: dois quadrados sobrepostos.
     static let copy = make { _ in
         Icons.stroke(NSBezierPath(roundedRect: NSRect(x: 7, y: 3.5, width: 9.5, height: 9.5), xRadius: 2, yRadius: 2))

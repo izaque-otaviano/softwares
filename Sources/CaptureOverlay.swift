@@ -456,7 +456,14 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             cancel.onClick = { [weak self] in self?.onCancel?() }
             let ok = AccentButton(title: "OK", tip: "Copiar e salvar (Enter)")
             ok.onClick = { [weak self] in self?.onConfirm?() }
-                items.append(contentsOf: [save, desk, pin, copy, cancel, ok] as [NSView])
+            let lock = LinkLockButton()
+            lock.onChange = { [weak self, weak lock] isPublic in
+                self?.showTip(for: lock)
+                Toast.show(isPublic ? "Link público" : "Link privado",
+                           subtitle: isPublic ? "Qualquer pessoa com o link vê o print" : "Só a equipe Convertize vê o print",
+                           duration: 1.4)
+            }
+                items.append(contentsOf: [save, lock, desk, pin, copy, cancel, ok] as [NSView])
         }
 
         // Nome de cada botão num balão ao passar o mouse (as dicas do sistema

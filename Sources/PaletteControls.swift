@@ -6,7 +6,7 @@ class PaletteButton: NSView {
     var onClick: (() -> Void)?
     /// Chamado ao entrar/sair com o mouse (para mostrar o nome do botão).
     var onHover: ((Bool) -> Void)?
-    let tip: String
+    var tip: String
     private var isHovering = false { didSet { needsDisplay = true } }
     private var isPressed = false { didSet { needsDisplay = true } }
     private let fixedSize: NSSize
@@ -77,6 +77,38 @@ final class IconButton: PaletteButton {
     override func drawContent() {
         let r = NSRect(x: bounds.midX - 10, y: bounds.midY - 10, width: 20, height: 20)
         Icons.drawTinted(image, in: r, color: isSelected ? .controlAccentColor : .labelColor)
+    }
+}
+
+/// Cadeado do link do Desk: fechado = privado (só a equipe), aberto = público.
+final class LinkLockButton: PaletteButton {
+    var onChange: ((Bool) -> Void)?
+
+    init() {
+        super.init(size: NSSize(width: 32, height: 30), tip: "")
+        refresh()
+        onClick = { [weak self] in
+            DeskClient.isPublic.toggle()
+            self?.refresh()
+            self?.onChange?(DeskClient.isPublic)
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) não é usado")
+    }
+
+    func refresh() {
+        tip = DeskClient.isPublic ? "Link público: qualquer pessoa com o link vê. Clique para tornar privado."
+            : "Link privado: só a equipe Convertize vê. Clique para tornar público."
+        setAccessibilityLabel(tip)
+        needsDisplay = true
+    }
+
+    override func drawContent() {
+        let r = NSRect(x: bounds.midX - 10, y: bounds.midY - 10, width: 20, height: 20)
+        Icons.drawTinted(DeskClient.isPublic ? Icons.lockOpen : Icons.lockClosed, in: r,
+                         color: DeskClient.isPublic ? .systemOrange : .labelColor)
     }
 }
 

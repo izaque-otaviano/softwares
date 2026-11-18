@@ -45,6 +45,16 @@ final class DeskClient: NSObject {
     static var authHeader: String { return setting("authHeader", "Authorization") }
     static var authPrefix: String { return setting("authPrefix", "Bearer") }
 
+    /// Link público (qualquer pessoa com o link) ou privado (só a equipe). Fica a última escolha.
+    static var isPublic: Bool {
+        get { return setting("visibility", "privado") == "publico" }
+        set { set("visibility", newValue ? "publico" : "privado") }
+    }
+    /// Nome do campo e valores que o Desk espera para a visibilidade.
+    static var visibilityField: String { return setting("visibilityField", "visibilidade") }
+    static var publicValue: String { return setting("publicValue", "publico") }
+    static var privateValue: String { return setting("privateValue", "privado") }
+
     static func isSuccess(_ status: Int) -> Bool {
         for part in successCodes.split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" }) {
             let bounds = part.split(separator: "-").compactMap { Int($0) }
@@ -547,6 +557,7 @@ final class DeskClient: NSObject {
         values["email"] = email ?? ""
         values["nome"] = name ?? ""
         values["arquivo"] = item.file.lastPathComponent
+        values["visibilidade"] = isPublic ? publicValue : privateValue
         var out: [(String, String)] = []
         for line in fieldsTemplate.components(separatedBy: .newlines) {
             guard let eq = line.firstIndex(of: "=") else { continue }
@@ -558,6 +569,11 @@ final class DeskClient: NSObject {
             if value.contains("{"), value.contains("}") { continue }
             if value.isEmpty { continue }
             out.append((key, value))
+        }
+        // Visibilidade do link sempre vai, mesmo se não estiver na lista de campos.
+        let vField = visibilityField
+        if vField != "-", !out.contains(where: { $0.0 == vField }) {
+            out.append((vField, values["visibilidade"] ?? privateValue))
         }
         return out
     }
