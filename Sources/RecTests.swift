@@ -48,6 +48,12 @@ extension AppDelegate {
                     exit(0)
                 }
             }
+        case "deskme":
+            DeskClient.serverAddress = "127.0.0.1:8765"
+            DeskClient.shared.fetchMe { report in
+                print("Resposta do /me:\n\(report)")
+                exit(0)
+            }
         case "desk":
             DeskClient.serverAddress = "127.0.0.1:8765"
             DeskClient.uploadPath = "/api/capturas/"

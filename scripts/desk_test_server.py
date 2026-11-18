@@ -28,6 +28,14 @@ class H(http.server.BaseHTTPRequestHandler):
         print("RECEBIDO:", json.dumps(info, ensure_ascii=False), flush=True)
         self.send_response(201); self.send_header("Content-Type", "application/json"); self.end_headers()
         self.wfile.write(b'{"ok":true,"data":{"link":"https://desk.exemplo/capturas/123"}}')
+    def do_GET(self):
+        if self.path.rstrip("/") != "/api/v1/me":
+            self.send_response(404); self.end_headers(); return
+        auth = self.headers.get("Authorization", "")
+        body = json.dumps({"id": 7, "nome": "Pessoa de Teste", "email": "teste@exemplo.com",
+                           "token_recebido": auth[:20] + "…", "permissoes": ["capturas.enviar"]})
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+        self.wfile.write(body.encode())
     do_POST = handle_upload
     do_PUT = handle_upload
     def log_message(self, *a): pass

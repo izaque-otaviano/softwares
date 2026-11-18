@@ -503,6 +503,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showPreferences(nil)
             preferences?.showTab(2)
             return
+        case "prefsdeskme":
+            DeskClient.serverAddress = "127.0.0.1:8765"
+            showPreferences(nil)
+            preferences?.demoDeskMe()
+            return
         case "prefsrec":
             showPreferences(nil)
             preferences?.showTab(1)

@@ -319,6 +319,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// 0 = Captura, 1 = Gravação de tela.
+    func demoDeskMe() {
+        showTab(2)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.deskView.runMeDemo() }
+    }
+
     func showTab(_ index: Int) {
         tabs.selectedSegment = index
         sidebar?.select(index)
