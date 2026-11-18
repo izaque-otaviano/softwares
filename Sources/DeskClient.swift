@@ -77,17 +77,17 @@ final class DeskClient: NSObject {
 
     /// Endereço do Desk: IP ou URL (ex.: 192.168.0.20:8000 ou https://desk.convertize.com.br).
     static var serverAddress: String {
-        get { return defaults.string(forKey: "desk.server") ?? "" }
+        get { return defaults.string(forKey: "desk.server") ?? "desk.convertize.com.br" }
         set { defaults.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "desk.server") }
     }
 
     static var uploadPath: String {
-        get { return defaults.string(forKey: "desk.path") ?? "/api/capturas/" }
+        get { return defaults.string(forKey: "desk.path") ?? "/api/v1/screenshots/" }
         set { defaults.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "desk.path") }
     }
 
     static var imageFormat: ImageFormat {
-        get { return ImageFormat(rawValue: defaults.string(forKey: "desk.imageFormat") ?? "") ?? .png }
+        get { return ImageFormat(rawValue: defaults.string(forKey: "desk.imageFormat") ?? "") ?? .jpeg }
         set { defaults.set(newValue.rawValue, forKey: "desk.imageFormat") }
     }
 

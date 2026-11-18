@@ -89,7 +89,7 @@ final class DeskPrefsView: NSView, NSTextFieldDelegate, NSTextViewDelegate {
             f.widthAnchor.constraint(equalToConstant: 250).isActive = true
         }
         address.placeholderString = "desk.convertize.com.br ou 192.168.0.20:8000"
-        path.placeholderString = "/api/capturas/"
+        path.placeholderString = "/api/v1/screenshots/"
         address.stringValue = DeskClient.serverAddress
         path.stringValue = DeskClient.uploadPath
         urlPreview.font = NSFont.systemFont(ofSize: 11)
