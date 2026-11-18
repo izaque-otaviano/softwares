@@ -67,7 +67,7 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
     private func actionButton(_ title: String, symbol: String, fallback: NSImage?, action: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: action)
         b.bezelStyle = .rounded
-        b.controlSize = .large
+        if #available(macOS 11.0, *) { b.controlSize = .large }
         if let image = RecPreviewWindowController.symbol(symbol, fallback) {
             b.image = image
             b.imagePosition = .imageLeading
@@ -122,7 +122,7 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
         // Ações: as de arquivo à esquerda, o envio ao Desk (a ação principal) à direita.
         playButton.title = "Reproduzir"
         playButton.bezelStyle = .rounded
-        playButton.controlSize = .large
+        if #available(macOS 11.0, *) { playButton.controlSize = .large }
         playButton.image = RecPreviewWindowController.symbol("play.fill", RecIcons.play)
         playButton.imagePosition = .imageLeading
         playButton.target = self
@@ -143,7 +143,7 @@ final class RecPreviewWindowController: NSWindowController, NSWindowDelegate, NS
             visibility.setToolTip("Só a equipe Convertize abre o link", forSegment: 0)
             visibility.setToolTip("Qualquer pessoa com o link abre", forSegment: 1)
         }
-        visibility.controlSize = .large
+        if #available(macOS 11.0, *) { visibility.controlSize = .large }
         visibility.selectedSegment = DeskClient.isPublic ? 1 : 0
         visibility.target = self
         visibility.action = #selector(visibilityChanged)
